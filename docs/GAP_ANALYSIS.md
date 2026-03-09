@@ -1,4 +1,4 @@
-# PostureGuard Gap Analysis
+# RhythmDesk Gap Analysis
 
 ## Professional Quality Improvements Assessment
 

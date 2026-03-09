@@ -1,5 +1,5 @@
 /**
- * PostureGuard Constants
+ * RhythmDesk Constants
  */
 
 // Timer tick interval in milliseconds

@@ -1,5 +1,5 @@
 /**
- * PostureGuard Window Manager
+ * RhythmDesk Window Manager
  * Manages main settings window and overlay windows
  */
 
@@ -28,7 +28,7 @@ export function createMainWindow(): BrowserWindow {
     height: 700,
     minWidth: 600,
     minHeight: 500,
-    title: 'PostureGuard',
+    title: 'RhythmDesk',
     icon: path.join(__dirname, '../../../resources/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -110,7 +110,7 @@ export function createOverlayWindow(strictMode: boolean = false): BrowserWindow 
     focusable: true,
     // Kiosk mode for strict - provides strongest blocking on Linux
     kiosk: strictMode,
-    title: 'PostureGuard Overlay',
+    title: 'RhythmDesk Overlay',
     icon: path.join(__dirname, '../../../resources/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

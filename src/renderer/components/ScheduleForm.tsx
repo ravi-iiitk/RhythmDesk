@@ -1,5 +1,5 @@
 /**
- * PostureGuard Schedule Form Component
+ * RhythmDesk Schedule Form Component
  * Create and edit schedules
  */
 

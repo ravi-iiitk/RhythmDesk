@@ -1,5 +1,5 @@
 /**
- * PostureGuard Config Service
+ * RhythmDesk Config Service
  * Handles local JSON persistence with abstraction for future SQLite migration
  */
 

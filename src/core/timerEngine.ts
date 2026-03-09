@@ -1,5 +1,5 @@
 /**
- * PostureGuard Timer Engine
+ * RhythmDesk Timer Engine
  * Core business logic for tracking work phases, breaks, and transitions
  * 
  * IMPORTANT RULES:

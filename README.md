@@ -1,4 +1,4 @@
-# PostureGuard
+# RhythmDesk
 
 A strict work posture and break scheduler for Linux desktop. Designed for users with back pain / sciatica who need to enforce configurable work schedules alternating between sitting and standing work.
 
@@ -128,7 +128,7 @@ A manual mode for enforcing fullscreen overlay during work phases when doing pai
 
 ## Configuration Storage
 
-Data is stored in `~/.config/posture-guard/config.json`:
+Data is stored in `~/.config/rhythmdesk/config.json`:
 
 - **Schedules**: All schedule configurations
 - **Session State**: Current phase, timestamps, postpone counts
@@ -161,7 +161,7 @@ Output files are placed in `release/` directory.
 In development, logs are output to console. In production, logs are written to:
 
 ```
-~/.config/posture-guard/logs/app.log
+~/.config/rhythmdesk/logs/app.log
 ```
 
 Logs include schedule activation, phase transitions, break triggers, postpone actions, and errors.

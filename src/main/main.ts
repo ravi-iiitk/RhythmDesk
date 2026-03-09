@@ -1,5 +1,5 @@
 /**
- * PostureGuard Main Process
+ * RhythmDesk Main Process
  * Entry point for the Electron application
  */
 

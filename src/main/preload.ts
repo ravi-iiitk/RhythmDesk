@@ -1,5 +1,5 @@
 /**
- * PostureGuard Preload Script
+ * RhythmDesk Preload Script
  * Exposes safe IPC methods to renderer process
  */
 
@@ -7,7 +7,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { IPC_CHANNELS } from '../shared/types';
 
 // Type for the exposed API
-export interface PostureGuardAPI {
+export interface RhythmDeskAPI {
   // Config
   getConfig: () => Promise<any>;
   saveConfig: (config: any) => Promise<void>;
@@ -44,7 +44,7 @@ export interface PostureGuardAPI {
   onOfficeFocusLockChanged: (callback: (state: any) => void) => () => void;
 }
 
-const api: PostureGuardAPI = {
+const api: RhythmDeskAPI = {
   // Config operations
   getConfig: () => ipcRenderer.invoke(IPC_CHANNELS.GET_CONFIG),
   saveConfig: (config) => ipcRenderer.invoke(IPC_CHANNELS.SAVE_CONFIG, config),
@@ -115,6 +115,6 @@ contextBridge.exposeInMainWorld('postureGuard', api);
 // Type declaration for window object
 declare global {
   interface Window {
-    postureGuard: PostureGuardAPI;
+    postureGuard: RhythmDeskAPI;
   }
 }

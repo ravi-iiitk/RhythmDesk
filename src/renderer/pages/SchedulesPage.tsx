@@ -1,5 +1,5 @@
 /**
- * PostureGuard Schedules Page
+ * RhythmDesk Schedules Page
  * List and manage schedules
  */
 

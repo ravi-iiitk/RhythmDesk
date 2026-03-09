@@ -1,5 +1,5 @@
 /**
- * PostureGuard System Tray
+ * RhythmDesk System Tray
  * Provides quick access to timer state and controls
  */
 
@@ -34,7 +34,7 @@ export function createTray(): Tray {
   }
 
   tray = new Tray(icon.resize({ width: 22, height: 22 }));
-  tray.setToolTip('PostureGuard');
+  tray.setToolTip('RhythmDesk');
   
   updateTrayMenu();
 
@@ -79,7 +79,7 @@ export function updateTrayWithTick(tick: TimerTick): void {
 /**
  * Update tray tooltip
  * Format:
- * PostureGuard
+ * RhythmDesk
  * Schedule: <name>
  * Phase: <phase>
  * Remaining: <time>
@@ -88,13 +88,13 @@ export function updateTrayWithTick(tick: TimerTick): void {
 function updateTrayTooltip(): void {
   if (!tray || !currentTick) return;
 
-  let tooltip = 'PostureGuard';
+  let tooltip = 'RhythmDesk';
   
   if (currentTick.scheduleName) {
     const phaseName = PHASE_DISPLAY_NAMES[currentTick.currentPhase] || currentTick.currentPhase;
     const remaining = formatDuration(currentTick.phaseRemainingMs);
     
-    tooltip = 'PostureGuard';
+    tooltip = 'RhythmDesk';
     tooltip += `\nSchedule: ${currentTick.scheduleName}`;
     tooltip += `\nPhase: ${phaseName}`;
     tooltip += `\nRemaining: ${remaining}`;
@@ -111,7 +111,7 @@ function updateTrayTooltip(): void {
       tooltip += `\nFocus Lock: ${currentTick.officeFocusLock.label} (${lockRemaining})`;
     }
   } else {
-    tooltip = 'PostureGuard\nStatus: Idle';
+    tooltip = 'RhythmDesk\nStatus: Idle';
   }
 
   tray.setToolTip(tooltip);
@@ -268,7 +268,7 @@ function updateTrayMenu(): void {
 
   // Quit
   menuItems.push({
-    label: 'Quit PostureGuard',
+    label: 'Quit RhythmDesk',
     click: () => app.quit(),
   });
 

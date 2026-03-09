@@ -1,5 +1,5 @@
 /**
- * PostureGuard Office Focus Lock Service
+ * RhythmDesk Office Focus Lock Service
  * Manual mode for enforcing fullscreen overlay during work phases
  * 
  * Office Focus Lock: When active, forces fullscreen overlay during work phases (sit/stand)

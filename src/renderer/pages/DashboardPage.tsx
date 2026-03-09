@@ -1,5 +1,5 @@
 /**
- * PostureGuard Dashboard Page
+ * RhythmDesk Dashboard Page
  * Shows current timer state and quick controls
  */
 

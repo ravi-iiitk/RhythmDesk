@@ -1,5 +1,5 @@
 /**
- * PostureGuard Overlay View
+ * RhythmDesk Overlay View
  * Fullscreen overlay for phase transitions and breaks
  */
 

@@ -1,7 +1,7 @@
 {
-  "name": "posture-guard",
-  "version": "1.0.0",
-  "description": "A strict work posture and break scheduler for Linux desktop",
+  "name": "rhythmdesk",
+  "version": "0.1.0",
+  "description": "A strict sit/stand posture and break enforcement desktop app for Linux",
   "main": "dist/main/main/main.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\" \"wait-on http://localhost:5173 && wait-on dist/main/main/main.js && env -u ELECTRON_RUN_AS_NODE electron --no-sandbox .\"",
@@ -20,8 +20,8 @@
     "lint": "eslint src --ext .ts,.tsx"
   },
   "build": {
-    "appId": "com.postureguard.app",
-    "productName": "PostureGuard",
+    "appId": "com.rhythmdesk.app",
+    "productName": "RhythmDesk",
     "artifactName": "${productName}-${version}-${arch}.${ext}",
     "directories": {
       "output": "release"
@@ -50,12 +50,12 @@
       ],
       "category": "Utility",
       "icon": "resources/icons",
-      "synopsis": "Strict work posture and break scheduler",
-      "description": "PostureGuard helps you maintain healthy work habits by enforcing sit/stand schedules, break reminders, and fullscreen overlay notifications.",
+      "synopsis": "Strict sit/stand posture and break enforcement",
+      "description": "RhythmDesk helps you maintain healthy work habits by enforcing sit/stand schedules, break reminders, and fullscreen overlay notifications.",
       "desktop": {
-        "Name": "PostureGuard",
-        "Comment": "Work posture and break scheduler",
-        "StartupWMClass": "PostureGuard",
+        "Name": "RhythmDesk",
+        "Comment": "Sit/stand posture and break scheduler",
+        "StartupWMClass": "RhythmDesk",
         "Categories": "Utility;Health;"
       }
     }

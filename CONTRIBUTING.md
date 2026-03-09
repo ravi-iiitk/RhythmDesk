@@ -1,6 +1,6 @@
-# Contributing to PostureGuard
+# Contributing to RhythmDesk
 
-Thank you for your interest in contributing to PostureGuard! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to RhythmDesk! This document provides guidelines and instructions for contributing.
 
 ## Table of Contents
 
@@ -178,7 +178,7 @@ Use the [Bug Report template](.github/ISSUE_TEMPLATE/bug_report.md) and include:
 - Your Linux distribution and version
 - Steps to reproduce the bug
 - Expected vs actual behavior
-- Log files from `~/.postureguard/logs/`
+- Log files from `~/.config/rhythmdesk/logs/`
 - Screenshots if applicable
 
 ## Suggesting Features
@@ -193,4 +193,4 @@ Use the [Feature Request template](.github/ISSUE_TEMPLATE/feature_request.md) an
 
 Feel free to open an issue for any questions about contributing.
 
-Thank you for helping make PostureGuard better! 🎯
+Thank you for helping make RhythmDesk better! 🎯

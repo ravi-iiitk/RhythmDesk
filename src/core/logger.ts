@@ -1,9 +1,9 @@
 /**
- * PostureGuard Logger
+ * RhythmDesk Logger
  * Lightweight logging utility for development and production
  * 
  * In development: logs to console
- * In production: logs to ~/.postureguard/logs/app.log
+ * In production: logs to ~/.rhythmdesk/logs/app.log
  */
 
 import { app } from 'electron';

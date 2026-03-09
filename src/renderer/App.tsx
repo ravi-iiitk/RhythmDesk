@@ -1,5 +1,5 @@
 /**
- * PostureGuard Main App Component
+ * RhythmDesk Main App Component
  */
 
 import React, { useEffect, useState } from 'react';
@@ -34,7 +34,7 @@ function App() {
     <div className="app">
       <nav className="sidebar">
         <div className="sidebar-header">
-          <h1>PostureGuard</h1>
+          <h1>RhythmDesk</h1>
         </div>
         <ul className="nav-links">
           <li>

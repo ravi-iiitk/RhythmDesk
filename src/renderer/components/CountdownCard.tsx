@@ -1,5 +1,5 @@
 /**
- * PostureGuard Countdown Card Component
+ * RhythmDesk Countdown Card Component
  * Displays the main countdown timer with progress bar
  */
 

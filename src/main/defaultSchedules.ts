@@ -1,5 +1,5 @@
 /**
- * PostureGuard Default Schedules
+ * RhythmDesk Default Schedules
  * Creates sample schedules for first-time setup
  */
 

@@ -1,5 +1,5 @@
 /**
- * PostureGuard Time Utilities
+ * RhythmDesk Time Utilities
  */
 
 import { DayOfWeek } from './types';

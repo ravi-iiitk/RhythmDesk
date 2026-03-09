@@ -1,5 +1,5 @@
 /**
- * PostureGuard Shared Types
+ * RhythmDesk Shared Types
  * All data model interfaces used across main and renderer processes
  */
 

@@ -1,5 +1,5 @@
 /**
- * PostureGuard IPC Handlers
+ * RhythmDesk IPC Handlers
  * Handles communication between main and renderer processes
  */
 

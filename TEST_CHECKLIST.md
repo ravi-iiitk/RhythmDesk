@@ -1,4 +1,4 @@
-# PostureGuard Test Checklist
+# RhythmDesk Test Checklist
 
 ## NEW: Office Focus Lock Tests
 
@@ -141,7 +141,7 @@
 
 ### AppImage
 - [ ] **Generate**: `npm run dist:linux` creates AppImage in `release/`
-- [ ] **Execute**: AppImage runs with `./PostureGuard-*.AppImage`
+- [ ] **Execute**: AppImage runs with `./RhythmDesk-*.AppImage`
 - [ ] **Permissions**: AppImage has execute permission
 - [ ] **Icon**: App icon appears in taskbar/dock
 

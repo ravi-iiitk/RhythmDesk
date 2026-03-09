@@ -1,4 +1,4 @@
-# PostureGuard - Linux-Specific Caveats
+# RhythmDesk - Linux-Specific Caveats
 
 ## Strict Fullscreen Overlay Behavior
 
@@ -42,16 +42,16 @@
 
 2. **Disable Compositor Shortcuts**: Some compositors let you disable Super key and other shortcuts.
 
-3. **WM-Specific Rules**: For tiling WMs, add window rules to float and fullscreen PostureGuard overlays:
+3. **WM-Specific Rules**: For tiling WMs, add window rules to float and fullscreen RhythmDesk overlays:
 
    **i3 config example:**
    ```
-   for_window [title="PostureGuard Overlay"] floating enable, fullscreen enable
+   for_window [title="RhythmDesk Overlay"] floating enable, fullscreen enable
    ```
 
    **sway config example:**
    ```
-   for_window [title="PostureGuard Overlay"] floating enable, fullscreen enable
+   for_window [title="RhythmDesk Overlay"] floating enable, fullscreen enable
    ```
 
 4. **Single Monitor**: For strict enforcement, consider using a single monitor during work sessions.
@@ -108,14 +108,14 @@ sudo pacman -S fuse2
 After downloading the AppImage, make it executable:
 
 ```bash
-chmod +x PostureGuard-*.AppImage
+chmod +x RhythmDesk-*.AppImage
 ```
 
 ## Configuration Location
 
 User configuration is stored in:
 ```
-~/.config/posture-guard/config.json
+~/.config/rhythmdesk/config.json
 ```
 
 To reset configuration, delete this file.

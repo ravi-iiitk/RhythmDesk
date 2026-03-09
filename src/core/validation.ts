@@ -1,5 +1,5 @@
 /**
- * PostureGuard Validation Utilities
+ * RhythmDesk Validation Utilities
  * Validates schedule and configuration data
  */
 

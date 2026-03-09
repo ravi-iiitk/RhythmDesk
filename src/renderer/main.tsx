@@ -1,5 +1,5 @@
 /**
- * PostureGuard Renderer Entry Point
+ * RhythmDesk Renderer Entry Point
  */
 
 import React from 'react';
