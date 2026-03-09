@@ -1,0 +1,28 @@
+{
+  "schedules": [],
+  "generalSettings": {
+    "soundEnabled": true,
+    "soundVolume": 50,
+    "darkMode": true,
+    "startMinimized": false,
+    "startOnLogin": false,
+    "showNotifications": true
+  },
+  "sessionState": {
+    "activeScheduleId": null,
+    "currentPhase": "idle",
+    "phaseStartedAt": 0,
+    "phaseRemainingMs": 0,
+    "cumulativeWorkTimeMs": 0,
+    "lastShortBreakAtWorkTimeMs": 0,
+    "lastLongBreakAtWorkTimeMs": 0,
+    "postponeCountToday": 0,
+    "postponeResetDate": "2024-01-01",
+    "isPaused": false,
+    "pausedAt": null,
+    "pauseResumeAt": null,
+    "isPostponed": false,
+    "postponedUntil": null,
+    "postponedPhase": null
+  }
+}
