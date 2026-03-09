@@ -16,7 +16,7 @@ function App() {
 
   useEffect(() => {
     // Subscribe to timer ticks
-    const unsubscribe = window.postureGuard.onTimerTick((tick) => {
+    const unsubscribe = window.rhythmDesk.onTimerTick((tick) => {
       setCurrentTick(tick);
     });
 
@@ -59,7 +59,7 @@ function App() {
         <div className="sidebar-footer">
           <button 
             className="btn-minimize"
-            onClick={() => window.postureGuard.minimizeToTray()}
+            onClick={() => window.rhythmDesk.minimizeToTray()}
           >
             Minimize to Tray
           </button>

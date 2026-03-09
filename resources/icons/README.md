@@ -1,4 +1,4 @@
-# PostureGuard Icons
+# RhythmDesk Icons
 
 For Linux packaging, electron-builder requires PNG icons at the following sizes:
 - 16x16

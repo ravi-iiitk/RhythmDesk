@@ -110,11 +110,11 @@ const api: RhythmDeskAPI = {
   },
 };
 
-contextBridge.exposeInMainWorld('postureGuard', api);
+contextBridge.exposeInMainWorld('rhythmDesk', api);
 
 // Type declaration for window object
 declare global {
   interface Window {
-    postureGuard: RhythmDeskAPI;
+    rhythmDesk: RhythmDeskAPI;
   }
 }

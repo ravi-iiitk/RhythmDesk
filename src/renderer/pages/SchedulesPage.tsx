@@ -18,7 +18,7 @@ function SchedulesPage() {
   }, []);
 
   const loadSchedules = async () => {
-    const data = await window.postureGuard.getSchedules();
+    const data = await window.rhythmDesk.getSchedules();
     setSchedules(data);
   };
 
@@ -34,13 +34,13 @@ function SchedulesPage() {
 
   const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this schedule?')) {
-      await window.postureGuard.deleteSchedule(id);
+      await window.rhythmDesk.deleteSchedule(id);
       loadSchedules();
     }
   };
 
   const handleSave = async (schedule: Schedule) => {
-    await window.postureGuard.saveSchedule(schedule);
+    await window.rhythmDesk.saveSchedule(schedule);
     setShowForm(false);
     setEditingSchedule(null);
     loadSchedules();
@@ -52,7 +52,7 @@ function SchedulesPage() {
   };
 
   const handleToggleEnabled = async (schedule: Schedule) => {
-    await window.postureGuard.saveSchedule({
+    await window.rhythmDesk.saveSchedule({
       ...schedule,
       enabled: !schedule.enabled,
     });

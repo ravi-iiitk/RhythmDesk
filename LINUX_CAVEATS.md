@@ -70,7 +70,7 @@ FATAL:setuid_sandbox_host.cc(158)] The SUID sandbox helper binary was found, but
 
 2. **Deb Package**: If you encounter sandbox issues, run with:
    ```bash
-   postureguard --no-sandbox
+   rhythmdesk --no-sandbox
    ```
 
 3. **System-wide Fix**: Configure the sandbox binary (not recommended for security):

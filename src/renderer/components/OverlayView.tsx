@@ -39,11 +39,11 @@ function OverlayView({ tick }: OverlayViewProps) {
   const nextPhaseName = PHASE_DISPLAY_NAMES[tick.nextPhase] || tick.nextPhase;
   const message = PHASE_MESSAGES[tick.currentPhase] || '';
 
-  const handleComplete = () => window.postureGuard.completePhase();
-  const handlePostpone = (minutes: number) => window.postureGuard.postpone(minutes);
-  const handleSkip = () => window.postureGuard.skipPhase();
-  const handleCloseOverlay = () => window.postureGuard.closeOverlay();
-  const handleStopOfficeFocusLock = () => window.postureGuard.stopOfficeFocusLock();
+  const handleComplete = () => window.rhythmDesk.completePhase();
+  const handlePostpone = (minutes: number) => window.rhythmDesk.postpone(minutes);
+  const handleSkip = () => window.rhythmDesk.skipPhase();
+  const handleCloseOverlay = () => window.rhythmDesk.closeOverlay();
+  const handleStopOfficeFocusLock = () => window.rhythmDesk.stopOfficeFocusLock();
 
   // Determine phase type
   const isTransitionOrBreak = [

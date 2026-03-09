@@ -147,9 +147,9 @@
 
 ### Deb Package
 - [ ] **Generate**: `npm run dist:linux` creates .deb in `release/`
-- [ ] **Install**: `sudo dpkg -i postureguard_*.deb` succeeds
+- [ ] **Install**: `sudo dpkg -i rhythmdesk_*.deb` succeeds
 - [ ] **Launch**: App launches from application menu
-- [ ] **Uninstall**: `sudo dpkg -r postureguard` removes cleanly
+- [ ] **Uninstall**: `sudo dpkg -r rhythmdesk` removes cleanly
 
 ### Runtime
 - [ ] **Tray icon**: System tray icon appears

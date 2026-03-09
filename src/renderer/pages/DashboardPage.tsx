@@ -19,20 +19,20 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const [customLabel, setCustomLabel] = useState('');
   const [customDuration, setCustomDuration] = useState(60);
 
-  const handlePause = () => window.postureGuard.pause();
-  const handleResume = () => window.postureGuard.resume();
-  const handlePostpone = (minutes: number) => window.postureGuard.postpone(minutes);
-  const handleSkip = () => window.postureGuard.skipPhase();
+  const handlePause = () => window.rhythmDesk.pause();
+  const handleResume = () => window.rhythmDesk.resume();
+  const handlePostpone = (minutes: number) => window.rhythmDesk.postpone(minutes);
+  const handleSkip = () => window.rhythmDesk.skipPhase();
   
   const handleStartOfficeFocusLock = (minutes: number) => {
     const label = selectedLabel === 'Custom' ? customLabel : selectedLabel;
     if (!label.trim()) return;
-    window.postureGuard.startOfficeFocusLock(label, minutes);
+    window.rhythmDesk.startOfficeFocusLock(label, minutes);
     setShowLockOptions(false);
   };
   
   const handleStopOfficeFocusLock = () => {
-    window.postureGuard.stopOfficeFocusLock();
+    window.rhythmDesk.stopOfficeFocusLock();
   };
 
   if (!tick || tick.currentPhase === 'idle') {

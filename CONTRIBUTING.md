@@ -25,15 +25,15 @@ Thank you for your interest in contributing to RhythmDesk! This document provide
 ### Installing Dependencies
 
 ```bash
-git clone https://github.com/yourusername/postureguard.git
-cd postureguard
+git clone https://github.com/yourusername/rhythmdesk.git
+cd rhythmdesk
 npm install
 ```
 
 ## Project Structure
 
 ```
-postureguard/
+rhythmdesk/
 ├── src/
 │   ├── core/           # Business logic (timer engine, services)
 │   ├── main/           # Electron main process

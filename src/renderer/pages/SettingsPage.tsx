@@ -15,7 +15,7 @@ function SettingsPage() {
   }, []);
 
   const loadSettings = async () => {
-    const config = await window.postureGuard.getConfig();
+    const config = await window.rhythmDesk.getConfig();
     if (config?.generalSettings) {
       setSettings(config.generalSettings);
     }
@@ -27,8 +27,8 @@ function SettingsPage() {
   };
 
   const handleSave = async () => {
-    const config = await window.postureGuard.getConfig();
-    await window.postureGuard.saveConfig({
+    const config = await window.rhythmDesk.getConfig();
+    await window.rhythmDesk.saveConfig({
       ...config,
       generalSettings: settings,
     });
