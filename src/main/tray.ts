@@ -27,7 +27,7 @@ import { Tray, Menu, nativeImage, app } from 'electron';
 import * as path from 'path';
 import { TimerTick, OFFICE_FOCUS_LOCK_DURATIONS, PhaseType } from '../shared/types';
 import { PHASE_DISPLAY_NAMES } from '../shared/constants';
-import { formatDuration } from '../shared/timeUtils';
+import { formatDuration, formatDurationHuman } from '../shared/timeUtils';
 import { showMainWindow, setQuitting } from './windowManager';
 import { getTimerEngine } from '../core/timerEngine';
 import { getOfficeFocusLockService } from '../core/officeFocusLockService';
@@ -274,6 +274,20 @@ function updateTrayTooltip(tick: TimerTick): void {
       tooltip += '\n⏸ PAUSED';
     } else if (tick.isPostponed) {
       tooltip += '\n⏳ POSTPONED';
+    }
+    
+    // Break progress info
+    const bp = tick.breakProgress;
+    if (bp.nextBreakType) {
+      const nextBreakName = bp.nextBreakType === 'short-break' ? 'Short Break' : 'Long Break';
+      const nextBreakIn = formatDurationHuman(bp.nextBreakInMs);
+      tooltip += `\n☕ Next: ${nextBreakName} in ${nextBreakIn}`;
+    }
+    
+    // Show long break separately if both enabled and short break is next
+    if (bp.shortBreakEnabled && bp.longBreakEnabled && bp.nextBreakType === 'short-break') {
+      const longBreakIn = formatDurationHuman(bp.msUntilNextLongBreak);
+      tooltip += `\n🌴 Long Break: ${longBreakIn}`;
     }
     
     if (tick.officeFocusLock.isActive) {

@@ -18,6 +18,8 @@ import {
   PhaseType,
   TimerTick,
   BreakType,
+  BreakProgress,
+  ConfiguredDurations,
   INITIAL_POSTPONE_COUNTS,
 } from '../shared/types';
 import { getOfficeFocusLockService } from './officeFocusLockService';
@@ -579,6 +581,190 @@ export class TimerEngine extends EventEmitter {
   }
 
   /**
+   * Reset the active session completely
+   * Restarts from the beginning without changing schedule configuration
+   * 
+   * Resets:
+   * - Current phase to sitting work
+   * - All phase progress
+   * - Cumulative work time
+   * - Work time toward breaks (lastShortBreakAtWorkTimeMs, lastLongBreakAtWorkTimeMs)
+   * - Postponed state
+   * - Interrupted phase state
+   * - Paused state
+   * 
+   * Does NOT reset:
+   * - Postpone counts today (use resetTodayCounters for that)
+   * - Schedule configuration
+   */
+  resetSession(): void {
+    if (!this.currentSchedule) {
+      logger.warn('TimerEngine', 'Cannot reset session - no active schedule');
+      return;
+    }
+    
+    logger.info('TimerEngine', `Resetting session for schedule: ${this.currentSchedule.name}`);
+    
+    const now = Date.now();
+    const sitDurationMs = minutesToMs(this.currentSchedule.sitMinutes);
+    
+    // Reset all session state
+    this.state.currentPhase = 'sit';
+    this.state.phaseStartedAt = now;
+    this.state.phaseEndsAt = now + sitDurationMs;
+    this.state.phaseRemainingMs = sitDurationMs;
+    this.state.phaseTotalMs = sitDurationMs;
+    
+    // Reset cumulative work time
+    this.state.cumulativeWorkTimeMs = 0;
+    
+    // Reset break tracking - all breaks start fresh
+    this.state.lastShortBreakAtWorkTimeMs = 0;
+    this.state.lastLongBreakAtWorkTimeMs = 0;
+    
+    // Clear interrupted phase
+    this.state.interruptedPhase = null;
+    this.state.interruptedPhaseRemainingMs = 0;
+    
+    // Clear postponed state
+    this.state.isPostponed = false;
+    this.state.postponedUntil = null;
+    this.state.postponedPhase = null;
+    this.state.postponedBreakType = null;
+    
+    // Clear paused state
+    this.state.isPaused = false;
+    this.state.pausedAt = null;
+    this.state.pauseResumeAt = null;
+    
+    // Clear pre-break tracking
+    this.preBreakPhase = null;
+    
+    // Update tick time
+    this.lastTickTime = now;
+    
+    // Save state and emit tick
+    this.saveState();
+    this.emitTick();
+    
+    logger.info('TimerEngine', 'Session reset complete - starting fresh in Sitting Work phase');
+  }
+
+  /**
+   * Reset today's counters without affecting current phase
+   * 
+   * Resets:
+   * - Cumulative work time today
+   * - Postpone counts today
+   * 
+   * Does NOT reset:
+   * - Current phase or phase progress
+   * - Work time toward breaks (those are relative to cumulative work time)
+   */
+  resetTodayCounters(): void {
+    logger.info('TimerEngine', 'Resetting today\'s counters');
+    
+    const today = getTodayDateString();
+    
+    // Reset cumulative work time
+    this.state.cumulativeWorkTimeMs = 0;
+    
+    // Reset break tracking markers to 0 (since cumulative work time is now 0)
+    this.state.lastShortBreakAtWorkTimeMs = 0;
+    this.state.lastLongBreakAtWorkTimeMs = 0;
+    
+    // Reset postpone counts
+    this.state.postponeCountsToday = { ...INITIAL_POSTPONE_COUNTS };
+    this.state.postponeResetDate = today;
+    
+    // Save state and emit tick
+    this.saveState();
+    this.emitTick();
+    
+    logger.info('TimerEngine', 'Today\'s counters reset complete');
+  }
+
+  /**
+   * Calculate break progress information
+   */
+  private calculateBreakProgress(): BreakProgress {
+    const schedule = this.currentSchedule;
+    const workTimeMs = this.state.cumulativeWorkTimeMs;
+    
+    // Short break settings
+    const shortBreakEnabled = schedule?.shortBreak?.enabled ?? schedule?.shortBreakEnabled ?? false;
+    const shortBreakEveryMinutes = schedule?.shortBreak?.everyMinutes ?? schedule?.shortBreakEveryMinutes ?? 60;
+    const shortBreakDurationMinutes = schedule?.shortBreak?.durationMinutes ?? schedule?.shortBreakDurationMinutes ?? 5;
+    const shortBreakThresholdMs = minutesToMs(shortBreakEveryMinutes);
+    
+    // Long break settings
+    const longBreakEnabled = schedule?.longBreak?.enabled ?? schedule?.longBreakEnabled ?? false;
+    const longBreakEveryMinutes = schedule?.longBreak?.everyMinutes ?? schedule?.longBreakEveryMinutes ?? 150;
+    const longBreakDurationMinutes = schedule?.longBreak?.durationMinutes ?? schedule?.longBreakDurationMinutes ?? 15;
+    const longBreakThresholdMs = minutesToMs(longBreakEveryMinutes);
+    
+    // Calculate time since last breaks
+    const workTimeSinceShortBreakMs = workTimeMs - this.state.lastShortBreakAtWorkTimeMs;
+    const workTimeSinceLongBreakMs = workTimeMs - this.state.lastLongBreakAtWorkTimeMs;
+    
+    // Calculate time until next breaks
+    const msUntilNextShortBreak = shortBreakEnabled 
+      ? Math.max(0, shortBreakThresholdMs - workTimeSinceShortBreakMs)
+      : Infinity;
+    const msUntilNextLongBreak = longBreakEnabled
+      ? Math.max(0, longBreakThresholdMs - workTimeSinceLongBreakMs)
+      : Infinity;
+    
+    // Calculate progress (0-1)
+    const shortBreakProgress = shortBreakEnabled && shortBreakThresholdMs > 0
+      ? Math.min(1, workTimeSinceShortBreakMs / shortBreakThresholdMs)
+      : 0;
+    const longBreakProgress = longBreakEnabled && longBreakThresholdMs > 0
+      ? Math.min(1, workTimeSinceLongBreakMs / longBreakThresholdMs)
+      : 0;
+    
+    // Determine which break comes next
+    let nextBreakType: 'short-break' | 'long-break' | null = null;
+    let nextBreakInMs = Infinity;
+    
+    if (shortBreakEnabled && longBreakEnabled) {
+      if (msUntilNextShortBreak <= msUntilNextLongBreak) {
+        nextBreakType = 'short-break';
+        nextBreakInMs = msUntilNextShortBreak;
+      } else {
+        nextBreakType = 'long-break';
+        nextBreakInMs = msUntilNextLongBreak;
+      }
+    } else if (shortBreakEnabled) {
+      nextBreakType = 'short-break';
+      nextBreakInMs = msUntilNextShortBreak;
+    } else if (longBreakEnabled) {
+      nextBreakType = 'long-break';
+      nextBreakInMs = msUntilNextLongBreak;
+    }
+    
+    // Convert Infinity to 0 for disabled breaks
+    return {
+      shortBreakEnabled,
+      shortBreakEveryMinutes,
+      shortBreakDurationMinutes,
+      workTimeSinceShortBreakMs,
+      msUntilNextShortBreak: msUntilNextShortBreak === Infinity ? 0 : msUntilNextShortBreak,
+      shortBreakProgress,
+      
+      longBreakEnabled,
+      longBreakEveryMinutes,
+      longBreakDurationMinutes,
+      workTimeSinceLongBreakMs,
+      msUntilNextLongBreak: msUntilNextLongBreak === Infinity ? 0 : msUntilNextLongBreak,
+      longBreakProgress,
+      
+      nextBreakType,
+      nextBreakInMs: nextBreakInMs === Infinity ? 0 : nextBreakInMs,
+    };
+  }
+
+  /**
    * Emit tick event with current state
    */
   private emitTick(): void {
@@ -600,6 +786,12 @@ export class TimerEngine extends EventEmitter {
     // Get strict mode for current phase
     const isStrictMode = this.getStrictModeForCurrentPhase();
     
+    // Calculate break progress
+    const breakProgress = this.calculateBreakProgress();
+    
+    // Get configured durations
+    const configuredDurations = this.getConfiguredDurations();
+    
     const tick: TimerTick = {
       scheduleId: schedule?.id || null,
       scheduleName: schedule?.name || null,
@@ -616,9 +808,31 @@ export class TimerEngine extends EventEmitter {
       postponeOptions,
       isStrictMode,
       officeFocusLock: officeFocusLockService.getState(),
+      breakProgress,
+      configuredDurations,
     };
 
     this.emit('tick', tick);
+  }
+  
+  /**
+   * Get configured durations from active schedule
+   */
+  private getConfiguredDurations(): ConfiguredDurations {
+    const schedule = this.currentSchedule;
+    
+    return {
+      sitMinutes: schedule?.sitMinutes ?? 12,
+      standMinutes: schedule?.standMinutes ?? 8,
+      sitToStandTransitionSeconds: schedule?.transitions?.sitToStand?.durationSeconds 
+        ?? schedule?.sitToStandTransitionSeconds ?? 60,
+      standToSitTransitionSeconds: schedule?.transitions?.standToSit?.durationSeconds 
+        ?? schedule?.standToSitTransitionSeconds ?? 60,
+      shortBreakDurationMinutes: schedule?.shortBreak?.durationMinutes 
+        ?? schedule?.shortBreakDurationMinutes ?? 5,
+      longBreakDurationMinutes: schedule?.longBreak?.durationMinutes 
+        ?? schedule?.longBreakDurationMinutes ?? 15,
+    };
   }
   
   /**

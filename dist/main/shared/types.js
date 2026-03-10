@@ -45,6 +45,8 @@ exports.IPC_CHANNELS = {
     POSTPONE: 'timer:postpone',
     SKIP_PHASE: 'timer:skipPhase',
     COMPLETE_PHASE: 'timer:completePhase',
+    RESET_SESSION: 'timer:resetSession',
+    RESET_TODAY_COUNTERS: 'timer:resetTodayCounters',
     // Office Focus Lock controls
     START_OFFICE_FOCUS_LOCK: 'officeFocusLock:start',
     STOP_OFFICE_FOCUS_LOCK: 'officeFocusLock:stop',

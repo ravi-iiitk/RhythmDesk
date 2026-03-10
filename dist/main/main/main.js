@@ -115,29 +115,31 @@ function initialize() {
         // Initialize Office Focus Lock service and handle its events
         const officeFocusLockService = (0, officeFocusLockService_1.getOfficeFocusLockService)();
         officeFocusLockService.on('started', () => {
-            // When Office Focus Lock starts, show overlay if in work phase
+            // When Office Focus Lock starts, use centralized policy to determine overlay
             const currentPhase = timerEngine.getState().currentPhase;
-            if ((0, overlayPolicy_1.isWorkPhase)(currentPhase)) {
-                const schedule = timerEngine.getCurrentSchedule();
-                const strictMode = schedule?.strictModeEnabled || false;
-                (0, windowManager_1.showOverlay)(strictMode);
+            const policy = getOverlayPolicyForState(currentPhase);
+            if (policy.showOverlay) {
+                (0, windowManager_1.showOverlay)(policy.strictMode);
                 (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.SHOW_OVERLAY, { phase: currentPhase });
             }
             (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, officeFocusLockService.getState());
         });
         officeFocusLockService.on('stopped', () => {
-            // When Office Focus Lock stops, close overlay if in work phase
+            // When Office Focus Lock stops, use centralized policy to determine if overlay should close
             const currentPhase = timerEngine.getState().currentPhase;
-            if ((0, overlayPolicy_1.isWorkPhase)(currentPhase)) {
+            const policy = getOverlayPolicyForState(currentPhase);
+            // Close overlay if policy says no overlay needed (work phase without focus lock)
+            if (!policy.showOverlay) {
                 (0, windowManager_1.closeOverlay)();
                 (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.HIDE_OVERLAY, {});
             }
             (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, officeFocusLockService.getState());
         });
         officeFocusLockService.on('expired', () => {
-            // Office Focus Lock timer expired - same as stopped
+            // Office Focus Lock timer expired - same logic as stopped
             const currentPhase = timerEngine.getState().currentPhase;
-            if ((0, overlayPolicy_1.isWorkPhase)(currentPhase)) {
+            const policy = getOverlayPolicyForState(currentPhase);
+            if (!policy.showOverlay) {
                 (0, windowManager_1.closeOverlay)();
                 (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.HIDE_OVERLAY, {});
             }

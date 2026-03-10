@@ -19,7 +19,7 @@ import { getOfficeFocusLockService } from '../core/officeFocusLockService';
 import { IPC_CHANNELS, TimerTick, PhaseType } from '../shared/types';
 import configService from '../core/configService';
 import { createDefaultSchedules } from './defaultSchedules';
-import { getOverlayPolicy, OverlayPolicyInput, isWorkPhase } from '../core/overlayPolicy';
+import { getOverlayPolicy, OverlayPolicyInput } from '../core/overlayPolicy';
 
 /**
  * Get overlay policy for current state
@@ -130,21 +130,24 @@ function initialize(): void {
     const officeFocusLockService = getOfficeFocusLockService();
     
     officeFocusLockService.on('started', () => {
-      // When Office Focus Lock starts, show overlay if in work phase
+      // When Office Focus Lock starts, use centralized policy to determine overlay
       const currentPhase = timerEngine.getState().currentPhase;
-      if (isWorkPhase(currentPhase)) {
-        const schedule = timerEngine.getCurrentSchedule();
-        const strictMode = schedule?.strictModeEnabled || false;
-        showOverlay(strictMode);
+      const policy = getOverlayPolicyForState(currentPhase);
+      
+      if (policy.showOverlay) {
+        showOverlay(policy.strictMode);
         sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: currentPhase });
       }
       sendToAll(IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, officeFocusLockService.getState());
     });
 
     officeFocusLockService.on('stopped', () => {
-      // When Office Focus Lock stops, close overlay if in work phase
+      // When Office Focus Lock stops, use centralized policy to determine if overlay should close
       const currentPhase = timerEngine.getState().currentPhase;
-      if (isWorkPhase(currentPhase)) {
+      const policy = getOverlayPolicyForState(currentPhase);
+      
+      // Close overlay if policy says no overlay needed (work phase without focus lock)
+      if (!policy.showOverlay) {
         closeOverlay();
         sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
       }
@@ -152,9 +155,11 @@ function initialize(): void {
     });
 
     officeFocusLockService.on('expired', () => {
-      // Office Focus Lock timer expired - same as stopped
+      // Office Focus Lock timer expired - same logic as stopped
       const currentPhase = timerEngine.getState().currentPhase;
-      if (isWorkPhase(currentPhase)) {
+      const policy = getOverlayPolicyForState(currentPhase);
+      
+      if (!policy.showOverlay) {
         closeOverlay();
         sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
       }

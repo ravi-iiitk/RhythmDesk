@@ -23,6 +23,8 @@ export interface RhythmDeskAPI {
   postpone: (minutes: number) => Promise<boolean>;
   skipPhase: () => Promise<void>;
   completePhase: () => Promise<void>;
+  resetSession: () => Promise<void>;
+  resetTodayCounters: () => Promise<void>;
   
   // Office Focus Lock controls
   startOfficeFocusLock: (label: string, durationMinutes: number) => Promise<any>;
@@ -60,6 +62,8 @@ const api: RhythmDeskAPI = {
   postpone: (minutes) => ipcRenderer.invoke(IPC_CHANNELS.POSTPONE, minutes),
   skipPhase: () => ipcRenderer.invoke(IPC_CHANNELS.SKIP_PHASE),
   completePhase: () => ipcRenderer.invoke(IPC_CHANNELS.COMPLETE_PHASE),
+  resetSession: () => ipcRenderer.invoke(IPC_CHANNELS.RESET_SESSION),
+  resetTodayCounters: () => ipcRenderer.invoke(IPC_CHANNELS.RESET_TODAY_COUNTERS),
 
   // Office Focus Lock controls
   startOfficeFocusLock: (label, durationMinutes) => ipcRenderer.invoke(IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes),

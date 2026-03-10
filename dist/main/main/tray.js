@@ -268,6 +268,18 @@ function updateTrayTooltip(tick) {
         else if (tick.isPostponed) {
             tooltip += '\n⏳ POSTPONED';
         }
+        // Break progress info
+        const bp = tick.breakProgress;
+        if (bp.nextBreakType) {
+            const nextBreakName = bp.nextBreakType === 'short-break' ? 'Short Break' : 'Long Break';
+            const nextBreakIn = (0, timeUtils_1.formatDurationHuman)(bp.nextBreakInMs);
+            tooltip += `\n☕ Next: ${nextBreakName} in ${nextBreakIn}`;
+        }
+        // Show long break separately if both enabled and short break is next
+        if (bp.shortBreakEnabled && bp.longBreakEnabled && bp.nextBreakType === 'short-break') {
+            const longBreakIn = (0, timeUtils_1.formatDurationHuman)(bp.msUntilNextLongBreak);
+            tooltip += `\n🌴 Long Break: ${longBreakIn}`;
+        }
         if (tick.officeFocusLock.isActive) {
             const lockRemaining = (0, timeUtils_1.formatDuration)(tick.officeFocusLock.remainingMs);
             tooltip += `\n🔒 ${tick.officeFocusLock.label}: ${lockRemaining}`;

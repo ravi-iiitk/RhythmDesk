@@ -187,6 +187,39 @@ export interface OfficeFocusLockState {
 export const OFFICE_FOCUS_LABELS = ['EPAM', 'Resy'] as const;
 export type OfficeFocusLabel = typeof OFFICE_FOCUS_LABELS[number] | string;
 
+// Break progress information
+export interface BreakProgress {
+  // Short break progress
+  shortBreakEnabled: boolean;
+  shortBreakEveryMinutes: number;
+  shortBreakDurationMinutes: number;
+  workTimeSinceShortBreakMs: number;     // time worked since last short break
+  msUntilNextShortBreak: number;         // ms until next short break triggers
+  shortBreakProgress: number;            // 0-1 progress toward next short break
+  
+  // Long break progress
+  longBreakEnabled: boolean;
+  longBreakEveryMinutes: number;
+  longBreakDurationMinutes: number;
+  workTimeSinceLongBreakMs: number;      // time worked since last long break
+  msUntilNextLongBreak: number;          // ms until next long break triggers
+  longBreakProgress: number;             // 0-1 progress toward next long break
+  
+  // Next break info (which comes first)
+  nextBreakType: 'short-break' | 'long-break' | null;
+  nextBreakInMs: number;                 // ms until next break (whichever is sooner)
+}
+
+// Configured phase durations from active schedule
+export interface ConfiguredDurations {
+  sitMinutes: number;
+  standMinutes: number;
+  sitToStandTransitionSeconds: number;
+  standToSitTransitionSeconds: number;
+  shortBreakDurationMinutes: number;
+  longBreakDurationMinutes: number;
+}
+
 // Timer tick event sent to renderer
 export interface TimerTick {
   scheduleId: string | null;
@@ -205,6 +238,10 @@ export interface TimerTick {
   isStrictMode: boolean;
   // Office Focus Lock state
   officeFocusLock: OfficeFocusLockState;
+  // Break progress information
+  breakProgress: BreakProgress;
+  // Configured durations from active schedule
+  configuredDurations: ConfiguredDurations;
 }
 
 // IPC channel names
@@ -232,6 +269,8 @@ export const IPC_CHANNELS = {
   POSTPONE: 'timer:postpone',
   SKIP_PHASE: 'timer:skipPhase',
   COMPLETE_PHASE: 'timer:completePhase',
+  RESET_SESSION: 'timer:resetSession',
+  RESET_TODAY_COUNTERS: 'timer:resetTodayCounters',
   
   // Office Focus Lock controls
   START_OFFICE_FOCUS_LOCK: 'officeFocusLock:start',

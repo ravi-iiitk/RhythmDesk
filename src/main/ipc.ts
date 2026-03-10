@@ -67,6 +67,14 @@ export function registerIpcHandlers(): void {
     timerEngine.completePhase();
   });
 
+  ipcMain.handle(IPC_CHANNELS.RESET_SESSION, () => {
+    timerEngine.resetSession();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.RESET_TODAY_COUNTERS, () => {
+    timerEngine.resetTodayCounters();
+  });
+
   // Window control handlers
   ipcMain.handle(IPC_CHANNELS.OPEN_SETTINGS, () => {
     showMainWindow();

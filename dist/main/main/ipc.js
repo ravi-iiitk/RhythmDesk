@@ -58,6 +58,12 @@ function registerIpcHandlers() {
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.COMPLETE_PHASE, () => {
         timerEngine.completePhase();
     });
+    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.RESET_SESSION, () => {
+        timerEngine.resetSession();
+    });
+    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.RESET_TODAY_COUNTERS, () => {
+        timerEngine.resetTodayCounters();
+    });
     // Window control handlers
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.OPEN_SETTINGS, () => {
         (0, windowManager_1.showMainWindow)();

@@ -21,6 +21,8 @@ const api = {
     postpone: (minutes) => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.POSTPONE, minutes),
     skipPhase: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.SKIP_PHASE),
     completePhase: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.COMPLETE_PHASE),
+    resetSession: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.RESET_SESSION),
+    resetTodayCounters: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.RESET_TODAY_COUNTERS),
     // Office Focus Lock controls
     startOfficeFocusLock: (label, durationMinutes) => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes),
     stopOfficeFocusLock: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.STOP_OFFICE_FOCUS_LOCK),
