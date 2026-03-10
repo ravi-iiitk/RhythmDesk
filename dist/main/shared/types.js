@@ -97,6 +97,20 @@ exports.DEFAULT_SCHEDULE = {
     },
     shortBreak: { ...exports.DEFAULT_SHORT_BREAK_CONFIG },
     longBreak: { ...exports.DEFAULT_LONG_BREAK_CONFIG },
+    // Legacy fields - required for ScheduleForm compatibility
+    // These are synced to per-break configs on save
+    sitToStandTransitionSeconds: exports.DEFAULT_TRANSITION_CONFIG.durationSeconds,
+    standToSitTransitionSeconds: exports.DEFAULT_TRANSITION_CONFIG.durationSeconds,
+    shortBreakEnabled: exports.DEFAULT_SHORT_BREAK_CONFIG.enabled,
+    shortBreakEveryMinutes: exports.DEFAULT_SHORT_BREAK_CONFIG.everyMinutes,
+    shortBreakDurationMinutes: exports.DEFAULT_SHORT_BREAK_CONFIG.durationMinutes,
+    longBreakEnabled: exports.DEFAULT_LONG_BREAK_CONFIG.enabled,
+    longBreakEveryMinutes: exports.DEFAULT_LONG_BREAK_CONFIG.everyMinutes,
+    longBreakDurationMinutes: exports.DEFAULT_LONG_BREAK_CONFIG.durationMinutes,
+    strictModeEnabled: true,
+    allowPostpone: true,
+    postponeOptionsMinutes: [2, 5, 10],
+    maxPostponesPerDay: 4,
 };
 // Initial postpone counts
 exports.INITIAL_POSTPONE_COUNTS = {

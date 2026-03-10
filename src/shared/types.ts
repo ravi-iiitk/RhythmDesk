@@ -290,6 +290,20 @@ export const DEFAULT_SCHEDULE: Omit<Schedule, 'id' | 'name' | 'createdAt'> = {
   },
   shortBreak: { ...DEFAULT_SHORT_BREAK_CONFIG },
   longBreak: { ...DEFAULT_LONG_BREAK_CONFIG },
+  // Legacy fields - required for ScheduleForm compatibility
+  // These are synced to per-break configs on save
+  sitToStandTransitionSeconds: DEFAULT_TRANSITION_CONFIG.durationSeconds,
+  standToSitTransitionSeconds: DEFAULT_TRANSITION_CONFIG.durationSeconds,
+  shortBreakEnabled: DEFAULT_SHORT_BREAK_CONFIG.enabled,
+  shortBreakEveryMinutes: DEFAULT_SHORT_BREAK_CONFIG.everyMinutes,
+  shortBreakDurationMinutes: DEFAULT_SHORT_BREAK_CONFIG.durationMinutes,
+  longBreakEnabled: DEFAULT_LONG_BREAK_CONFIG.enabled,
+  longBreakEveryMinutes: DEFAULT_LONG_BREAK_CONFIG.everyMinutes,
+  longBreakDurationMinutes: DEFAULT_LONG_BREAK_CONFIG.durationMinutes,
+  strictModeEnabled: true,
+  allowPostpone: true,
+  postponeOptionsMinutes: [2, 5, 10],
+  maxPostponesPerDay: 4,
 };
 
 // Initial postpone counts

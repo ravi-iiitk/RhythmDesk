@@ -25,12 +25,57 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
   useEffect(() => {
     if (schedule) {
       const { id, createdAt, ...rest } = schedule;
-      setFormData(rest);
+      // Ensure ALL legacy fields have safe defaults when loading existing schedule
+      // This prevents crashes when editing schedules from before migration
+      setFormData({
+        ...rest,
+        // Transition durations
+        sitToStandTransitionSeconds: rest.sitToStandTransitionSeconds ?? 60,
+        standToSitTransitionSeconds: rest.standToSitTransitionSeconds ?? 60,
+        // Short break fields
+        shortBreakEnabled: rest.shortBreakEnabled ?? true,
+        shortBreakEveryMinutes: rest.shortBreakEveryMinutes ?? 60,
+        shortBreakDurationMinutes: rest.shortBreakDurationMinutes ?? 5,
+        // Long break fields
+        longBreakEnabled: rest.longBreakEnabled ?? true,
+        longBreakEveryMinutes: rest.longBreakEveryMinutes ?? 150,
+        longBreakDurationMinutes: rest.longBreakDurationMinutes ?? 15,
+        // Strict mode
+        strictModeEnabled: rest.strictModeEnabled ?? true,
+        // Postpone fields
+        allowPostpone: rest.allowPostpone ?? true,
+        postponeOptionsMinutes: rest.postponeOptionsMinutes ?? [2, 5, 10],
+        maxPostponesPerDay: rest.maxPostponesPerDay ?? 3,
+      });
     }
   }, [schedule]);
 
   const handleChange = (field: keyof typeof formData, value: any) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    setFormData((prev) => {
+      const updated = { ...prev, [field]: value };
+      
+      // When enabling features, ensure their related fields have safe defaults
+      if (field === 'shortBreakEnabled' && value === true) {
+        if (!updated.shortBreakEveryMinutes) updated.shortBreakEveryMinutes = 60;
+        if (!updated.shortBreakDurationMinutes) updated.shortBreakDurationMinutes = 5;
+      }
+      
+      if (field === 'longBreakEnabled' && value === true) {
+        if (!updated.longBreakEveryMinutes) updated.longBreakEveryMinutes = 150;
+        if (!updated.longBreakDurationMinutes) updated.longBreakDurationMinutes = 15;
+      }
+      
+      if (field === 'allowPostpone' && value === true) {
+        if (!updated.postponeOptionsMinutes || updated.postponeOptionsMinutes.length === 0) {
+          updated.postponeOptionsMinutes = [2, 5, 10];
+        }
+        if (updated.maxPostponesPerDay === undefined || updated.maxPostponesPerDay === null) {
+          updated.maxPostponesPerDay = 3;
+        }
+      }
+      
+      return updated;
+    });
   };
 
   const handleDayToggle = (day: DayOfWeek) => {
@@ -155,8 +200,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
           <input
             type="number"
             className="form-input"
-            value={formData.sitToStandTransitionSeconds}
-            onChange={(e) => handleChange('sitToStandTransitionSeconds', parseInt(e.target.value, 10))}
+            value={formData.sitToStandTransitionSeconds ?? 60}
+            onChange={(e) => handleChange('sitToStandTransitionSeconds', parseInt(e.target.value, 10) || 60)}
             min="10"
             required
           />
@@ -166,8 +211,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
           <input
             type="number"
             className="form-input"
-            value={formData.standToSitTransitionSeconds}
-            onChange={(e) => handleChange('standToSitTransitionSeconds', parseInt(e.target.value, 10))}
+            value={formData.standToSitTransitionSeconds ?? 60}
+            onChange={(e) => handleChange('standToSitTransitionSeconds', parseInt(e.target.value, 10) || 60)}
             min="10"
             required
           />
@@ -179,7 +224,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         <label className="form-checkbox">
           <input
             type="checkbox"
-            checked={formData.shortBreakEnabled}
+            checked={formData.shortBreakEnabled ?? true}
             onChange={(e) => handleChange('shortBreakEnabled', e.target.checked)}
           />
           Enable Short Breaks
@@ -192,8 +237,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
             <input
               type="number"
               className="form-input"
-              value={formData.shortBreakEveryMinutes}
-              onChange={(e) => handleChange('shortBreakEveryMinutes', parseInt(e.target.value, 10))}
+              value={formData.shortBreakEveryMinutes ?? 60}
+              onChange={(e) => handleChange('shortBreakEveryMinutes', parseInt(e.target.value, 10) || 60)}
               min="1"
             />
           </div>
@@ -202,8 +247,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
             <input
               type="number"
               className="form-input"
-              value={formData.shortBreakDurationMinutes}
-              onChange={(e) => handleChange('shortBreakDurationMinutes', parseInt(e.target.value, 10))}
+              value={formData.shortBreakDurationMinutes ?? 5}
+              onChange={(e) => handleChange('shortBreakDurationMinutes', parseInt(e.target.value, 10) || 5)}
               min="1"
             />
           </div>
@@ -215,7 +260,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         <label className="form-checkbox">
           <input
             type="checkbox"
-            checked={formData.longBreakEnabled}
+            checked={formData.longBreakEnabled ?? true}
             onChange={(e) => handleChange('longBreakEnabled', e.target.checked)}
           />
           Enable Long Breaks
@@ -228,8 +273,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
             <input
               type="number"
               className="form-input"
-              value={formData.longBreakEveryMinutes}
-              onChange={(e) => handleChange('longBreakEveryMinutes', parseInt(e.target.value, 10))}
+              value={formData.longBreakEveryMinutes ?? 150}
+              onChange={(e) => handleChange('longBreakEveryMinutes', parseInt(e.target.value, 10) || 150)}
               min="1"
             />
           </div>
@@ -238,8 +283,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
             <input
               type="number"
               className="form-input"
-              value={formData.longBreakDurationMinutes}
-              onChange={(e) => handleChange('longBreakDurationMinutes', parseInt(e.target.value, 10))}
+              value={formData.longBreakDurationMinutes ?? 15}
+              onChange={(e) => handleChange('longBreakDurationMinutes', parseInt(e.target.value, 10) || 15)}
               min="1"
             />
           </div>
@@ -251,7 +296,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         <label className="form-checkbox">
           <input
             type="checkbox"
-            checked={formData.strictModeEnabled}
+            checked={formData.strictModeEnabled ?? true}
             onChange={(e) => handleChange('strictModeEnabled', e.target.checked)}
           />
           Enable Strict Mode
@@ -266,7 +311,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         <label className="form-checkbox">
           <input
             type="checkbox"
-            checked={formData.allowPostpone}
+            checked={formData.allowPostpone ?? true}
             onChange={(e) => handleChange('allowPostpone', e.target.checked)}
           />
           Allow Postpone
@@ -279,7 +324,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
             <input
               type="text"
               className="form-input"
-              value={formData.postponeOptionsMinutes.join(', ')}
+              value={(formData.postponeOptionsMinutes ?? [2, 5, 10]).join(', ')}
               onChange={(e) => handlePostponeOptionsChange(e.target.value)}
               placeholder="2, 5, 10"
             />
@@ -289,7 +334,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
             <input
               type="number"
               className="form-input"
-              value={formData.maxPostponesPerDay}
+              value={formData.maxPostponesPerDay ?? 3}
               onChange={(e) => handleChange('maxPostponesPerDay', parseInt(e.target.value, 10))}
               min="0"
             />
