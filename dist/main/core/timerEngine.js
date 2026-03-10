@@ -39,7 +39,7 @@ class TimerEngine extends events_1.EventEmitter {
         // Track the phase we were in before a break interrupted
         this.preBreakPhase = null;
         this.state = configService_1.default.getSessionState();
-        this.validateAndResetPostponeCount();
+        this.validateAndResetDailyCounters();
         this.recoverStateFromTimestamps();
         this.setupPowerMonitor();
     }
@@ -105,14 +105,25 @@ class TimerEngine extends events_1.EventEmitter {
         }
     }
     /**
-     * Reset postpone counts if it's a new day
+     * Reset daily counters (postpones and break counts) if it's a new day
      */
-    validateAndResetPostponeCount() {
+    validateAndResetDailyCounters() {
         const today = (0, timeUtils_1.getTodayDateString)();
+        let changed = false;
+        // Reset postpone counts
         if (this.state.postponeResetDate !== today) {
-            // Reset all per-break-type counters
             this.state.postponeCountsToday = { ...types_1.INITIAL_POSTPONE_COUNTS };
             this.state.postponeResetDate = today;
+            changed = true;
+        }
+        // Reset break counts
+        if ((this.state.breakCountResetDate ?? '') !== today) {
+            this.state.shortBreakCountToday = 0;
+            this.state.longBreakCountToday = 0;
+            this.state.breakCountResetDate = today;
+            changed = true;
+        }
+        if (changed) {
             this.saveState();
         }
     }
@@ -163,7 +174,7 @@ class TimerEngine extends events_1.EventEmitter {
         }
         // Apply simulate mode speed multiplier
         const deltaMs = this.getEffectiveDelta(realDeltaMs);
-        this.validateAndResetPostponeCount();
+        this.validateAndResetDailyCounters();
         // Check for schedule changes
         this.checkScheduleChange();
         if (!this.currentSchedule) {
@@ -282,6 +293,14 @@ class TimerEngine extends events_1.EventEmitter {
     triggerBreak(breakType) {
         // Store current phase to resume after break
         this.preBreakPhase = this.state.currentPhase;
+        // Increment break count
+        if (breakType === 'short-break') {
+            this.state.shortBreakCountToday = (this.state.shortBreakCountToday ?? 0) + 1;
+        }
+        else {
+            this.state.longBreakCountToday = (this.state.longBreakCountToday ?? 0) + 1;
+        }
+        this.stateChanged = true;
         this.emit('breakDue', breakType);
         this.startPhase(breakType);
     }
@@ -672,6 +691,8 @@ class TimerEngine extends events_1.EventEmitter {
             longBreakProgress,
             nextBreakType,
             nextBreakInMs: nextBreakInMs === Infinity ? 0 : nextBreakInMs,
+            shortBreakCountToday: this.state.shortBreakCountToday ?? 0,
+            longBreakCountToday: this.state.longBreakCountToday ?? 0,
         };
     }
     /**

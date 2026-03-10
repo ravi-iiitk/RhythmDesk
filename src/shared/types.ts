@@ -131,6 +131,11 @@ export interface SessionState {
   lastShortBreakAtWorkTimeMs: number;
   lastLongBreakAtWorkTimeMs: number;
   
+  // Break counts for today
+  shortBreakCountToday: number;
+  longBreakCountToday: number;
+  breakCountResetDate: string; // YYYY-MM-DD format
+  
   // Interrupted phase tracking (for short break resume)
   interruptedPhase: PhaseType | null;
   interruptedPhaseRemainingMs: number;
@@ -208,6 +213,10 @@ export interface BreakProgress {
   // Next break info (which comes first)
   nextBreakType: 'short-break' | 'long-break' | null;
   nextBreakInMs: number;                 // ms until next break (whichever is sooner)
+  
+  // Break counts for today
+  shortBreakCountToday: number;          // number of short breaks taken today
+  longBreakCountToday: number;           // number of long breaks taken today
 }
 
 // Configured phase durations from active schedule
@@ -364,6 +373,9 @@ export const INITIAL_SESSION_STATE: SessionState = {
   cumulativeWorkTimeMs: 0,
   lastShortBreakAtWorkTimeMs: 0,
   lastLongBreakAtWorkTimeMs: 0,
+  shortBreakCountToday: 0,
+  longBreakCountToday: 0,
+  breakCountResetDate: new Date().toISOString().split('T')[0],
   interruptedPhase: null,
   interruptedPhaseRemainingMs: 0,
   postponeCountsToday: { ...INITIAL_POSTPONE_COUNTS },
