@@ -19,6 +19,25 @@ export type PhaseType =
 // Break/transition types for per-break configuration
 export type BreakType = 'sitToStandTransition' | 'standToSitTransition' | 'shortBreak' | 'longBreak';
 
+// Schedule mode: rule-based (existing) or flow-based (new)
+export type ScheduleMode = 'rule-based' | 'flow-based';
+
+// Flow step types (subset of PhaseType, excluding idle and long-break which remains rule-based)
+export type FlowStepType = 
+  | 'sit'
+  | 'stand'
+  | 'sit-to-stand-transition'
+  | 'stand-to-sit-transition'
+  | 'short-break';
+
+// A single step in a flow-based schedule
+export interface FlowStep {
+  id: string;
+  type: FlowStepType;
+  durationSeconds: number;
+  label?: string; // Optional custom label for this step
+}
+
 // Timer engine events
 export enum TimerEvent {
   PHASE_COMPLETED = 'phase:completed',
@@ -63,7 +82,19 @@ export interface Schedule {
   endTime: string;   // HH:MM format, can be next day if < startTime
   priority: number;  // Higher = more important (tiebreaker if schedules overlap)
   
-  // Work phase durations
+  // Schedule mode: 'rule-based' (default/legacy) or 'flow-based' (new)
+  mode?: ScheduleMode;
+  
+  // Flow-based mode: ordered list of steps to cycle through
+  // Only used when mode === 'flow-based'
+  flowSteps?: FlowStep[];
+  
+  // Cumulative work time settings (for long break triggers)
+  // Controls whether these phases count toward cumulative work time
+  transitionsCountAsCumulativeWork?: boolean;  // default: true
+  shortBreaksCountAsCumulativeWork?: boolean;  // default: true
+  
+  // Work phase durations (used in rule-based mode)
   sitMinutes: number;
   standMinutes: number;
   
@@ -123,6 +154,9 @@ export interface SessionState {
   phaseEndsAt: number;           // timestamp when current phase should end
   phaseRemainingMs: number;      // remaining time in current phase (derived from phaseEndsAt)
   phaseTotalMs: number;          // total duration of current phase
+  
+  // Flow-based mode: current step index in flowSteps array
+  currentFlowStepIndex?: number;
   
   // Cumulative active work time (sit + stand only, not transitions/breaks)
   cumulativeWorkTimeMs: number;
@@ -234,10 +268,14 @@ export interface ConfiguredDurations {
 export interface TimerTick {
   scheduleId: string | null;
   scheduleName: string | null;
+  scheduleMode: ScheduleMode | null;
   currentPhase: PhaseType;
   phaseRemainingMs: number;
   phaseTotalMs: number;
   nextPhase: PhaseType;
+  nextPhaseDurationMs: number;
+  thenPhase: PhaseType;
+  thenPhaseDurationMs: number;
   cumulativeWorkTimeMs: number;
   isPaused: boolean;
   isPostponed: boolean;

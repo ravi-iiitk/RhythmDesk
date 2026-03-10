@@ -3,11 +3,11 @@
  * Core business logic for tracking work phases, breaks, and transitions
  * 
  * IMPORTANT RULES:
- * - Active work time = sit + stand phases ONLY
- * - Transitions, short breaks, long breaks do NOT count as work time
- * - Short/long breaks trigger based on cumulative work time thresholds
+ * - Cumulative work time = sit + stand + transitions + short breaks
+ * - Only long breaks reset cumulative work time
+ * - Long breaks trigger based on cumulative work time threshold
  * - Long break has highest priority, then short break, then transition
- * - Paused/postponed time does NOT count toward work time
+ * - Paused/postponed time does NOT count toward cumulative time
  */
 
 import { EventEmitter } from 'events';
@@ -33,6 +33,12 @@ import configService from './configService';
 import { resolveActiveSchedule } from './scheduleResolver';
 import { phaseToBreakType, getMaxPostponesForBreakType } from './overlayPolicy';
 import logger from './logger';
+import { 
+  isFlowBasedSchedule, 
+  getNextFlowStepIndex, 
+  getFlowStepDurationMs,
+  getFlowStepAtOffset,
+} from './flowUtils';
 
 const TIME_JUMP_THRESHOLD_MS = 5000; // 5 seconds - indicates sleep/wake or time jump
 const STATE_SAVE_DEBOUNCE_MS = 5000; // Save state every 5 seconds max
@@ -245,8 +251,9 @@ export class TimerEngine extends EventEmitter {
     // Update phase remaining time
     this.state.phaseRemainingMs -= deltaMs;
 
-    // Track cumulative work time (only for sit/stand phases)
-    if (this.isWorkPhase(this.state.currentPhase)) {
+    // Track cumulative work time for long break triggers
+    // Includes: sit, stand, transitions, short breaks (all count toward long break threshold)
+    if (this.countsToCumulativeWorkTime(this.state.currentPhase)) {
       this.state.cumulativeWorkTimeMs += deltaMs;
     }
 
@@ -280,7 +287,16 @@ export class TimerEngine extends EventEmitter {
         this.state.cumulativeWorkTimeMs = 0;
         this.state.lastShortBreakAtWorkTimeMs = 0;
         this.state.lastLongBreakAtWorkTimeMs = 0;
-        this.startPhase('sit'); // Always start with sitting
+        
+        // Initialize flow step index for flow-based schedules
+        if (isFlowBasedSchedule(activeSchedule)) {
+          this.state.currentFlowStepIndex = 0;
+          const firstStep = activeSchedule.flowSteps![0];
+          this.startPhase(firstStep.type);
+        } else {
+          this.state.currentFlowStepIndex = undefined;
+          this.startPhase('sit'); // Rule-based: always start with sitting
+        }
       } else {
         this.setIdleState();
       }
@@ -297,6 +313,8 @@ export class TimerEngine extends EventEmitter {
    * Check if a break should be triggered based on cumulative work time
    * Priority: long break > short break
    * RULE: Only trigger breaks during sit/stand phases, never during transitions
+   * NOTE: In flow-based mode, only long breaks are triggered as interrupts
+   *       (short breaks are part of the configured flow)
    */
   private checkBreakTriggers(): void {
     if (!this.currentSchedule) return;
@@ -305,8 +323,9 @@ export class TimerEngine extends EventEmitter {
 
     const workTimeMs = this.state.cumulativeWorkTimeMs;
     const schedule = this.currentSchedule;
+    const isFlowMode = isFlowBasedSchedule(schedule);
 
-    // Check long break first (highest priority)
+    // Check long break first (highest priority) - works in both modes
     const longBreakEnabled = schedule.longBreak?.enabled ?? schedule.longBreakEnabled ?? false;
     if (longBreakEnabled) {
       const longBreakEvery = schedule.longBreak?.everyMinutes ?? schedule.longBreakEveryMinutes ?? 150;
@@ -319,16 +338,19 @@ export class TimerEngine extends EventEmitter {
       }
     }
 
-    // Check short break
-    const shortBreakEnabled = schedule.shortBreak?.enabled ?? schedule.shortBreakEnabled ?? false;
-    if (shortBreakEnabled) {
-      const shortBreakEvery = schedule.shortBreak?.everyMinutes ?? schedule.shortBreakEveryMinutes ?? 60;
-      const shortBreakThreshold = minutesToMs(shortBreakEvery);
-      const timeSinceLastShortBreak = workTimeMs - this.state.lastShortBreakAtWorkTimeMs;
-      
-      if (timeSinceLastShortBreak >= shortBreakThreshold) {
-        this.triggerBreak('short-break');
-        return;
+    // Check short break - only in rule-based mode
+    // In flow-based mode, short breaks are part of the configured flow
+    if (!isFlowMode) {
+      const shortBreakEnabled = schedule.shortBreak?.enabled ?? schedule.shortBreakEnabled ?? false;
+      if (shortBreakEnabled) {
+        const shortBreakEvery = schedule.shortBreak?.everyMinutes ?? schedule.shortBreakEveryMinutes ?? 60;
+        const shortBreakThreshold = minutesToMs(shortBreakEvery);
+        const timeSinceLastShortBreak = workTimeMs - this.state.lastShortBreakAtWorkTimeMs;
+        
+        if (timeSinceLastShortBreak >= shortBreakThreshold) {
+          this.triggerBreak('short-break');
+          return;
+        }
       }
     }
   }
@@ -358,6 +380,55 @@ export class TimerEngine extends EventEmitter {
    */
   private advancePhase(): void {
     const prevPhase = this.state.currentPhase;
+    
+    // Handle flow-based mode
+    if (isFlowBasedSchedule(this.currentSchedule)) {
+      this.advanceFlowBasedPhase(prevPhase);
+      return;
+    }
+    
+    // Rule-based mode (existing behavior)
+    this.advanceRuleBasedPhase(prevPhase);
+  }
+  
+  /**
+   * Advance phase in flow-based mode
+   */
+  private advanceFlowBasedPhase(prevPhase: PhaseType): void {
+    const flowSteps = this.currentSchedule?.flowSteps;
+    if (!flowSteps || flowSteps.length === 0) {
+      this.advanceRuleBasedPhase(prevPhase);
+      return;
+    }
+    
+    // Handle long break completion (long break is still rule-based interrupt)
+    if (prevPhase === 'long-break') {
+      this.state.lastLongBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
+      // After long break, restart flow from first step
+      this.state.currentFlowStepIndex = 0;
+      const firstStep = flowSteps[0];
+      this.startPhase(firstStep.type);
+      return;
+    }
+    
+    // Track short break completion for cumulative time tracking
+    if (prevPhase === 'short-break') {
+      this.state.lastShortBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
+    }
+    
+    // Advance to next step in flow
+    const currentIndex = this.state.currentFlowStepIndex ?? 0;
+    const nextIndex = getNextFlowStepIndex(currentIndex, flowSteps);
+    this.state.currentFlowStepIndex = nextIndex;
+    
+    const nextStep = flowSteps[nextIndex];
+    this.startPhase(nextStep.type);
+  }
+  
+  /**
+   * Advance phase in rule-based mode (existing behavior)
+   */
+  private advanceRuleBasedPhase(prevPhase: PhaseType): void {
     let nextPhase: PhaseType;
 
     switch (prevPhase) {
@@ -428,6 +499,17 @@ export class TimerEngine extends EventEmitter {
     if (!this.currentSchedule) return 0;
     const schedule = this.currentSchedule;
 
+    // Flow-based mode: get duration from current flow step (except for long-break)
+    if (isFlowBasedSchedule(schedule) && phase !== 'long-break') {
+      const flowSteps = schedule.flowSteps!;
+      const currentIndex = this.state.currentFlowStepIndex ?? 0;
+      const currentStep = flowSteps[currentIndex];
+      if (currentStep && currentStep.type === phase) {
+        return getFlowStepDurationMs(currentStep);
+      }
+    }
+
+    // Rule-based mode or long-break (always rule-based)
     switch (phase) {
       case 'sit':
         return minutesToMs(schedule.sitMinutes);
@@ -463,10 +545,122 @@ export class TimerEngine extends EventEmitter {
   }
 
   /**
-   * Check if phase counts as active work time
+   * Get duration for a specific phase (not necessarily current phase)
+   * Used for tooltip display of next/then phase durations
+   */
+  private getPhaseDurationMsForPhase(phase: PhaseType): number {
+    if (!this.currentSchedule || phase === 'idle') return 0;
+    const schedule = this.currentSchedule;
+
+    // For flow-based, we need to look ahead in flow steps
+    if (isFlowBasedSchedule(schedule) && phase !== 'long-break') {
+      const flowSteps = schedule.flowSteps!;
+      // Find the next occurrence of this phase type in flow
+      const currentIndex = this.state.currentFlowStepIndex ?? 0;
+      for (let i = currentIndex; i < flowSteps.length + currentIndex; i++) {
+        const step = flowSteps[i % flowSteps.length];
+        if (step.type === phase) {
+          return getFlowStepDurationMs(step);
+        }
+      }
+    }
+
+    // Rule-based mode durations
+    switch (phase) {
+      case 'sit':
+        return minutesToMs(schedule.sitMinutes);
+      case 'stand':
+        return minutesToMs(schedule.standMinutes);
+      case 'sit-to-stand-transition':
+        return secondsToMs(
+          schedule.transitions?.sitToStand?.durationSeconds ?? 
+          schedule.sitToStandTransitionSeconds ?? 60
+        );
+      case 'stand-to-sit-transition':
+        return secondsToMs(
+          schedule.transitions?.standToSit?.durationSeconds ?? 
+          schedule.standToSitTransitionSeconds ?? 60
+        );
+      case 'short-break':
+        return minutesToMs(
+          schedule.shortBreak?.durationMinutes ?? 
+          schedule.shortBreakDurationMinutes ?? 5
+        );
+      case 'long-break':
+        return minutesToMs(
+          schedule.longBreak?.durationMinutes ?? 
+          schedule.longBreakDurationMinutes ?? 15
+        );
+      default:
+        return 0;
+    }
+  }
+
+  /**
+   * Get the phase that comes after nextPhase (for tooltip "then" display)
+   */
+  private getThenPhase(nextPhase: PhaseType): PhaseType {
+    if (!this.currentSchedule || nextPhase === 'idle') return 'idle';
+    const schedule = this.currentSchedule;
+
+    // Flow-based mode
+    if (isFlowBasedSchedule(schedule)) {
+      const flowSteps = schedule.flowSteps!;
+      const currentIndex = this.state.currentFlowStepIndex ?? 0;
+      // Then phase is 2 steps ahead
+      const thenIndex = (currentIndex + 2) % flowSteps.length;
+      return flowSteps[thenIndex].type;
+    }
+
+    // Rule-based mode - predict what comes after nextPhase
+    switch (nextPhase) {
+      case 'sit':
+        return 'sit-to-stand-transition';
+      case 'sit-to-stand-transition':
+        return 'stand';
+      case 'stand':
+        return 'stand-to-sit-transition';
+      case 'stand-to-sit-transition':
+        return 'sit';
+      case 'short-break':
+      case 'long-break':
+        // After break, return to work (sit or stand based on preBreakPhase)
+        return this.preBreakPhase || 'sit';
+      default:
+        return 'idle';
+    }
+  }
+
+  /**
+   * Check if phase counts as active work time (sit/stand only)
    */
   private isWorkPhase(phase: PhaseType): boolean {
     return phase === 'sit' || phase === 'stand';
+  }
+
+  /**
+   * Check if phase should count toward cumulative work time for long break triggers
+   * Sit/Stand always count. Transitions and short breaks are configurable.
+   * Long breaks never count (they reset the counter)
+   */
+  private countsToCumulativeWorkTime(phase: PhaseType): boolean {
+    if (phase === 'long-break' || phase === 'idle') return false;
+    if (phase === 'sit' || phase === 'stand') return true;
+    
+    const schedule = this.currentSchedule;
+    if (!schedule) return false;
+    
+    // Check if transitions count
+    if (phase === 'sit-to-stand-transition' || phase === 'stand-to-sit-transition') {
+      return schedule.transitionsCountAsCumulativeWork ?? true;
+    }
+    
+    // Check if short breaks count
+    if (phase === 'short-break') {
+      return schedule.shortBreaksCountAsCumulativeWork ?? true;
+    }
+    
+    return false;
   }
 
   /**
@@ -487,6 +681,12 @@ export class TimerEngine extends EventEmitter {
   getNextPhase(): PhaseType {
     if (!this.currentSchedule) return 'idle';
 
+    // Flow-based mode: next phase comes from flow steps
+    if (isFlowBasedSchedule(this.currentSchedule)) {
+      return this.getNextFlowBasedPhase();
+    }
+
+    // Rule-based mode (existing behavior)
     switch (this.state.currentPhase) {
       case 'sit':
         return 'sit-to-stand-transition';
@@ -502,6 +702,23 @@ export class TimerEngine extends EventEmitter {
       default:
         return 'idle';
     }
+  }
+  
+  /**
+   * Get next phase in flow-based mode
+   */
+  private getNextFlowBasedPhase(): PhaseType {
+    const flowSteps = this.currentSchedule?.flowSteps;
+    if (!flowSteps || flowSteps.length === 0) return 'idle';
+    
+    // If currently in long break (rule-based interrupt), next is first step
+    if (this.state.currentPhase === 'long-break') {
+      return flowSteps[0].type;
+    }
+    
+    const currentIndex = this.state.currentFlowStepIndex ?? 0;
+    const nextStep = getFlowStepAtOffset(currentIndex, 1, flowSteps);
+    return nextStep?.type ?? 'idle';
   }
 
   /**
@@ -571,6 +788,7 @@ export class TimerEngine extends EventEmitter {
   
   /**
    * Check if postpone is allowed for a break type
+   * NOTE: Postpone is only allowed for breaks, NOT for transitions
    */
   private isPostponeAllowedForBreakType(breakType: BreakType): boolean {
     if (!this.currentSchedule) return false;
@@ -578,9 +796,9 @@ export class TimerEngine extends EventEmitter {
     
     switch (breakType) {
       case 'sitToStandTransition':
-        return schedule.transitions?.sitToStand?.allowPostpone ?? schedule.allowPostpone ?? false;
       case 'standToSitTransition':
-        return schedule.transitions?.standToSit?.allowPostpone ?? schedule.allowPostpone ?? false;
+        // Transitions cannot be postponed - only breaks can
+        return false;
       case 'shortBreak':
         return schedule.shortBreak?.allowPostpone ?? schedule.allowPostpone ?? false;
       case 'longBreak':
@@ -634,14 +852,30 @@ export class TimerEngine extends EventEmitter {
     logger.info('TimerEngine', `Resetting session for schedule: ${this.currentSchedule.name}`);
     
     const now = Date.now();
-    const sitDurationMs = minutesToMs(this.currentSchedule.sitMinutes);
+    
+    // Determine starting phase and duration based on schedule mode
+    let startPhase: PhaseType;
+    let startDurationMs: number;
+    
+    if (isFlowBasedSchedule(this.currentSchedule)) {
+      // Flow-based: start from first step
+      this.state.currentFlowStepIndex = 0;
+      const firstStep = this.currentSchedule.flowSteps![0];
+      startPhase = firstStep.type;
+      startDurationMs = getFlowStepDurationMs(firstStep);
+    } else {
+      // Rule-based: start with sitting
+      this.state.currentFlowStepIndex = undefined;
+      startPhase = 'sit';
+      startDurationMs = minutesToMs(this.currentSchedule.sitMinutes);
+    }
     
     // Reset all session state
-    this.state.currentPhase = 'sit';
+    this.state.currentPhase = startPhase;
     this.state.phaseStartedAt = now;
-    this.state.phaseEndsAt = now + sitDurationMs;
-    this.state.phaseRemainingMs = sitDurationMs;
-    this.state.phaseTotalMs = sitDurationMs;
+    this.state.phaseEndsAt = now + startDurationMs;
+    this.state.phaseRemainingMs = startDurationMs;
+    this.state.phaseTotalMs = startDurationMs;
     
     // Reset cumulative work time
     this.state.cumulativeWorkTimeMs = 0;
@@ -823,13 +1057,23 @@ export class TimerEngine extends EventEmitter {
     // Get configured durations
     const configuredDurations = this.getConfiguredDurations();
     
+    // Get next and then phases with durations
+    const nextPhase = this.getNextPhase();
+    const nextPhaseDurationMs = this.getPhaseDurationMsForPhase(nextPhase);
+    const thenPhase = this.getThenPhase(nextPhase);
+    const thenPhaseDurationMs = this.getPhaseDurationMsForPhase(thenPhase);
+    
     const tick: TimerTick = {
       scheduleId: schedule?.id || null,
       scheduleName: schedule?.name || null,
+      scheduleMode: schedule?.mode || null,
       currentPhase: this.state.currentPhase,
       phaseRemainingMs: this.state.phaseRemainingMs,
       phaseTotalMs: this.state.phaseTotalMs,
-      nextPhase: this.getNextPhase(),
+      nextPhase,
+      nextPhaseDurationMs,
+      thenPhase,
+      thenPhaseDurationMs,
       cumulativeWorkTimeMs: this.state.cumulativeWorkTimeMs,
       isPaused: this.state.isPaused,
       isPostponed: this.state.isPostponed,

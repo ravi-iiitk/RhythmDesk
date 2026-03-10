@@ -56,7 +56,8 @@ function OverlayView({ tick }: OverlayViewProps) {
   const isOfficeFocusLockActive = tick.officeFocusLock.isActive;
 
   // Determine which actions to show based on phase and settings
-  const showDoneButton = isTransitionOrBreak;
+  // Hide Done button in strict mode - user must wait for timer to complete
+  const showDoneButton = isTransitionOrBreak && !tick.isStrictMode;
   const showPostponeButtons = tick.canPostpone && isTransitionOrBreak;
   const showSkipButton = !tick.isStrictMode && isTransitionOrBreak;
   // In Office Focus Lock during work phase, show stop button instead of close

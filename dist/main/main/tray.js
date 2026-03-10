@@ -83,23 +83,12 @@ let isMenuOpen = false;
 // Pending update flag - set when update was skipped due to menu being open
 let hasPendingUpdate = false;
 let previousMenuState = null;
-// Tooltip throttling
-// Normal phases: 10 seconds
-// Break phases: 5 seconds
-const TOOLTIP_INTERVAL_NORMAL_MS = 10000;
-const TOOLTIP_INTERVAL_BREAK_MS = 5000;
+// Tooltip throttling - 5 second cadence for stability
+// Immediate update on important state changes (handled separately)
+const TOOLTIP_INTERVAL_MS = 5000;
 let lastTooltipUpdate = 0;
-// ============================================================================
-// HELPER: Check if phase is a break/transition
-// ============================================================================
-function isBreakPhase(phase) {
-    return [
-        'sit-to-stand-transition',
-        'stand-to-sit-transition',
-        'short-break',
-        'long-break',
-    ].includes(phase);
-}
+// Track last phase for detecting phase changes (triggers immediate tooltip update)
+let lastPhase = null;
 // ============================================================================
 // PUBLIC API
 // ============================================================================
@@ -135,13 +124,11 @@ function updateTrayWithTick(tick) {
         return;
     }
     const now = Date.now();
-    // Determine throttle interval based on phase
-    // Breaks: 5 seconds, Normal: 10 seconds
-    const throttleInterval = isBreakPhase(tick.currentPhase)
-        ? TOOLTIP_INTERVAL_BREAK_MS
-        : TOOLTIP_INTERVAL_NORMAL_MS;
-    // Throttled tooltip update
-    if (now - lastTooltipUpdate >= throttleInterval) {
+    // Check for phase change - triggers immediate tooltip update
+    const phaseChanged = lastPhase !== null && lastPhase !== tick.currentPhase;
+    lastPhase = tick.currentPhase;
+    // Throttled tooltip update (5s cadence) OR immediate on phase change
+    if (phaseChanged || now - lastTooltipUpdate >= TOOLTIP_INTERVAL_MS) {
         updateTrayTooltip(tick);
         lastTooltipUpdate = now;
     }
@@ -245,10 +232,21 @@ function createFallbackIcon() {
 // PRIVATE: TOOLTIP (Throttled, frozen while menu open)
 // ============================================================================
 /**
- * Update tray tooltip with live countdown
+ * Update tray tooltip with comprehensive status
+ *
+ * Content includes:
+ * - App name
+ * - Schedule name and mode
+ * - Focus lock status (if active)
+ * - Current phase and remaining time
+ * - Next phase
+ * - Then phase (if available)
+ * - Next break info
+ * - Paused/postponed status
+ *
  * ONLY called when:
  * - Menu is closed
- * - Throttle interval has passed
+ * - Throttle interval has passed (5s) OR phase changed
  */
 function updateTrayTooltip(tick) {
     if (!tray)
@@ -256,39 +254,58 @@ function updateTrayTooltip(tick) {
     // Double-check menu is not open (defensive)
     if (isMenuOpen)
         return;
-    let tooltip = 'RhythmDesk';
+    const lines = ['RhythmDesk'];
     if (tick.scheduleName) {
+        // Schedule info
+        lines.push(`Schedule: ${tick.scheduleName}`);
+        // Schedule mode (if available in tick)
+        if (tick.scheduleMode) {
+            const modeLabel = tick.scheduleMode === 'flow-based' ? 'Flow-Based' : 'Rule-Based';
+            lines.push(`Mode: ${modeLabel}`);
+        }
+        // Focus lock status (prominent if active)
+        if (tick.officeFocusLock.isActive) {
+            const lockRemaining = (0, timeUtils_1.formatDuration)(tick.officeFocusLock.remainingMs);
+            lines.push(`🔒 Focus: ${tick.officeFocusLock.label} (${lockRemaining})`);
+        }
+        // Current phase and remaining time
         const phaseName = constants_1.PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
         const remaining = (0, timeUtils_1.formatDuration)(tick.phaseRemainingMs);
-        tooltip += `\n📅 ${tick.scheduleName}`;
-        tooltip += `\n⏱️ ${phaseName}: ${remaining}`;
+        lines.push(`Current: ${phaseName}`);
+        lines.push(`Remaining: ${remaining}`);
+        // Paused/postponed status
         if (tick.isPaused) {
-            tooltip += '\n⏸ PAUSED';
+            lines.push('⏸ PAUSED');
         }
         else if (tick.isPostponed) {
-            tooltip += '\n⏳ POSTPONED';
+            lines.push('⏳ POSTPONED');
         }
-        // Break progress info
+        // Next phase
+        if (tick.nextPhase && tick.nextPhase !== 'idle') {
+            const nextPhaseName = constants_1.PHASE_DISPLAY_NAMES[tick.nextPhase] || tick.nextPhase;
+            const nextDuration = tick.nextPhaseDurationMs ? (0, timeUtils_1.formatDurationHuman)(tick.nextPhaseDurationMs) : '';
+            lines.push(`Next: ${nextPhaseName}${nextDuration ? ` (${nextDuration})` : ''}`);
+        }
+        // Then phase (if available)
+        if (tick.thenPhase && tick.thenPhase !== 'idle') {
+            const thenPhaseName = constants_1.PHASE_DISPLAY_NAMES[tick.thenPhase] || tick.thenPhase;
+            const thenDuration = tick.thenPhaseDurationMs ? (0, timeUtils_1.formatDurationHuman)(tick.thenPhaseDurationMs) : '';
+            lines.push(`Then: ${thenPhaseName}${thenDuration ? ` (${thenDuration})` : ''}`);
+        }
+        // Next break info
         const bp = tick.breakProgress;
         if (bp.nextBreakType) {
             const nextBreakName = bp.nextBreakType === 'short-break' ? 'Short Break' : 'Long Break';
             const nextBreakIn = (0, timeUtils_1.formatDurationHuman)(bp.nextBreakInMs);
-            tooltip += `\n☕ Next: ${nextBreakName} in ${nextBreakIn}`;
-        }
-        // Show long break separately if both enabled and short break is next
-        if (bp.shortBreakEnabled && bp.longBreakEnabled && bp.nextBreakType === 'short-break') {
-            const longBreakIn = (0, timeUtils_1.formatDurationHuman)(bp.msUntilNextLongBreak);
-            tooltip += `\n🌴 Long Break: ${longBreakIn}`;
-        }
-        if (tick.officeFocusLock.isActive) {
-            const lockRemaining = (0, timeUtils_1.formatDuration)(tick.officeFocusLock.remainingMs);
-            tooltip += `\n🔒 ${tick.officeFocusLock.label}: ${lockRemaining}`;
+            lines.push(`Next Break: ${nextBreakName} in ${nextBreakIn}`);
         }
     }
     else {
-        tooltip += '\n💤 No active schedule';
+        // No active schedule
+        lines.push('No active schedule');
+        // Could add "Next schedule: X at HH:MM" here if we have that info
     }
-    tray.setToolTip(tooltip);
+    tray.setToolTip(lines.join('\n'));
 }
 // ============================================================================
 // PRIVATE: MENU (STATIC - rebuilt only on critical structural changes)
@@ -466,8 +483,28 @@ function buildStaticTrayMenu() {
         enabled: focusLockActive,
     });
     menuItems.push({ type: 'separator' });
+    // ---- Session Controls ----
+    menuItems.push({
+        label: '🔄 Reset Session',
+        click: () => timerEngine.resetSession(),
+        enabled: tick?.scheduleName !== null,
+    });
+    menuItems.push({ type: 'separator' });
     // ---- Main Actions ----
     menuItems.push({ label: '📊 Open Dashboard', click: () => (0, windowManager_1.showMainWindow)() });
+    menuItems.push({
+        label: '⚙️ Settings',
+        click: () => {
+            (0, windowManager_1.showMainWindow)();
+            // Navigate to settings after window opens
+            setTimeout(() => {
+                const mainWindow = require('./windowManager').getMainWindow();
+                if (mainWindow) {
+                    mainWindow.webContents.send('navigate', '/settings');
+                }
+            }, 100);
+        },
+    });
     menuItems.push({ type: 'separator' });
     menuItems.push({
         label: '❌ Quit RhythmDesk',
