@@ -38,6 +38,17 @@ export interface FlowStep {
   label?: string; // Optional custom label for this step
 }
 
+/**
+ * Compute a hash of flowSteps to detect when flow config changed.
+ * Used to determine if active session is stale after schedule edit.
+ */
+export function computeFlowConfigHash(flowSteps: FlowStep[] | undefined): string {
+  if (!flowSteps || flowSteps.length === 0) return '';
+  // Create a string representation of the flow order and durations
+  // This captures: step order, types, and durations
+  return flowSteps.map(s => `${s.type}:${s.durationSeconds}`).join('|');
+}
+
 // Timer engine events
 export enum TimerEvent {
   PHASE_COMPLETED = 'phase:completed',
@@ -158,6 +169,10 @@ export interface SessionState {
   // Flow-based mode: current step index in flowSteps array
   currentFlowStepIndex?: number;
   
+  // Hash of flowSteps config to detect when flow was edited
+  // When this doesn't match the current schedule's flow, session is stale
+  flowConfigHash?: string;
+  
   // Cumulative active work time (sit + stand only, not transitions/breaks)
   cumulativeWorkTimeMs: number;
   
@@ -187,11 +202,19 @@ export interface SessionState {
   pausedAt: number | null;
   pauseResumeAt: number | null;  // null = manual resume required
   
-  // Postpone state
+  // Postpone state - IMPORTANT: When a break is postponed, work continues!
+  // The break is marked as pending, NOT as the current phase.
+  // pendingBreakType holds the break that will trigger when postponedUntil is reached.
+  // currentPhase should be the work phase (sit/stand), NOT the break.
   isPostponed: boolean;
   postponedUntil: number | null;
-  postponedPhase: PhaseType | null; // the phase that was postponed
+  postponedPhase: PhaseType | null; // the break phase that was postponed (pending)
   postponedBreakType: BreakType | null; // which break type was postponed
+  
+  // Work phase that was interrupted when break became due
+  // Used to restore work after postponed break completes
+  prePostponeWorkPhase: PhaseType | null;
+  prePostponeWorkPhaseRemainingMs: number;
 }
 
 // App configuration
@@ -279,6 +302,12 @@ export interface TimerTick {
   cumulativeWorkTimeMs: number;
   isPaused: boolean;
   isPostponed: boolean;
+  // Pending break info (when isPostponed is true, work continues but break is pending)
+  pendingBreakPhase: PhaseType | null;
+  pendingBreakInMs: number; // ms until pending break triggers
+  // Flow-based schedule: true if flow config changed since session started
+  // User should reset session to apply new flow order
+  isFlowStale: boolean;
   postponeCountToday: number;
   maxPostponesPerDay: number;
   canPostpone: boolean;
@@ -426,6 +455,8 @@ export const INITIAL_SESSION_STATE: SessionState = {
   postponedUntil: null,
   postponedPhase: null,
   postponedBreakType: null,
+  prePostponeWorkPhase: null,
+  prePostponeWorkPhaseRemainingMs: 0,
 };
 
 // Default general settings

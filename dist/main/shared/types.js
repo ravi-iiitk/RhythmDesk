@@ -5,6 +5,18 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OFFICE_FOCUS_LOCK_DURATIONS = exports.INITIAL_OFFICE_FOCUS_LOCK_STATE = exports.DEFAULT_GENERAL_SETTINGS = exports.INITIAL_SESSION_STATE = exports.INITIAL_POSTPONE_COUNTS = exports.DEFAULT_SCHEDULE = exports.DEFAULT_LONG_BREAK_CONFIG = exports.DEFAULT_SHORT_BREAK_CONFIG = exports.DEFAULT_TRANSITION_CONFIG = exports.IPC_CHANNELS = exports.OFFICE_FOCUS_LABELS = exports.TimerEvent = void 0;
+exports.computeFlowConfigHash = computeFlowConfigHash;
+/**
+ * Compute a hash of flowSteps to detect when flow config changed.
+ * Used to determine if active session is stale after schedule edit.
+ */
+function computeFlowConfigHash(flowSteps) {
+    if (!flowSteps || flowSteps.length === 0)
+        return '';
+    // Create a string representation of the flow order and durations
+    // This captures: step order, types, and durations
+    return flowSteps.map(s => `${s.type}:${s.durationSeconds}`).join('|');
+}
 // Timer engine events
 var TimerEvent;
 (function (TimerEvent) {
@@ -146,6 +158,8 @@ exports.INITIAL_SESSION_STATE = {
     postponedUntil: null,
     postponedPhase: null,
     postponedBreakType: null,
+    prePostponeWorkPhase: null,
+    prePostponeWorkPhaseRemainingMs: 0,
 };
 // Default general settings
 exports.DEFAULT_GENERAL_SETTINGS = {

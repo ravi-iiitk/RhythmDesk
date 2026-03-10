@@ -123,6 +123,10 @@ function migrateSessionState(state: Partial<SessionState>): SessionState {
     postponedUntil: state.postponedUntil ?? null,
     postponedPhase: state.postponedPhase ?? null,
     postponedBreakType: state.postponedBreakType ?? null,
+    prePostponeWorkPhase: state.prePostponeWorkPhase ?? null,
+    prePostponeWorkPhaseRemainingMs: state.prePostponeWorkPhaseRemainingMs ?? 0,
+    currentFlowStepIndex: state.currentFlowStepIndex,
+    flowConfigHash: state.flowConfigHash,
   };
 }
 

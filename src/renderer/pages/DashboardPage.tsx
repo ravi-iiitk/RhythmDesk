@@ -81,10 +81,19 @@ function DashboardPage({ tick }: DashboardPageProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <span style={{ fontSize: '1.5rem', fontWeight: 700, color: '#e2e8f0' }}>{tick.scheduleName}</span>
             {tick.isPaused && <span className="status-badge status-paused" style={{ fontSize: '0.875rem' }}>⏸️ Paused</span>}
-            {tick.isPostponed && <span className="status-badge status-paused" style={{ fontSize: '0.875rem' }}>⏳ Postponed</span>}
+            {tick.isPostponed && tick.pendingBreakPhase && (
+              <span className="status-badge" style={{ backgroundColor: 'rgba(251, 191, 36, 0.2)', color: '#fbbf24', fontSize: '0.875rem' }}>
+                ⏳ {PHASE_DISPLAY_NAMES[tick.pendingBreakPhase] || tick.pendingBreakPhase} in {formatDuration(tick.pendingBreakInMs)}
+              </span>
+            )}
             {tick.isStrictMode && (
               <span className="status-badge" style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', fontSize: '0.875rem' }}>
                 🔒 Strict Mode
+              </span>
+            )}
+            {tick.isFlowStale && (
+              <span className="status-badge" style={{ backgroundColor: 'rgba(251, 146, 60, 0.2)', color: '#fb923c', fontSize: '0.875rem' }}>
+                ⚠️ Flow Updated
               </span>
             )}
           </div>
@@ -171,6 +180,40 @@ function DashboardPage({ tick }: DashboardPageProps) {
         </div>
       </div>
 
+      {/* Flow Stale Warning Banner */}
+      {tick.isFlowStale && (
+        <div style={{ 
+          padding: '0.75rem 1rem', 
+          backgroundColor: 'rgba(251, 146, 60, 0.15)', 
+          borderRadius: '8px', 
+          border: '1px solid rgba(251, 146, 60, 0.3)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '1.25rem' }}>⚠️</span>
+            <div>
+              <div style={{ fontWeight: 600, color: '#fb923c' }}>Schedule flow updated</div>
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Reset session to apply the new flow order</div>
+            </div>
+          </div>
+          <button 
+            className="btn" 
+            onClick={handleResetSession}
+            style={{ 
+              padding: '0.5rem 1rem', 
+              backgroundColor: 'rgba(251, 146, 60, 0.2)', 
+              color: '#fb923c', 
+              border: '1px solid rgba(251, 146, 60, 0.4)',
+              fontWeight: 600
+            }}
+          >
+            Reset Now
+          </button>
+        </div>
+      )}
+
       {/* Row 2: Today's Stats - Separate blocks */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem' }}>
         <div className="card" style={{ padding: '0.75rem 1rem', marginBottom: 0, textAlign: 'center' }}>
@@ -236,9 +279,15 @@ function DashboardPage({ tick }: DashboardPageProps) {
             ) : (
               <button className="btn btn-secondary" onClick={handlePause}>⏸️ Pause</button>
             )}
-            {!tick.isStrictMode && (
-              <button className="btn btn-secondary" onClick={handleSkip}>⏭️ Skip</button>
-            )}
+            <button 
+              className="btn btn-secondary" 
+              onClick={handleSkip}
+              disabled={tick.isStrictMode}
+              title={tick.isStrictMode ? "Skip disabled in Strict Mode" : "Skip to next activity"}
+              style={tick.isStrictMode ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+            >
+              ⏭️ Skip
+            </button>
             <button className="btn btn-secondary" onClick={handleResetSession} title="Reset Session">🔄 Reset</button>
             <button className="btn btn-secondary" onClick={handleResetTodayCounters} title="Reset Counters">📊</button>
             

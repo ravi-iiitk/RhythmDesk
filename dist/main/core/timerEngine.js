@@ -183,24 +183,33 @@ class TimerEngine extends events_1.EventEmitter {
             this.emitTick();
             return;
         }
-        // Handle postponed state
+        // Handle postponed break - WORK CONTINUES during postpone!
+        // Check if postponed break should now trigger
         if (this.state.isPostponed && this.state.postponedUntil) {
             if (now >= this.state.postponedUntil) {
-                // Postpone ended, resume the postponed phase
+                // Postpone period ended - trigger the pending break with overlay
+                const pendingBreak = this.state.postponedPhase;
+                // Clear postpone state BEFORE starting break
                 this.state.isPostponed = false;
                 this.state.postponedUntil = null;
-                if (this.state.postponedPhase) {
-                    this.startPhase(this.state.postponedPhase);
-                }
                 this.state.postponedPhase = null;
+                this.state.postponedBreakType = null;
+                // Store current work phase so we can resume after break
+                if (this.isWorkPhase(this.state.currentPhase)) {
+                    this.state.interruptedPhase = this.state.currentPhase;
+                    this.state.interruptedPhaseRemainingMs = this.state.phaseRemainingMs;
+                    this.preBreakPhase = this.state.currentPhase;
+                }
+                if (pendingBreak) {
+                    logger_1.default.info('TimerEngine', `Postponed break triggering: ${pendingBreak}`);
+                    // Start the break - this will trigger phaseChange event which shows overlay
+                    this.startPhase(pendingBreak);
+                    this.emitTick();
+                    this.saveState();
+                    return;
+                }
             }
-            else {
-                // Still postponed
-                this.state.phaseRemainingMs = this.state.postponedUntil - now;
-                this.emitTick();
-                this.saveState();
-                return;
-            }
+            // If still in postpone period, work continues normally (fall through to normal tick logic)
         }
         // Handle paused state
         if (this.state.isPaused) {
@@ -249,11 +258,13 @@ class TimerEngine extends events_1.EventEmitter {
                 // Initialize flow step index for flow-based schedules
                 if ((0, flowUtils_1.isFlowBasedSchedule)(activeSchedule)) {
                     this.state.currentFlowStepIndex = 0;
+                    this.state.flowConfigHash = (0, types_1.computeFlowConfigHash)(activeSchedule.flowSteps);
                     const firstStep = activeSchedule.flowSteps[0];
                     this.startPhase(firstStep.type);
                 }
                 else {
                     this.state.currentFlowStepIndex = undefined;
+                    this.state.flowConfigHash = undefined;
                     this.startPhase('sit'); // Rule-based: always start with sitting
                 }
             }
@@ -266,7 +277,21 @@ class TimerEngine extends events_1.EventEmitter {
             // Same schedule ID - but config might have been edited
             // Always refresh to pick up any changes
             this.currentSchedule = activeSchedule;
+            // Note: We don't auto-reset flow here even if flowSteps changed
+            // The dashboard will show "flow stale" notification and user can reset manually
         }
+    }
+    /**
+     * Check if the current flow-based session is stale (flow config changed since session started)
+     */
+    isFlowSessionStale() {
+        if (!this.currentSchedule || !(0, flowUtils_1.isFlowBasedSchedule)(this.currentSchedule)) {
+            return false;
+        }
+        const currentHash = (0, types_1.computeFlowConfigHash)(this.currentSchedule.flowSteps);
+        const sessionHash = this.state.flowConfigHash;
+        // Stale if we have a session hash that doesn't match current config
+        return sessionHash !== undefined && sessionHash !== currentHash;
     }
     /**
      * Check if a break should be triggered based on cumulative work time
@@ -280,6 +305,9 @@ class TimerEngine extends events_1.EventEmitter {
             return;
         // Only trigger breaks during actual work phases (sit/stand), not transitions
         if (!this.isWorkPhase(this.state.currentPhase))
+            return;
+        // Don't trigger new breaks if there's already a postponed break pending
+        if (this.state.isPostponed && this.state.postponedPhase)
             return;
         const workTimeMs = this.state.cumulativeWorkTimeMs;
         const schedule = this.currentSchedule;
@@ -664,8 +692,17 @@ class TimerEngine extends events_1.EventEmitter {
         this.saveState();
     }
     /**
-     * Postpone current phase
-     * Uses per-break-type postpone limits
+     * Postpone current phase (break)
+     *
+     * CRITICAL BEHAVIOR:
+     * When a break is postponed, work CONTINUES - the break does NOT become active.
+     * The break is stored as "pending" and will re-trigger after the postpone duration.
+     *
+     * State changes:
+     * - currentPhase -> restored to pre-break work phase
+     * - postponedPhase -> the break that was postponed (pending)
+     * - isPostponed -> true (indicates a pending break exists)
+     * - postponedUntil -> when the pending break should trigger
      */
     postpone(minutes) {
         if (!this.currentSchedule)
@@ -682,14 +719,30 @@ class TimerEngine extends events_1.EventEmitter {
         const currentCount = this.state.postponeCountsToday[breakType];
         if (currentCount >= maxPostpones)
             return false;
+        // Store the pending break
+        const postponedBreakPhase = this.state.currentPhase;
+        this.state.postponedPhase = postponedBreakPhase;
+        this.state.postponedBreakType = breakType;
         this.state.isPostponed = true;
         this.state.postponedUntil = Date.now() + (0, timeUtils_1.minutesToMs)(minutes);
-        this.state.postponedPhase = this.state.currentPhase;
-        this.state.postponedBreakType = breakType;
         this.state.postponeCountsToday[breakType]++;
+        // CRITICAL FIX: Restore work phase - do NOT keep break as current phase
+        // Use preBreakPhase (set when break was triggered) or interruptedPhase
+        const workPhaseToRestore = this.preBreakPhase || this.state.interruptedPhase || 'sit';
+        const workPhaseRemainingMs = this.state.interruptedPhaseRemainingMs || this.getPhaseDurationMs(workPhaseToRestore);
+        // Save what work phase we're restoring (for after postponed break completes)
+        this.state.prePostponeWorkPhase = workPhaseToRestore;
+        this.state.prePostponeWorkPhaseRemainingMs = workPhaseRemainingMs;
+        // Restore work phase as current phase
+        this.state.currentPhase = workPhaseToRestore;
+        this.state.phaseRemainingMs = workPhaseRemainingMs;
+        this.state.phaseTotalMs = this.getPhaseDurationMs(workPhaseToRestore);
+        this.state.phaseStartedAt = Date.now();
+        this.state.phaseEndsAt = Date.now() + workPhaseRemainingMs;
+        logger_1.default.info('TimerEngine', `Break postponed: ${postponedBreakPhase} for ${minutes}min, resuming ${workPhaseToRestore}`);
         this.saveState();
         // Emit event so main process can close overlay
-        this.emit('postponed', { minutes, phase: this.state.postponedPhase, breakType });
+        this.emit('postponed', { minutes, phase: postponedBreakPhase, breakType });
         return true;
     }
     /**
@@ -761,6 +814,7 @@ class TimerEngine extends events_1.EventEmitter {
         if ((0, flowUtils_1.isFlowBasedSchedule)(this.currentSchedule)) {
             // Flow-based: start from first step
             this.state.currentFlowStepIndex = 0;
+            this.state.flowConfigHash = (0, types_1.computeFlowConfigHash)(this.currentSchedule.flowSteps);
             const firstStep = this.currentSchedule.flowSteps[0];
             startPhase = firstStep.type;
             startDurationMs = (0, flowUtils_1.getFlowStepDurationMs)(firstStep);
@@ -768,6 +822,7 @@ class TimerEngine extends events_1.EventEmitter {
         else {
             // Rule-based: start with sitting
             this.state.currentFlowStepIndex = undefined;
+            this.state.flowConfigHash = undefined;
             startPhase = 'sit';
             startDurationMs = (0, timeUtils_1.minutesToMs)(this.currentSchedule.sitMinutes);
         }
@@ -790,6 +845,8 @@ class TimerEngine extends events_1.EventEmitter {
         this.state.postponedUntil = null;
         this.state.postponedPhase = null;
         this.state.postponedBreakType = null;
+        this.state.prePostponeWorkPhase = null;
+        this.state.prePostponeWorkPhaseRemainingMs = 0;
         // Clear paused state
         this.state.isPaused = false;
         this.state.pausedAt = null;
@@ -944,6 +1001,9 @@ class TimerEngine extends events_1.EventEmitter {
             cumulativeWorkTimeMs: this.state.cumulativeWorkTimeMs,
             isPaused: this.state.isPaused,
             isPostponed: this.state.isPostponed,
+            pendingBreakPhase: this.state.postponedPhase,
+            pendingBreakInMs: this.state.postponedUntil ? Math.max(0, this.state.postponedUntil - Date.now()) : 0,
+            isFlowStale: this.isFlowSessionStale(),
             postponeCountToday: totalPostponeCount,
             maxPostponesPerDay: maxPostpones,
             canPostpone: this.canPostpone(),
