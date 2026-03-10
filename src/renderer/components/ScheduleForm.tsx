@@ -96,10 +96,48 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Sync legacy fields to nested config structures
+    // This ensures timer engine picks up the updated values
     const savedSchedule: Schedule = {
       id: schedule?.id || uuidv4(),
       createdAt: schedule?.createdAt || Date.now(),
       ...formData,
+      // Sync to nested transition configs
+      transitions: {
+        sitToStand: {
+          durationSeconds: formData.sitToStandTransitionSeconds ?? 60,
+          strictModeEnabled: formData.strictModeEnabled ?? true,
+          allowPostpone: formData.allowPostpone ?? true,
+          postponeOptionsMinutes: formData.postponeOptionsMinutes ?? [2, 5, 10],
+          maxPostponesPerDay: formData.maxPostponesPerDay ?? 3,
+        },
+        standToSit: {
+          durationSeconds: formData.standToSitTransitionSeconds ?? 60,
+          strictModeEnabled: formData.strictModeEnabled ?? true,
+          allowPostpone: formData.allowPostpone ?? true,
+          postponeOptionsMinutes: formData.postponeOptionsMinutes ?? [2, 5, 10],
+          maxPostponesPerDay: formData.maxPostponesPerDay ?? 3,
+        },
+      },
+      // Sync to nested break configs
+      shortBreak: {
+        enabled: formData.shortBreakEnabled ?? true,
+        everyMinutes: formData.shortBreakEveryMinutes ?? 60,
+        durationMinutes: formData.shortBreakDurationMinutes ?? 5,
+        strictModeEnabled: formData.strictModeEnabled ?? true,
+        allowPostpone: formData.allowPostpone ?? true,
+        postponeOptionsMinutes: formData.postponeOptionsMinutes ?? [2, 5, 10],
+        maxPostponesPerDay: formData.maxPostponesPerDay ?? 3,
+      },
+      longBreak: {
+        enabled: formData.longBreakEnabled ?? true,
+        everyMinutes: formData.longBreakEveryMinutes ?? 150,
+        durationMinutes: formData.longBreakDurationMinutes ?? 15,
+        strictModeEnabled: formData.strictModeEnabled ?? true,
+        allowPostpone: formData.allowPostpone ?? true,
+        postponeOptionsMinutes: formData.postponeOptionsMinutes ?? [2, 5, 10],
+        maxPostponesPerDay: formData.maxPostponesPerDay ?? 3,
+      },
     };
     
     onSave(savedSchedule);

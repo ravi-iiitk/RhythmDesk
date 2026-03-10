@@ -230,11 +230,13 @@ class TimerEngine extends events_1.EventEmitter {
     }
     /**
      * Check if we need to switch to a different schedule
+     * Also refreshes schedule config if the same schedule was edited
      */
     checkScheduleChange() {
         const schedules = configService_1.default.getSchedules();
         const activeSchedule = (0, scheduleResolver_1.resolveActiveSchedule)(schedules);
         if (activeSchedule?.id !== this.currentSchedule?.id) {
+            // Schedule changed completely (different ID or became null/active)
             this.currentSchedule = activeSchedule;
             if (activeSchedule) {
                 // Starting a new schedule
@@ -248,6 +250,11 @@ class TimerEngine extends events_1.EventEmitter {
                 this.setIdleState();
             }
             this.emit('scheduleChange', this.currentSchedule);
+        }
+        else if (activeSchedule && this.currentSchedule) {
+            // Same schedule ID - but config might have been edited
+            // Always refresh to pick up any changes
+            this.currentSchedule = activeSchedule;
         }
     }
     /**

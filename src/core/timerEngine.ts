@@ -264,12 +264,14 @@ export class TimerEngine extends EventEmitter {
 
   /**
    * Check if we need to switch to a different schedule
+   * Also refreshes schedule config if the same schedule was edited
    */
   private checkScheduleChange(): void {
     const schedules = configService.getSchedules();
     const activeSchedule = resolveActiveSchedule(schedules);
 
     if (activeSchedule?.id !== this.currentSchedule?.id) {
+      // Schedule changed completely (different ID or became null/active)
       this.currentSchedule = activeSchedule;
       
       if (activeSchedule) {
@@ -284,6 +286,10 @@ export class TimerEngine extends EventEmitter {
       }
       
       this.emit('scheduleChange', this.currentSchedule);
+    } else if (activeSchedule && this.currentSchedule) {
+      // Same schedule ID - but config might have been edited
+      // Always refresh to pick up any changes
+      this.currentSchedule = activeSchedule;
     }
   }
 
