@@ -194,24 +194,35 @@ function getTray() {
 // ============================================================================
 /**
  * Load tray icon from resources
+ * Uses smaller icon (48x48 or 32x32) for system tray
+ * This is separate from the app launcher/taskbar icon
  */
 function loadTrayIcon() {
     const isDev = !electron_1.app.isPackaged;
-    let iconPath;
-    if (isDev) {
-        iconPath = path.join(__dirname, '../../../resources/icon.png');
-    }
-    else {
-        iconPath = path.join(process.resourcesPath, 'resources/icon.png');
-    }
-    try {
-        const icon = electron_1.nativeImage.createFromPath(iconPath);
-        if (!icon.isEmpty()) {
-            return icon;
+    // Try multiple icon paths in order of preference
+    const iconPaths = isDev
+        ? [
+            path.join(__dirname, '../../../resources/icons/48x48.png'),
+            path.join(__dirname, '../../../resources/icons/32x32.png'),
+            path.join(__dirname, '../../../resources/icons/icon.png'),
+            path.join(__dirname, '../../../resources/icon.png'),
+        ]
+        : [
+            path.join(process.resourcesPath, 'resources/icons/48x48.png'),
+            path.join(process.resourcesPath, 'resources/icons/32x32.png'),
+            path.join(process.resourcesPath, 'resources/icons/icon.png'),
+            path.join(process.resourcesPath, 'resources/icon.png'),
+        ];
+    for (const iconPath of iconPaths) {
+        try {
+            const icon = electron_1.nativeImage.createFromPath(iconPath);
+            if (!icon.isEmpty()) {
+                return icon;
+            }
         }
-    }
-    catch {
-        // Fall through to fallback
+        catch {
+            // Try next path
+        }
     }
     return createFallbackIcon();
 }

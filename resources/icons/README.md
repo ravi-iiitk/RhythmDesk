@@ -1,35 +1,46 @@
-# RhythmDesk Icons
+# RhythmDesk App Icons
 
-For Linux packaging, electron-builder requires PNG icons at the following sizes:
-- 16x16
-- 32x32
-- 48x48
-- 64x64
-- 128x128
-- 256x256
-- 512x512
+This folder contains app icons in multiple sizes for Linux packaging and runtime.
 
-## Generate icons from SVG
+## Icon Files
 
-If you have ImageMagick installed, you can generate all sizes from the SVG:
+| File | Size | Purpose |
+|------|------|---------|
+| `512x512.png` | 512×512 | Linux high-DPI displays, app stores |
+| `256x256.png` | 256×256 | BrowserWindow icon, standard displays |
+| `128x128.png` | 128×128 | Medium resolution |
+| `64x64.png` | 64×64 | Taskbar/dock |
+| `48x48.png` | 48×48 | System tray icon |
+| `32x32.png` | 32×32 | Small tray icon fallback |
+| `16x16.png` | 16×16 | Tiny icon |
+| `icon.png` | 256×256 | Legacy compatibility |
+| `icon.svg` | Vector | Source SVG |
 
-```bash
-cd resources/icons
-for size in 16 32 48 64 128 256 512; do
-  convert -background none -resize ${size}x${size} icon.svg ${size}x${size}.png
-done
-```
+## Regenerating Icons
 
-Or with `rsvg-convert` (from librsvg):
+If you update the source icon, regenerate PNGs:
 
 ```bash
-cd resources/icons
-for size in 16 32 48 64 128 256 512; do
-  rsvg-convert -w $size -h $size icon.svg -o ${size}x${size}.png
-done
+node scripts/generate-icons.js
 ```
 
-## Icon naming convention
+## Usage
 
-electron-builder for Linux expects icons named by size: `16x16.png`, `32x32.png`, etc.
-Or you can provide a single `icon.png` (256x256 or larger) and it will be resized automatically.
+- **BrowserWindow (launcher/taskbar)**: Uses `256x256.png`
+- **System Tray**: Uses `48x48.png` or `32x32.png`
+- **electron-builder**: Uses this folder for Linux packaging
+
+## Linux Icon Cache Refresh
+
+If icons don't update after packaging, refresh the icon cache:
+
+```bash
+# Update icon cache
+gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor
+sudo gtk-update-icon-cache -f -t /usr/share/icons/hicolor
+
+# Update desktop database
+update-desktop-database ~/.local/share/applications
+
+# For AppImage, the icon is embedded - no cache needed
+```

@@ -35,13 +35,18 @@ function isDev(): boolean {
 }
 
 /**
- * Get the icon path for both dev and production
+ * Get the app icon path for BrowserWindow (launcher/taskbar icon)
+ * Uses 256x256 PNG for best Linux compatibility
+ * 
+ * NOTE: This is separate from tray icon - tray uses its own icon handling
  */
-function getIconPath(): string {
+function getAppIconPath(): string {
   if (isDev()) {
-    return path.join(__dirname, '../../../resources/icon.png');
+    // Development: relative to compiled main.js in dist/main/main/
+    return path.join(__dirname, '../../../resources/icons/256x256.png');
   }
-  return path.join(process.resourcesPath, 'resources/icon.png');
+  // Production: relative to app.asar resources
+  return path.join(process.resourcesPath, 'resources/icons/256x256.png');
 }
 
 /**
@@ -59,7 +64,7 @@ export function createMainWindow(): BrowserWindow {
     minWidth: 600,
     minHeight: 500,
     title: 'RhythmDesk',
-    icon: getIconPath(),
+    icon: getAppIconPath(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -143,7 +148,7 @@ export function createOverlayWindow(strictMode: boolean = false): BrowserWindow 
     // Kiosk mode for strict - provides strongest blocking on Linux
     kiosk: strictMode,
     title: 'RhythmDesk Overlay',
-    icon: getIconPath(),
+    icon: getAppIconPath(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
