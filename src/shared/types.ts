@@ -186,6 +186,7 @@ export interface OfficeFocusLockState {
   startedAt: number | null;      // timestamp when lock started
   durationMs: number;            // total duration in milliseconds
   remainingMs: number;           // remaining time
+  isStrictMode: boolean;         // if true, cannot stop focus mode early
 }
 
 // Preset work labels for Office Focus Lock
@@ -407,6 +408,7 @@ export const INITIAL_OFFICE_FOCUS_LOCK_STATE: OfficeFocusLockState = {
   startedAt: null,
   durationMs: 0,
   remainingMs: 0,
+  isStrictMode: false,
 };
 
 // Office Focus Lock duration presets (in minutes)

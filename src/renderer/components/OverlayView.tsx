@@ -23,15 +23,14 @@ const PHASE_MESSAGES: Record<PhaseType, string> = {
 };
 
 function OverlayView({ tick }: OverlayViewProps) {
-  if (!tick || tick.currentPhase === 'idle') {
-    return (
-      <div className="overlay">
-        <div className="overlay-content">
-          <div className="overlay-phase phase-idle">Idle</div>
-          <div className="overlay-message">No active schedule</div>
-        </div>
-      </div>
-    );
+  // Show nothing while waiting for first tick - prevents idle flash
+  if (!tick) {
+    return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
+  }
+  
+  // Hide overlay for idle state - overlay shouldn't show during idle
+  if (tick.currentPhase === 'idle') {
+    return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
 
   const phaseColor = PHASE_COLORS[tick.currentPhase] || PHASE_COLORS['idle'];
@@ -61,8 +60,9 @@ function OverlayView({ tick }: OverlayViewProps) {
   const showPostponeButtons = tick.canPostpone && isTransitionOrBreak;
   const showSkipButton = !tick.isStrictMode && isTransitionOrBreak;
   // In Office Focus Lock during work phase, show stop button instead of close
+  // But hide stop button if Focus Mode strict mode is enabled
   const showCloseButton = !tick.isStrictMode && !isOfficeFocusLockActive;
-  const showStopLockButton = isOfficeFocusLockActive && isWorkPhase;
+  const showStopLockButton = isOfficeFocusLockActive && isWorkPhase && !tick.officeFocusLock.isStrictMode;
 
   return (
     <div className="overlay">

@@ -164,6 +164,7 @@ exports.INITIAL_OFFICE_FOCUS_LOCK_STATE = {
     startedAt: null,
     durationMs: 0,
     remainingMs: 0,
+    isStrictMode: false,
 };
 // Office Focus Lock duration presets (in minutes)
 exports.OFFICE_FOCUS_LOCK_DURATIONS = [30, 60, 90, 120];

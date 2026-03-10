@@ -24,7 +24,7 @@ const api = {
     resetSession: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.RESET_SESSION),
     resetTodayCounters: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.RESET_TODAY_COUNTERS),
     // Office Focus Lock controls
-    startOfficeFocusLock: (label, durationMinutes) => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes),
+    startOfficeFocusLock: (label, durationMinutes, isStrictMode = false) => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes, isStrictMode),
     stopOfficeFocusLock: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.STOP_OFFICE_FOCUS_LOCK),
     getOfficeFocusLockState: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.GET_OFFICE_FOCUS_LOCK_STATE),
     // Window controls

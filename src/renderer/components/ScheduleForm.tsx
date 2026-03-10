@@ -175,7 +175,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
             type="number"
             className="form-input"
             value={formData.sitMinutes}
-            onChange={(e) => handleChange('sitMinutes', parseInt(e.target.value, 10))}
+            onChange={(e) => handleChange('sitMinutes', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+            onBlur={(e) => !e.target.value && handleChange('sitMinutes', 1)}
             min="1"
             required
           />
@@ -186,7 +187,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
             type="number"
             className="form-input"
             value={formData.standMinutes}
-            onChange={(e) => handleChange('standMinutes', parseInt(e.target.value, 10))}
+            onChange={(e) => handleChange('standMinutes', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+            onBlur={(e) => !e.target.value && handleChange('standMinutes', 1)}
             min="1"
             required
           />
@@ -201,7 +203,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
             type="number"
             className="form-input"
             value={formData.sitToStandTransitionSeconds ?? 60}
-            onChange={(e) => handleChange('sitToStandTransitionSeconds', parseInt(e.target.value, 10) || 60)}
+            onChange={(e) => handleChange('sitToStandTransitionSeconds', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+            onBlur={(e) => !e.target.value && handleChange('sitToStandTransitionSeconds', 60)}
             min="10"
             required
           />
@@ -212,7 +215,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
             type="number"
             className="form-input"
             value={formData.standToSitTransitionSeconds ?? 60}
-            onChange={(e) => handleChange('standToSitTransitionSeconds', parseInt(e.target.value, 10) || 60)}
+            onChange={(e) => handleChange('standToSitTransitionSeconds', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+            onBlur={(e) => !e.target.value && handleChange('standToSitTransitionSeconds', 60)}
             min="10"
             required
           />
@@ -238,7 +242,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
               type="number"
               className="form-input"
               value={formData.shortBreakEveryMinutes ?? 60}
-              onChange={(e) => handleChange('shortBreakEveryMinutes', parseInt(e.target.value, 10) || 60)}
+              onChange={(e) => handleChange('shortBreakEveryMinutes', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+              onBlur={(e) => !e.target.value && handleChange('shortBreakEveryMinutes', 60)}
               min="1"
             />
           </div>
@@ -248,7 +253,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
               type="number"
               className="form-input"
               value={formData.shortBreakDurationMinutes ?? 5}
-              onChange={(e) => handleChange('shortBreakDurationMinutes', parseInt(e.target.value, 10) || 5)}
+              onChange={(e) => handleChange('shortBreakDurationMinutes', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+              onBlur={(e) => !e.target.value && handleChange('shortBreakDurationMinutes', 5)}
               min="1"
             />
           </div>
@@ -274,7 +280,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
               type="number"
               className="form-input"
               value={formData.longBreakEveryMinutes ?? 150}
-              onChange={(e) => handleChange('longBreakEveryMinutes', parseInt(e.target.value, 10) || 150)}
+              onChange={(e) => handleChange('longBreakEveryMinutes', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+              onBlur={(e) => !e.target.value && handleChange('longBreakEveryMinutes', 150)}
               min="1"
             />
           </div>
@@ -284,7 +291,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
               type="number"
               className="form-input"
               value={formData.longBreakDurationMinutes ?? 15}
-              onChange={(e) => handleChange('longBreakDurationMinutes', parseInt(e.target.value, 10) || 15)}
+              onChange={(e) => handleChange('longBreakDurationMinutes', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+              onBlur={(e) => !e.target.value && handleChange('longBreakDurationMinutes', 15)}
               min="1"
             />
           </div>
@@ -335,7 +343,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
               type="number"
               className="form-input"
               value={formData.maxPostponesPerDay ?? 3}
-              onChange={(e) => handleChange('maxPostponesPerDay', parseInt(e.target.value, 10))}
+              onChange={(e) => handleChange('maxPostponesPerDay', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+              onBlur={(e) => !e.target.value && handleChange('maxPostponesPerDay', 0)}
               min="0"
             />
           </div>

@@ -27,7 +27,7 @@ export interface RhythmDeskAPI {
   resetTodayCounters: () => Promise<void>;
   
   // Office Focus Lock controls
-  startOfficeFocusLock: (label: string, durationMinutes: number) => Promise<any>;
+  startOfficeFocusLock: (label: string, durationMinutes: number, isStrictMode?: boolean) => Promise<any>;
   stopOfficeFocusLock: () => Promise<any>;
   getOfficeFocusLockState: () => Promise<any>;
   
@@ -66,7 +66,7 @@ const api: RhythmDeskAPI = {
   resetTodayCounters: () => ipcRenderer.invoke(IPC_CHANNELS.RESET_TODAY_COUNTERS),
 
   // Office Focus Lock controls
-  startOfficeFocusLock: (label, durationMinutes) => ipcRenderer.invoke(IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes),
+  startOfficeFocusLock: (label, durationMinutes, isStrictMode = false) => ipcRenderer.invoke(IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes, isStrictMode),
   stopOfficeFocusLock: () => ipcRenderer.invoke(IPC_CHANNELS.STOP_OFFICE_FOCUS_LOCK),
   getOfficeFocusLockState: () => ipcRenderer.invoke(IPC_CHANNELS.GET_OFFICE_FOCUS_LOCK_STATE),
 

@@ -25,8 +25,9 @@ class OfficeFocusLockService extends EventEmitter {
    * Start Office Focus Lock for a specified duration with a work label
    * @param label Work label (e.g., "EPAM", "Resy", or custom)
    * @param durationMinutes Duration in minutes
+   * @param isStrictMode If true, cannot stop focus mode early
    */
-  start(label: string, durationMinutes: number): void {
+  start(label: string, durationMinutes: number, isStrictMode: boolean = false): void {
     const durationMs = minutesToMs(durationMinutes);
     
     this.state = {
@@ -35,6 +36,7 @@ class OfficeFocusLockService extends EventEmitter {
       startedAt: Date.now(),
       durationMs,
       remainingMs: durationMs,
+      isStrictMode,
     };
 
     this.startTicking();

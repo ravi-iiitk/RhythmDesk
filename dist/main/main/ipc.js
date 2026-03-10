@@ -79,8 +79,8 @@ function registerIpcHandlers() {
     });
     // Office Focus Lock handlers
     const officeFocusLockService = (0, officeFocusLockService_1.getOfficeFocusLockService)();
-    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, (_event, label, durationMinutes) => {
-        officeFocusLockService.start(label, durationMinutes);
+    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, (_event, label, durationMinutes, isStrictMode = false) => {
+        officeFocusLockService.start(label, durationMinutes, isStrictMode);
         return officeFocusLockService.getState();
     });
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.STOP_OFFICE_FOCUS_LOCK, () => {

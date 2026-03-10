@@ -39,6 +39,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const [selectedLabel, setSelectedLabel] = useState<string>('EPAM');
   const [customHours, setCustomHours] = useState<number>(0);
   const [customMinutes, setCustomMinutes] = useState<number>(30);
+  const [focusStrictMode, setFocusStrictMode] = useState<boolean>(false);
 
   const handlePause = () => window.rhythmDesk.pause();
   const handleResume = () => window.rhythmDesk.resume();
@@ -48,7 +49,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const handleResetTodayCounters = () => window.rhythmDesk.resetTodayCounters();
   
   const handleStartOfficeFocusLock = (minutes: number) => {
-    window.rhythmDesk.startOfficeFocusLock(selectedLabel, minutes);
+    window.rhythmDesk.startOfficeFocusLock(selectedLabel, minutes, focusStrictMode);
     setShowLockOptions(false);
   };
   
@@ -93,10 +94,15 @@ function DashboardPage({ tick }: DashboardPageProps) {
             {tick.officeFocusLock.isActive ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.75rem', backgroundColor: 'rgba(251, 146, 60, 0.15)', borderRadius: '8px', border: '1px solid rgba(251, 146, 60, 0.3)' }}>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '0.7rem', color: '#fb923c', fontWeight: 500 }}>🔒 {tick.officeFocusLock.label} Focus</div>
+                  <div style={{ fontSize: '0.7rem', color: '#fb923c', fontWeight: 500 }}>
+                    {tick.officeFocusLock.isStrictMode ? '🔒' : '🎯'} {tick.officeFocusLock.label} Focus
+                    {tick.officeFocusLock.isStrictMode && <span style={{ color: '#ef4444', marginLeft: '0.25rem' }}>(Strict)</span>}
+                  </div>
                   <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#fb923c', fontFamily: 'monospace' }}>{formatDuration(tick.officeFocusLock.remainingMs)}</div>
                 </div>
-                <button className="btn" onClick={handleStopOfficeFocusLock} style={{ padding: '0.4rem 0.6rem', backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}>Stop</button>
+                {!tick.officeFocusLock.isStrictMode && (
+                  <button className="btn" onClick={handleStopOfficeFocusLock} style={{ padding: '0.4rem 0.6rem', backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}>Stop</button>
+                )}
               </div>
             ) : (
               !showLockOptions ? (
@@ -147,6 +153,16 @@ function DashboardPage({ tick }: DashboardPageProps) {
                       Go
                     </button>
                   </div>
+                  <span style={{ color: '#64748b', fontSize: '0.8rem' }}>|</span>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', fontSize: '0.75rem', color: focusStrictMode ? '#ef4444' : '#94a3b8' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={focusStrictMode} 
+                      onChange={(e) => setFocusStrictMode(e.target.checked)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    🔒 Strict
+                  </label>
                   <button className="btn btn-secondary" onClick={() => setShowLockOptions(false)} style={{ padding: '0.3rem 0.5rem', fontSize: '0.8rem' }}>✕</button>
                 </div>
               )
@@ -286,44 +302,46 @@ function DashboardPage({ tick }: DashboardPageProps) {
         )}
       </div>
 
-      {/* Row 5: Configured Durations */}
-      <div className="card" style={{ padding: '1rem', marginBottom: 0 }}>
-        <div style={{ fontSize: '1rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.75rem' }}>Configured Durations</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem' }}>
-          {/* Work durations */}
-          <div style={{ padding: '0.75rem', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', textAlign: 'center' }}>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Sitting Work</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#3b82f6' }}>{tick.configuredDurations.sitMinutes} min</div>
-          </div>
-          <div style={{ padding: '0.75rem', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderRadius: '8px', textAlign: 'center' }}>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Standing Work</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#22c55e' }}>{tick.configuredDurations.standMinutes} min</div>
-          </div>
-          <div style={{ padding: '0.75rem', backgroundColor: 'rgba(168, 85, 247, 0.1)', borderRadius: '8px', textAlign: 'center' }}>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Sit→Stand</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#a855f7' }}>{tick.configuredDurations.sitToStandTransitionSeconds} sec</div>
-          </div>
-          <div style={{ padding: '0.75rem', backgroundColor: 'rgba(236, 72, 153, 0.1)', borderRadius: '8px', textAlign: 'center' }}>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Stand→Sit</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#ec4899' }}>{tick.configuredDurations.standToSitTransitionSeconds} sec</div>
-          </div>
-          {/* Break settings with interval info */}
-          <div style={{ padding: '0.75rem', backgroundColor: 'rgba(14, 165, 233, 0.1)', borderRadius: '8px', textAlign: 'center', gridColumn: 'span 2' }}>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.25rem' }}>☕ Short Break</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0ea5e9' }}>
-              {tick.configuredDurations.shortBreakDurationMinutes} min
-              <span style={{ fontSize: '0.8rem', fontWeight: 400, color: '#64748b', marginLeft: '0.5rem' }}>
-                every {tick.breakProgress.shortBreakEveryMinutes} min
-              </span>
+      {/* Row 5: Configured Durations - 2 rows */}
+      <div className="card" style={{ padding: '0.75rem 1rem', marginBottom: 0 }}>
+        <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.5rem' }}>Configured Durations</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {/* Row 1: Work + Transitions */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
+            <div style={{ padding: '0.5rem', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderRadius: '6px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Sitting</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#3b82f6' }}>{tick.configuredDurations.sitMinutes}m</div>
+            </div>
+            <div style={{ padding: '0.5rem', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderRadius: '6px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Standing</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#22c55e' }}>{tick.configuredDurations.standMinutes}m</div>
+            </div>
+            <div style={{ padding: '0.5rem', backgroundColor: 'rgba(168, 85, 247, 0.1)', borderRadius: '6px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Sit→Stand</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#a855f7' }}>{tick.configuredDurations.sitToStandTransitionSeconds}s</div>
+            </div>
+            <div style={{ padding: '0.5rem', backgroundColor: 'rgba(236, 72, 153, 0.1)', borderRadius: '6px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Stand→Sit</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#ec4899' }}>{tick.configuredDurations.standToSitTransitionSeconds}s</div>
             </div>
           </div>
-          <div style={{ padding: '0.75rem', backgroundColor: 'rgba(249, 115, 22, 0.1)', borderRadius: '8px', textAlign: 'center', gridColumn: 'span 2' }}>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.25rem' }}>🌴 Long Break</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f97316' }}>
-              {tick.configuredDurations.longBreakDurationMinutes} min
-              <span style={{ fontSize: '0.8rem', fontWeight: 400, color: '#64748b', marginLeft: '0.5rem' }}>
-                every {tick.breakProgress.longBreakEveryMinutes} min
-              </span>
+          {/* Row 2: Break Duration + Break Interval (4 blocks) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
+            <div style={{ padding: '0.5rem', backgroundColor: 'rgba(14, 165, 233, 0.1)', borderRadius: '6px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>☕ Short Break</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0ea5e9' }}>{tick.configuredDurations.shortBreakDurationMinutes}m</div>
+            </div>
+            <div style={{ padding: '0.5rem', backgroundColor: 'rgba(14, 165, 233, 0.08)', borderRadius: '6px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Short Break Every</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0ea5e9' }}>{tick.breakProgress.shortBreakEveryMinutes}m</div>
+            </div>
+            <div style={{ padding: '0.5rem', backgroundColor: 'rgba(249, 115, 22, 0.1)', borderRadius: '6px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>🌴 Long Break</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f97316' }}>{tick.configuredDurations.longBreakDurationMinutes}m</div>
+            </div>
+            <div style={{ padding: '0.5rem', backgroundColor: 'rgba(249, 115, 22, 0.08)', borderRadius: '6px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Long Break Every</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f97316' }}>{tick.breakProgress.longBreakEveryMinutes}m</div>
             </div>
           </div>
         </div>

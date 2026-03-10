@@ -95,8 +95,8 @@ export function registerIpcHandlers(): void {
   // Office Focus Lock handlers
   const officeFocusLockService = getOfficeFocusLockService();
 
-  ipcMain.handle(IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, (_event, label: string, durationMinutes: number) => {
-    officeFocusLockService.start(label, durationMinutes);
+  ipcMain.handle(IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, (_event, label: string, durationMinutes: number, isStrictMode: boolean = false) => {
+    officeFocusLockService.start(label, durationMinutes, isStrictMode);
     return officeFocusLockService.getState();
   });
 
