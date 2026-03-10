@@ -18,11 +18,13 @@ exports.TimerEngine = void 0;
 exports.getTimerEngine = getTimerEngine;
 const events_1 = require("events");
 const electron_1 = require("electron");
+const types_1 = require("../shared/types");
 const officeFocusLockService_1 = require("./officeFocusLockService");
 const timeUtils_1 = require("../shared/timeUtils");
 const constants_1 = require("../shared/constants");
 const configService_1 = __importDefault(require("./configService"));
 const scheduleResolver_1 = require("./scheduleResolver");
+const overlayPolicy_1 = require("./overlayPolicy");
 const logger_1 = __importDefault(require("./logger"));
 const TIME_JUMP_THRESHOLD_MS = 5000; // 5 seconds - indicates sleep/wake or time jump
 const STATE_SAVE_DEBOUNCE_MS = 5000; // Save state every 5 seconds max
@@ -103,12 +105,13 @@ class TimerEngine extends events_1.EventEmitter {
         }
     }
     /**
-     * Reset postpone count if it's a new day
+     * Reset postpone counts if it's a new day
      */
     validateAndResetPostponeCount() {
         const today = (0, timeUtils_1.getTodayDateString)();
         if (this.state.postponeResetDate !== today) {
-            this.state.postponeCountToday = 0;
+            // Reset all per-break-type counters
+            this.state.postponeCountsToday = { ...types_1.INITIAL_POSTPONE_COUNTS };
             this.state.postponeResetDate = today;
             this.saveState();
         }
@@ -248,9 +251,12 @@ class TimerEngine extends events_1.EventEmitter {
         if (!this.isWorkPhase(this.state.currentPhase))
             return;
         const workTimeMs = this.state.cumulativeWorkTimeMs;
+        const schedule = this.currentSchedule;
         // Check long break first (highest priority)
-        if (this.currentSchedule.longBreakEnabled) {
-            const longBreakThreshold = (0, timeUtils_1.minutesToMs)(this.currentSchedule.longBreakEveryMinutes);
+        const longBreakEnabled = schedule.longBreak?.enabled ?? schedule.longBreakEnabled ?? false;
+        if (longBreakEnabled) {
+            const longBreakEvery = schedule.longBreak?.everyMinutes ?? schedule.longBreakEveryMinutes ?? 150;
+            const longBreakThreshold = (0, timeUtils_1.minutesToMs)(longBreakEvery);
             const timeSinceLastLongBreak = workTimeMs - this.state.lastLongBreakAtWorkTimeMs;
             if (timeSinceLastLongBreak >= longBreakThreshold) {
                 this.triggerBreak('long-break');
@@ -258,8 +264,10 @@ class TimerEngine extends events_1.EventEmitter {
             }
         }
         // Check short break
-        if (this.currentSchedule.shortBreakEnabled) {
-            const shortBreakThreshold = (0, timeUtils_1.minutesToMs)(this.currentSchedule.shortBreakEveryMinutes);
+        const shortBreakEnabled = schedule.shortBreak?.enabled ?? schedule.shortBreakEnabled ?? false;
+        if (shortBreakEnabled) {
+            const shortBreakEvery = schedule.shortBreak?.everyMinutes ?? schedule.shortBreakEveryMinutes ?? 60;
+            const shortBreakThreshold = (0, timeUtils_1.minutesToMs)(shortBreakEvery);
             const timeSinceLastShortBreak = workTimeMs - this.state.lastShortBreakAtWorkTimeMs;
             if (timeSinceLastShortBreak >= shortBreakThreshold) {
                 this.triggerBreak('short-break');
@@ -340,23 +348,33 @@ class TimerEngine extends events_1.EventEmitter {
     }
     /**
      * Get duration for a phase in milliseconds
+     * Uses new nested config with fallback to legacy fields
      */
     getPhaseDurationMs(phase) {
         if (!this.currentSchedule)
             return 0;
+        const schedule = this.currentSchedule;
         switch (phase) {
             case 'sit':
-                return (0, timeUtils_1.minutesToMs)(this.currentSchedule.sitMinutes);
+                return (0, timeUtils_1.minutesToMs)(schedule.sitMinutes);
             case 'stand':
-                return (0, timeUtils_1.minutesToMs)(this.currentSchedule.standMinutes);
+                return (0, timeUtils_1.minutesToMs)(schedule.standMinutes);
             case 'sit-to-stand-transition':
-                return (0, timeUtils_1.secondsToMs)(this.currentSchedule.sitToStandTransitionSeconds);
+                return (0, timeUtils_1.secondsToMs)(schedule.transitions?.sitToStand?.durationSeconds ??
+                    schedule.sitToStandTransitionSeconds ??
+                    60);
             case 'stand-to-sit-transition':
-                return (0, timeUtils_1.secondsToMs)(this.currentSchedule.standToSitTransitionSeconds);
+                return (0, timeUtils_1.secondsToMs)(schedule.transitions?.standToSit?.durationSeconds ??
+                    schedule.standToSitTransitionSeconds ??
+                    60);
             case 'short-break':
-                return (0, timeUtils_1.minutesToMs)(this.currentSchedule.shortBreakDurationMinutes);
+                return (0, timeUtils_1.minutesToMs)(schedule.shortBreak?.durationMinutes ??
+                    schedule.shortBreakDurationMinutes ??
+                    5);
             case 'long-break':
-                return (0, timeUtils_1.minutesToMs)(this.currentSchedule.longBreakDurationMinutes);
+                return (0, timeUtils_1.minutesToMs)(schedule.longBreak?.durationMinutes ??
+                    schedule.longBreakDurationMinutes ??
+                    15);
             default:
                 return 0;
         }
@@ -435,23 +453,52 @@ class TimerEngine extends events_1.EventEmitter {
     }
     /**
      * Postpone current phase
+     * Uses per-break-type postpone limits
      */
     postpone(minutes) {
         if (!this.currentSchedule)
             return false;
-        if (!this.currentSchedule.allowPostpone)
+        const breakType = (0, overlayPolicy_1.phaseToBreakType)(this.state.currentPhase);
+        if (!breakType)
+            return false; // Can only postpone breaks/transitions
+        // Check if postpone is allowed for this break type
+        const allowPostpone = this.isPostponeAllowedForBreakType(breakType);
+        if (!allowPostpone)
             return false;
-        if (this.state.postponeCountToday >= this.currentSchedule.maxPostponesPerDay) {
+        // Check per-break-type limit
+        const maxPostpones = (0, overlayPolicy_1.getMaxPostponesForBreakType)(this.currentSchedule, breakType);
+        const currentCount = this.state.postponeCountsToday[breakType];
+        if (currentCount >= maxPostpones)
             return false;
-        }
         this.state.isPostponed = true;
         this.state.postponedUntil = Date.now() + (0, timeUtils_1.minutesToMs)(minutes);
         this.state.postponedPhase = this.state.currentPhase;
-        this.state.postponeCountToday++;
+        this.state.postponedBreakType = breakType;
+        this.state.postponeCountsToday[breakType]++;
         this.saveState();
         // Emit event so main process can close overlay
-        this.emit('postponed', { minutes, phase: this.state.postponedPhase });
+        this.emit('postponed', { minutes, phase: this.state.postponedPhase, breakType });
         return true;
+    }
+    /**
+     * Check if postpone is allowed for a break type
+     */
+    isPostponeAllowedForBreakType(breakType) {
+        if (!this.currentSchedule)
+            return false;
+        const schedule = this.currentSchedule;
+        switch (breakType) {
+            case 'sitToStandTransition':
+                return schedule.transitions?.sitToStand?.allowPostpone ?? schedule.allowPostpone ?? false;
+            case 'standToSitTransition':
+                return schedule.transitions?.standToSit?.allowPostpone ?? schedule.allowPostpone ?? false;
+            case 'shortBreak':
+                return schedule.shortBreak?.allowPostpone ?? schedule.allowPostpone ?? false;
+            case 'longBreak':
+                return schedule.longBreak?.allowPostpone ?? schedule.allowPostpone ?? false;
+            default:
+                return false;
+        }
     }
     /**
      * Skip the current phase (if allowed)
@@ -459,10 +506,10 @@ class TimerEngine extends events_1.EventEmitter {
     skipPhase() {
         if (!this.currentSchedule)
             return;
-        // Only allow skipping non-strict mode or non-work phases
-        if (this.currentSchedule.strictModeEnabled && this.isWorkPhase(this.state.currentPhase)) {
+        // Only allow skipping if not in strict mode for current phase
+        const isStrictMode = this.getStrictModeForCurrentPhase();
+        if (isStrictMode)
             return;
-        }
         this.advancePhase();
     }
     /**
@@ -476,9 +523,21 @@ class TimerEngine extends events_1.EventEmitter {
      */
     emitTick() {
         const officeFocusLockService = (0, officeFocusLockService_1.getOfficeFocusLockService)();
+        const schedule = this.currentSchedule;
+        const breakType = (0, overlayPolicy_1.phaseToBreakType)(this.state.currentPhase);
+        // Calculate total postpone count across all break types
+        const totalPostponeCount = Object.values(this.state.postponeCountsToday).reduce((a, b) => a + b, 0);
+        // Get max postpones for current break type (or legacy global value)
+        const maxPostpones = breakType
+            ? (0, overlayPolicy_1.getMaxPostponesForBreakType)(schedule, breakType)
+            : (schedule?.maxPostponesPerDay ?? 0);
+        // Get postpone options for current break type
+        const postponeOptions = this.getPostponeOptionsForCurrentPhase();
+        // Get strict mode for current phase
+        const isStrictMode = this.getStrictModeForCurrentPhase();
         const tick = {
-            scheduleId: this.currentSchedule?.id || null,
-            scheduleName: this.currentSchedule?.name || null,
+            scheduleId: schedule?.id || null,
+            scheduleName: schedule?.name || null,
             currentPhase: this.state.currentPhase,
             phaseRemainingMs: this.state.phaseRemainingMs,
             phaseTotalMs: this.state.phaseTotalMs,
@@ -486,28 +545,81 @@ class TimerEngine extends events_1.EventEmitter {
             cumulativeWorkTimeMs: this.state.cumulativeWorkTimeMs,
             isPaused: this.state.isPaused,
             isPostponed: this.state.isPostponed,
-            postponeCountToday: this.state.postponeCountToday,
-            maxPostponesPerDay: this.currentSchedule?.maxPostponesPerDay || 0,
+            postponeCountToday: totalPostponeCount,
+            maxPostponesPerDay: maxPostpones,
             canPostpone: this.canPostpone(),
-            postponeOptions: this.currentSchedule?.postponeOptionsMinutes || [],
-            isStrictMode: this.currentSchedule?.strictModeEnabled || false,
+            postponeOptions,
+            isStrictMode,
             officeFocusLock: officeFocusLockService.getState(),
         };
         this.emit('tick', tick);
     }
     /**
+     * Get postpone options for current phase
+     */
+    getPostponeOptionsForCurrentPhase() {
+        if (!this.currentSchedule)
+            return [];
+        const schedule = this.currentSchedule;
+        const breakType = (0, overlayPolicy_1.phaseToBreakType)(this.state.currentPhase);
+        if (!breakType)
+            return schedule.postponeOptionsMinutes ?? [];
+        switch (breakType) {
+            case 'sitToStandTransition':
+                return schedule.transitions?.sitToStand?.postponeOptionsMinutes ?? schedule.postponeOptionsMinutes ?? [];
+            case 'standToSitTransition':
+                return schedule.transitions?.standToSit?.postponeOptionsMinutes ?? schedule.postponeOptionsMinutes ?? [];
+            case 'shortBreak':
+                return schedule.shortBreak?.postponeOptionsMinutes ?? schedule.postponeOptionsMinutes ?? [];
+            case 'longBreak':
+                return schedule.longBreak?.postponeOptionsMinutes ?? schedule.postponeOptionsMinutes ?? [];
+            default:
+                return schedule.postponeOptionsMinutes ?? [];
+        }
+    }
+    /**
+     * Get strict mode for current phase
+     */
+    getStrictModeForCurrentPhase() {
+        if (!this.currentSchedule)
+            return false;
+        const schedule = this.currentSchedule;
+        const breakType = (0, overlayPolicy_1.phaseToBreakType)(this.state.currentPhase);
+        // Work phases use global setting
+        if (!breakType)
+            return schedule.strictModeEnabled ?? false;
+        switch (breakType) {
+            case 'sitToStandTransition':
+                return schedule.transitions?.sitToStand?.strictModeEnabled ?? schedule.strictModeEnabled ?? false;
+            case 'standToSitTransition':
+                return schedule.transitions?.standToSit?.strictModeEnabled ?? schedule.strictModeEnabled ?? false;
+            case 'shortBreak':
+                return schedule.shortBreak?.strictModeEnabled ?? schedule.strictModeEnabled ?? false;
+            case 'longBreak':
+                return schedule.longBreak?.strictModeEnabled ?? schedule.strictModeEnabled ?? false;
+            default:
+                return schedule.strictModeEnabled ?? false;
+        }
+    }
+    /**
      * Check if postpone is currently allowed
+     * Uses per-break-type limits
      */
     canPostpone() {
         if (!this.currentSchedule)
             return false;
-        if (!this.currentSchedule.allowPostpone)
-            return false;
-        if (this.state.postponeCountToday >= this.currentSchedule.maxPostponesPerDay)
-            return false;
         if (this.state.isPostponed)
             return false;
-        return true;
+        const breakType = (0, overlayPolicy_1.phaseToBreakType)(this.state.currentPhase);
+        if (!breakType)
+            return false; // Can only postpone breaks/transitions
+        // Check if postpone allowed for this break type
+        if (!this.isPostponeAllowedForBreakType(breakType))
+            return false;
+        // Check per-break-type limit
+        const maxPostpones = (0, overlayPolicy_1.getMaxPostponesForBreakType)(this.currentSchedule, breakType);
+        const currentCount = this.state.postponeCountsToday[breakType];
+        return currentCount < maxPostpones;
     }
     /**
      * Get current state (for IPC)

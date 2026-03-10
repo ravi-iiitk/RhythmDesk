@@ -4,7 +4,22 @@
  * All data model interfaces used across main and renderer processes
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.OFFICE_FOCUS_LOCK_DURATIONS = exports.INITIAL_OFFICE_FOCUS_LOCK_STATE = exports.DEFAULT_GENERAL_SETTINGS = exports.INITIAL_SESSION_STATE = exports.DEFAULT_SCHEDULE = exports.IPC_CHANNELS = exports.OFFICE_FOCUS_LABELS = void 0;
+exports.OFFICE_FOCUS_LOCK_DURATIONS = exports.INITIAL_OFFICE_FOCUS_LOCK_STATE = exports.DEFAULT_GENERAL_SETTINGS = exports.INITIAL_SESSION_STATE = exports.INITIAL_POSTPONE_COUNTS = exports.DEFAULT_SCHEDULE = exports.DEFAULT_LONG_BREAK_CONFIG = exports.DEFAULT_SHORT_BREAK_CONFIG = exports.DEFAULT_TRANSITION_CONFIG = exports.IPC_CHANNELS = exports.OFFICE_FOCUS_LABELS = exports.TimerEvent = void 0;
+// Timer engine events
+var TimerEvent;
+(function (TimerEvent) {
+    TimerEvent["PHASE_COMPLETED"] = "phase:completed";
+    TimerEvent["SHORT_BREAK_DUE"] = "break:short:due";
+    TimerEvent["LONG_BREAK_DUE"] = "break:long:due";
+    TimerEvent["POSTPONE_REQUESTED"] = "postpone:requested";
+    TimerEvent["POSTPONE_ENDED"] = "postpone:ended";
+    TimerEvent["PAUSE_STARTED"] = "pause:started";
+    TimerEvent["PAUSE_ENDED"] = "pause:ended";
+    TimerEvent["SCHEDULE_ACTIVATED"] = "schedule:activated";
+    TimerEvent["SCHEDULE_DEACTIVATED"] = "schedule:deactivated";
+    TimerEvent["FOCUS_LOCK_STARTED"] = "focusLock:started";
+    TimerEvent["FOCUS_LOCK_STOPPED"] = "focusLock:stopped";
+})(TimerEvent || (exports.TimerEvent = TimerEvent = {}));
 // Preset work labels for Office Focus Lock
 exports.OFFICE_FOCUS_LABELS = ['EPAM', 'Resy'];
 // IPC channel names
@@ -40,27 +55,55 @@ exports.IPC_CHANNELS = {
     MINIMIZE_TO_TRAY: 'window:minimizeToTray',
     QUIT_APP: 'app:quit',
 };
+// Default transition config
+exports.DEFAULT_TRANSITION_CONFIG = {
+    durationSeconds: 60,
+    strictModeEnabled: true,
+    allowPostpone: true,
+    postponeOptionsMinutes: [2, 5, 10],
+    maxPostponesPerDay: 4,
+};
+// Default break config
+exports.DEFAULT_SHORT_BREAK_CONFIG = {
+    enabled: true,
+    everyMinutes: 60,
+    durationMinutes: 5,
+    strictModeEnabled: true,
+    allowPostpone: true,
+    postponeOptionsMinutes: [2, 5, 10],
+    maxPostponesPerDay: 4,
+};
+exports.DEFAULT_LONG_BREAK_CONFIG = {
+    enabled: true,
+    everyMinutes: 150,
+    durationMinutes: 15,
+    strictModeEnabled: true,
+    allowPostpone: true,
+    postponeOptionsMinutes: [2, 5, 10],
+    maxPostponesPerDay: 2,
+};
 // Default values for new schedules
 exports.DEFAULT_SCHEDULE = {
     enabled: true,
     activeDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
     startTime: '09:00',
     endTime: '17:00',
+    priority: 0,
     sitMinutes: 12,
-    sitToStandTransitionSeconds: 60,
     standMinutes: 8,
-    standToSitTransitionSeconds: 60,
-    shortBreakEnabled: true,
-    shortBreakEveryMinutes: 60,
-    shortBreakDurationMinutes: 5,
-    longBreakEnabled: true,
-    longBreakEveryMinutes: 150,
-    longBreakDurationMinutes: 15,
-    strictModeEnabled: true,
-    allowPostpone: true,
-    postponeOptionsMinutes: [2, 5, 10],
-    maxPostponesPerDay: 4,
-    lockOverlayInStrictMode: true,
+    transitions: {
+        sitToStand: { ...exports.DEFAULT_TRANSITION_CONFIG },
+        standToSit: { ...exports.DEFAULT_TRANSITION_CONFIG },
+    },
+    shortBreak: { ...exports.DEFAULT_SHORT_BREAK_CONFIG },
+    longBreak: { ...exports.DEFAULT_LONG_BREAK_CONFIG },
+};
+// Initial postpone counts
+exports.INITIAL_POSTPONE_COUNTS = {
+    sitToStandTransition: 0,
+    standToSitTransition: 0,
+    shortBreak: 0,
+    longBreak: 0,
 };
 // Initial session state
 exports.INITIAL_SESSION_STATE = {
@@ -73,7 +116,9 @@ exports.INITIAL_SESSION_STATE = {
     cumulativeWorkTimeMs: 0,
     lastShortBreakAtWorkTimeMs: 0,
     lastLongBreakAtWorkTimeMs: 0,
-    postponeCountToday: 0,
+    interruptedPhase: null,
+    interruptedPhaseRemainingMs: 0,
+    postponeCountsToday: { ...exports.INITIAL_POSTPONE_COUNTS },
     postponeResetDate: new Date().toISOString().split('T')[0],
     isPaused: false,
     pausedAt: null,
@@ -81,6 +126,7 @@ exports.INITIAL_SESSION_STATE = {
     isPostponed: false,
     postponedUntil: null,
     postponedPhase: null,
+    postponedBreakType: null,
 };
 // Default general settings
 exports.DEFAULT_GENERAL_SETTINGS = {

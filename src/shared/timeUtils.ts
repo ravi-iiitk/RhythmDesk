@@ -105,3 +105,79 @@ export function secondsToMs(seconds: number): number {
 export function msToMinutes(ms: number): number {
   return ms / 60000;
 }
+
+// ============================================================================
+// TIMESTAMP-BASED CALCULATIONS
+// These functions use timestamps for accurate duration tracking
+// They avoid fragile assumptions like relying on tick counts
+// ============================================================================
+
+/**
+ * Calculate elapsed time from a start timestamp
+ * Returns 0 if startTimestamp is 0 or in the future
+ */
+export function elapsedSince(startTimestamp: number): number {
+  if (startTimestamp <= 0) return 0;
+  const now = Date.now();
+  return Math.max(0, now - startTimestamp);
+}
+
+/**
+ * Calculate remaining time until an end timestamp
+ * Returns 0 if endTimestamp is 0 or in the past
+ */
+export function remainingUntil(endTimestamp: number): number {
+  if (endTimestamp <= 0) return 0;
+  const now = Date.now();
+  return Math.max(0, endTimestamp - now);
+}
+
+/**
+ * Check if a timestamp has passed
+ */
+export function hasTimePassed(timestamp: number): boolean {
+  if (timestamp <= 0) return false;
+  return Date.now() >= timestamp;
+}
+
+/**
+ * Calculate phase end timestamp from start and duration
+ */
+export function calculatePhaseEnd(startTimestamp: number, durationMs: number): number {
+  return startTimestamp + durationMs;
+}
+
+/**
+ * Get time since last event (for break triggers)
+ * Returns time in milliseconds
+ */
+export function timeSinceEvent(eventTimestamp: number): number {
+  if (eventTimestamp <= 0) return Infinity;
+  return Math.max(0, Date.now() - eventTimestamp);
+}
+
+/**
+ * Check if enough time has elapsed for a threshold
+ * Used for break triggers based on cumulative work time
+ */
+export function hasThresholdPassed(
+  currentValue: number,
+  lastTriggerValue: number,
+  threshold: number
+): boolean {
+  return (currentValue - lastTriggerValue) >= threshold;
+}
+
+/**
+ * Calculate adjusted phase remaining after pause/resume
+ * When resuming from pause, we need to recalculate phaseEndsAt
+ */
+export function adjustPhaseEndAfterPause(
+  pausedAt: number,
+  phaseEndsAt: number
+): number {
+  if (pausedAt <= 0 || phaseEndsAt <= 0) return phaseEndsAt;
+  const now = Date.now();
+  const pauseDuration = now - pausedAt;
+  return phaseEndsAt + pauseDuration;
+}

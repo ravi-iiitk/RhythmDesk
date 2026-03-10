@@ -44,6 +44,104 @@ const path = __importStar(require("path"));
 const types_1 = require("../shared/types");
 const constants_1 = require("../shared/constants");
 /**
+ * Migrate legacy schedule format to new per-break config format
+ */
+function migrateSchedule(schedule) {
+    // If already migrated (has transitions object), return as-is with defaults merged
+    if (schedule.transitions && schedule.shortBreak && schedule.longBreak) {
+        return {
+            ...schedule,
+            priority: schedule.priority ?? 0,
+        };
+    }
+    // Migrate from legacy flat fields to new nested structure
+    const legacyStrictMode = schedule.strictModeEnabled ?? true;
+    const legacyAllowPostpone = schedule.allowPostpone ?? true;
+    const legacyPostponeOptions = schedule.postponeOptionsMinutes ?? [2, 5, 10];
+    const legacyMaxPostpones = schedule.maxPostponesPerDay ?? 4;
+    return {
+        id: schedule.id,
+        name: schedule.name,
+        enabled: schedule.enabled ?? true,
+        activeDays: schedule.activeDays ?? ['mon', 'tue', 'wed', 'thu', 'fri'],
+        startTime: schedule.startTime ?? '09:00',
+        endTime: schedule.endTime ?? '17:00',
+        priority: schedule.priority ?? 0,
+        sitMinutes: schedule.sitMinutes ?? 12,
+        standMinutes: schedule.standMinutes ?? 8,
+        transitions: {
+            sitToStand: {
+                durationSeconds: schedule.sitToStandTransitionSeconds ?? types_1.DEFAULT_TRANSITION_CONFIG.durationSeconds,
+                strictModeEnabled: legacyStrictMode,
+                allowPostpone: legacyAllowPostpone,
+                postponeOptionsMinutes: [...legacyPostponeOptions],
+                maxPostponesPerDay: legacyMaxPostpones,
+            },
+            standToSit: {
+                durationSeconds: schedule.standToSitTransitionSeconds ?? types_1.DEFAULT_TRANSITION_CONFIG.durationSeconds,
+                strictModeEnabled: legacyStrictMode,
+                allowPostpone: legacyAllowPostpone,
+                postponeOptionsMinutes: [...legacyPostponeOptions],
+                maxPostponesPerDay: legacyMaxPostpones,
+            },
+        },
+        shortBreak: {
+            enabled: schedule.shortBreakEnabled ?? types_1.DEFAULT_SHORT_BREAK_CONFIG.enabled,
+            everyMinutes: schedule.shortBreakEveryMinutes ?? types_1.DEFAULT_SHORT_BREAK_CONFIG.everyMinutes,
+            durationMinutes: schedule.shortBreakDurationMinutes ?? types_1.DEFAULT_SHORT_BREAK_CONFIG.durationMinutes,
+            strictModeEnabled: legacyStrictMode,
+            allowPostpone: legacyAllowPostpone,
+            postponeOptionsMinutes: [...legacyPostponeOptions],
+            maxPostponesPerDay: legacyMaxPostpones,
+        },
+        longBreak: {
+            enabled: schedule.longBreakEnabled ?? types_1.DEFAULT_LONG_BREAK_CONFIG.enabled,
+            everyMinutes: schedule.longBreakEveryMinutes ?? types_1.DEFAULT_LONG_BREAK_CONFIG.everyMinutes,
+            durationMinutes: schedule.longBreakDurationMinutes ?? types_1.DEFAULT_LONG_BREAK_CONFIG.durationMinutes,
+            strictModeEnabled: legacyStrictMode,
+            allowPostpone: legacyAllowPostpone,
+            postponeOptionsMinutes: [...legacyPostponeOptions],
+            maxPostponesPerDay: Math.max(1, Math.floor(legacyMaxPostpones / 2)), // Fewer for long breaks
+        },
+        createdAt: schedule.createdAt,
+    };
+}
+/**
+ * Migrate legacy session state to new format
+ */
+function migrateSessionState(state) {
+    // Convert legacy single postponeCountToday to per-break counts
+    const legacyCount = state.postponeCountToday ?? 0;
+    const postponeCountsToday = state.postponeCountsToday ?? {
+        sitToStandTransition: legacyCount,
+        standToSitTransition: 0,
+        shortBreak: 0,
+        longBreak: 0,
+    };
+    return {
+        activeScheduleId: state.activeScheduleId ?? null,
+        currentPhase: state.currentPhase ?? 'idle',
+        phaseStartedAt: state.phaseStartedAt ?? 0,
+        phaseEndsAt: state.phaseEndsAt ?? 0,
+        phaseRemainingMs: state.phaseRemainingMs ?? 0,
+        phaseTotalMs: state.phaseTotalMs ?? 0,
+        cumulativeWorkTimeMs: state.cumulativeWorkTimeMs ?? 0,
+        lastShortBreakAtWorkTimeMs: state.lastShortBreakAtWorkTimeMs ?? 0,
+        lastLongBreakAtWorkTimeMs: state.lastLongBreakAtWorkTimeMs ?? 0,
+        interruptedPhase: state.interruptedPhase ?? null,
+        interruptedPhaseRemainingMs: state.interruptedPhaseRemainingMs ?? 0,
+        postponeCountsToday,
+        postponeResetDate: state.postponeResetDate ?? new Date().toISOString().split('T')[0],
+        isPaused: state.isPaused ?? false,
+        pausedAt: state.pausedAt ?? null,
+        pauseResumeAt: state.pauseResumeAt ?? null,
+        isPostponed: state.isPostponed ?? false,
+        postponedUntil: state.postponedUntil ?? null,
+        postponedPhase: state.postponedPhase ?? null,
+        postponedBreakType: state.postponedBreakType ?? null,
+    };
+}
+/**
  * JSON File Storage Provider
  * Stores all config in a single JSON file
  */
@@ -77,12 +175,13 @@ class JsonStorageProvider {
             if (this.configPath && fs.existsSync(this.configPath)) {
                 const data = fs.readFileSync(this.configPath, 'utf-8');
                 const parsed = JSON.parse(data);
-                // Merge with defaults to handle missing fields from older versions
-                return {
-                    schedules: parsed.schedules || [],
-                    generalSettings: { ...types_1.DEFAULT_GENERAL_SETTINGS, ...parsed.generalSettings },
-                    sessionState: { ...types_1.INITIAL_SESSION_STATE, ...parsed.sessionState },
-                };
+                // Migrate schedules to new format
+                const schedules = (parsed.schedules || []).map((s) => migrateSchedule(s));
+                // Migrate session state to new format
+                const sessionState = migrateSessionState(parsed.sessionState || {});
+                // Merge general settings with defaults
+                const generalSettings = { ...types_1.DEFAULT_GENERAL_SETTINGS, ...parsed.generalSettings };
+                return { schedules, generalSettings, sessionState };
             }
         }
         catch (error) {

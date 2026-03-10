@@ -13,6 +13,13 @@ exports.getTodayDateString = getTodayDateString;
 exports.minutesToMs = minutesToMs;
 exports.secondsToMs = secondsToMs;
 exports.msToMinutes = msToMinutes;
+exports.elapsedSince = elapsedSince;
+exports.remainingUntil = remainingUntil;
+exports.hasTimePassed = hasTimePassed;
+exports.calculatePhaseEnd = calculatePhaseEnd;
+exports.timeSinceEvent = timeSinceEvent;
+exports.hasThresholdPassed = hasThresholdPassed;
+exports.adjustPhaseEndAfterPause = adjustPhaseEndAfterPause;
 /**
  * Get current day of week
  */
@@ -104,5 +111,71 @@ function secondsToMs(seconds) {
  */
 function msToMinutes(ms) {
     return ms / 60000;
+}
+// ============================================================================
+// TIMESTAMP-BASED CALCULATIONS
+// These functions use timestamps for accurate duration tracking
+// They avoid fragile assumptions like relying on tick counts
+// ============================================================================
+/**
+ * Calculate elapsed time from a start timestamp
+ * Returns 0 if startTimestamp is 0 or in the future
+ */
+function elapsedSince(startTimestamp) {
+    if (startTimestamp <= 0)
+        return 0;
+    const now = Date.now();
+    return Math.max(0, now - startTimestamp);
+}
+/**
+ * Calculate remaining time until an end timestamp
+ * Returns 0 if endTimestamp is 0 or in the past
+ */
+function remainingUntil(endTimestamp) {
+    if (endTimestamp <= 0)
+        return 0;
+    const now = Date.now();
+    return Math.max(0, endTimestamp - now);
+}
+/**
+ * Check if a timestamp has passed
+ */
+function hasTimePassed(timestamp) {
+    if (timestamp <= 0)
+        return false;
+    return Date.now() >= timestamp;
+}
+/**
+ * Calculate phase end timestamp from start and duration
+ */
+function calculatePhaseEnd(startTimestamp, durationMs) {
+    return startTimestamp + durationMs;
+}
+/**
+ * Get time since last event (for break triggers)
+ * Returns time in milliseconds
+ */
+function timeSinceEvent(eventTimestamp) {
+    if (eventTimestamp <= 0)
+        return Infinity;
+    return Math.max(0, Date.now() - eventTimestamp);
+}
+/**
+ * Check if enough time has elapsed for a threshold
+ * Used for break triggers based on cumulative work time
+ */
+function hasThresholdPassed(currentValue, lastTriggerValue, threshold) {
+    return (currentValue - lastTriggerValue) >= threshold;
+}
+/**
+ * Calculate adjusted phase remaining after pause/resume
+ * When resuming from pause, we need to recalculate phaseEndsAt
+ */
+function adjustPhaseEndAfterPause(pausedAt, phaseEndsAt) {
+    if (pausedAt <= 0 || phaseEndsAt <= 0)
+        return phaseEndsAt;
+    const now = Date.now();
+    const pauseDuration = now - pausedAt;
+    return phaseEndsAt + pauseDuration;
 }
 //# sourceMappingURL=timeUtils.js.map

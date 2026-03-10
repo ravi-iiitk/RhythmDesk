@@ -1,7 +1,27 @@
 "use strict";
 /**
  * RhythmDesk System Tray
- * Provides quick access to timer state and controls
+ *
+ * LINUX APPINDICATOR/KSTATUSNOTIFIER STABILIZATION:
+ *
+ * Problem: Linux tray implementations (AppIndicator, KStatusNotifier) flicker
+ * when the menu is rebuilt or tray is updated while menu is open.
+ *
+ * Solution - STRICT RULES:
+ * 1. Track menu open/close state explicitly
+ * 2. FREEZE all tray updates while menu is open:
+ *    - No tooltip updates
+ *    - No menu rebuilds
+ *    - No icon changes
+ * 3. Queue pending state while menu is open
+ * 4. Apply ONE consolidated update when menu closes
+ * 5. Menu is STATIC - no live countdown in labels
+ * 6. Tooltip throttled: 10s normal, 5s during breaks
+ * 7. Menu only rebuilt on critical structural changes:
+ *    - pause/resume state change
+ *    - focus lock start/stop
+ *    - active schedule changed (name, not phase)
+ *    - NOT on phase change (that's in tooltip)
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -39,6 +59,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createTray = createTray;
 exports.updateTrayWithTick = updateTrayWithTick;
+exports.forceRefreshTrayMenu = forceRefreshTrayMenu;
 exports.destroyTray = destroyTray;
 exports.getTray = getTray;
 const electron_1 = require("electron");
@@ -49,42 +70,49 @@ const timeUtils_1 = require("../shared/timeUtils");
 const windowManager_1 = require("./windowManager");
 const timerEngine_1 = require("../core/timerEngine");
 const officeFocusLockService_1 = require("../core/officeFocusLockService");
+// ============================================================================
+// STATE
+// ============================================================================
+// Tray instance
 let tray = null;
+// Current tick for tooltip/menu content
 let currentTick = null;
+// CRITICAL: Menu open state tracking
+// When true, ALL tray updates are frozen
+let isMenuOpen = false;
+// Pending update flag - set when update was skipped due to menu being open
+let hasPendingUpdate = false;
+let previousMenuState = null;
+// Tooltip throttling
+// Normal phases: 10 seconds
+// Break phases: 5 seconds
+const TOOLTIP_INTERVAL_NORMAL_MS = 10000;
+const TOOLTIP_INTERVAL_BREAK_MS = 5000;
+let lastTooltipUpdate = 0;
+// ============================================================================
+// HELPER: Check if phase is a break/transition
+// ============================================================================
+function isBreakPhase(phase) {
+    return [
+        'sit-to-stand-transition',
+        'stand-to-sit-transition',
+        'short-break',
+        'long-break',
+    ].includes(phase);
+}
+// ============================================================================
+// PUBLIC API
+// ============================================================================
 /**
  * Create the system tray icon
+ * Called once at app startup
  */
 function createTray() {
-    // Resolve icon path for both dev and production
-    // In dev: __dirname is dist/main/main, project root is 3 levels up
-    // In prod (packaged): resources are in app.asar or extraResources
-    const isDev = !electron_1.app.isPackaged;
-    let iconPath;
-    if (isDev) {
-        // Development: go up from dist/main/main to project root
-        iconPath = path.join(__dirname, '../../../resources/icon.png');
-    }
-    else {
-        // Production: use extraResources path
-        iconPath = path.join(process.resourcesPath, 'resources/icon.png');
-    }
-    let icon;
-    try {
-        icon = electron_1.nativeImage.createFromPath(iconPath);
-        if (icon.isEmpty()) {
-            // Create a fallback icon if file doesn't exist
-            icon = createFallbackIcon();
-        }
-    }
-    catch {
-        icon = createFallbackIcon();
-    }
+    const icon = loadTrayIcon();
     tray = new electron_1.Tray(icon.resize({ width: 22, height: 22 }));
-    tray.setToolTip('RhythmDesk');
-    // Set static menu once - on Linux/AppIndicator, dynamic updates cause flicker
-    // Status info is shown in tooltip instead (updates every second)
-    const menu = buildContextMenu();
-    tray.setContextMenu(menu);
+    tray.setToolTip('RhythmDesk - Starting...');
+    // Build initial static menu with menu-will-show/hide tracking
+    rebuildMenuWithTracking();
     // Left-click opens dashboard (may not work on all Linux DEs)
     tray.on('click', () => {
         (0, windowManager_1.showMainWindow)();
@@ -92,10 +120,105 @@ function createTray() {
     return tray;
 }
 /**
+ * Update tray with current timer state
+ * Called every second from timer engine tick
+ *
+ * CRITICAL: ALL updates are FROZEN while menu is open
+ * Updates are queued and applied when menu closes
+ */
+function updateTrayWithTick(tick) {
+    // Always store latest tick for when menu closes
+    currentTick = tick;
+    // FREEZE: Skip ALL updates while menu is open
+    if (isMenuOpen) {
+        hasPendingUpdate = true;
+        return;
+    }
+    const now = Date.now();
+    // Determine throttle interval based on phase
+    // Breaks: 5 seconds, Normal: 10 seconds
+    const throttleInterval = isBreakPhase(tick.currentPhase)
+        ? TOOLTIP_INTERVAL_BREAK_MS
+        : TOOLTIP_INTERVAL_NORMAL_MS;
+    // Throttled tooltip update
+    if (now - lastTooltipUpdate >= throttleInterval) {
+        updateTrayTooltip(tick);
+        lastTooltipUpdate = now;
+    }
+    // Check if menu needs rebuild (structural change only)
+    checkAndRebuildMenuIfNeeded(tick);
+}
+/**
+ * Force refresh tray menu
+ * Call when you know state has changed (e.g., from IPC handler)
+ *
+ * CRITICAL: Respects menu open state - queues if menu is open
+ */
+function forceRefreshTrayMenu(reason) {
+    if (!tray)
+        return;
+    // FREEZE: Queue update if menu is open
+    if (isMenuOpen) {
+        console.log(`[Tray] Force refresh queued (menu open): ${reason}`);
+        hasPendingUpdate = true;
+        return;
+    }
+    console.log(`[Tray] Force refresh: ${reason}`);
+    rebuildMenuWithTracking();
+    // Update previousMenuState to current
+    if (currentTick) {
+        previousMenuState = extractMenuState(currentTick);
+    }
+}
+/**
+ * Destroy tray
+ */
+function destroyTray() {
+    if (tray) {
+        tray.destroy();
+        tray = null;
+    }
+    previousMenuState = null;
+    currentTick = null;
+    isMenuOpen = false;
+    hasPendingUpdate = false;
+}
+/**
+ * Get tray instance
+ */
+function getTray() {
+    return tray;
+}
+// ============================================================================
+// PRIVATE: ICON LOADING
+// ============================================================================
+/**
+ * Load tray icon from resources
+ */
+function loadTrayIcon() {
+    const isDev = !electron_1.app.isPackaged;
+    let iconPath;
+    if (isDev) {
+        iconPath = path.join(__dirname, '../../../resources/icon.png');
+    }
+    else {
+        iconPath = path.join(process.resourcesPath, 'resources/icon.png');
+    }
+    try {
+        const icon = electron_1.nativeImage.createFromPath(iconPath);
+        if (!icon.isEmpty()) {
+            return icon;
+        }
+    }
+    catch {
+        // Fall through to fallback
+    }
+    return createFallbackIcon();
+}
+/**
  * Create a simple fallback icon
  */
 function createFallbackIcon() {
-    // Create a simple 22x22 colored square as fallback
     const size = 22;
     const canvas = Buffer.alloc(size * size * 4);
     for (let i = 0; i < size * size; i++) {
@@ -105,73 +228,170 @@ function createFallbackIcon() {
         canvas[offset + 2] = 246; // B
         canvas[offset + 3] = 255; // A
     }
-    return electron_1.nativeImage.createFromBuffer(canvas, {
-        width: size,
-        height: size,
-    });
+    return electron_1.nativeImage.createFromBuffer(canvas, { width: size, height: size });
 }
+// ============================================================================
+// PRIVATE: TOOLTIP (Throttled, frozen while menu open)
+// ============================================================================
 /**
- * Update tray with current timer state
- * Only updates tooltip - menu is completely static to avoid Linux AppIndicator flicker
+ * Update tray tooltip with live countdown
+ * ONLY called when:
+ * - Menu is closed
+ * - Throttle interval has passed
  */
-function updateTrayWithTick(tick) {
-    currentTick = tick;
-    updateTrayTooltip();
-}
-/**
- * Update tray tooltip
- * Format:
- * RhythmDesk
- * Schedule: <name>
- * Phase: <phase>
- * Remaining: <time>
- * Focus Lock: <state>
- */
-function updateTrayTooltip() {
-    if (!tray || !currentTick)
+function updateTrayTooltip(tick) {
+    if (!tray)
+        return;
+    // Double-check menu is not open (defensive)
+    if (isMenuOpen)
         return;
     let tooltip = 'RhythmDesk';
-    if (currentTick.scheduleName) {
-        const phaseName = constants_1.PHASE_DISPLAY_NAMES[currentTick.currentPhase] || currentTick.currentPhase;
-        const remaining = (0, timeUtils_1.formatDuration)(currentTick.phaseRemainingMs);
-        tooltip = 'RhythmDesk';
-        tooltip += `\nSchedule: ${currentTick.scheduleName}`;
-        tooltip += `\nPhase: ${phaseName}`;
-        tooltip += `\nRemaining: ${remaining}`;
-        if (currentTick.isPaused) {
-            tooltip += '\nStatus: ⏸ Paused';
+    if (tick.scheduleName) {
+        const phaseName = constants_1.PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
+        const remaining = (0, timeUtils_1.formatDuration)(tick.phaseRemainingMs);
+        tooltip += `\n📅 ${tick.scheduleName}`;
+        tooltip += `\n⏱️ ${phaseName}: ${remaining}`;
+        if (tick.isPaused) {
+            tooltip += '\n⏸ PAUSED';
         }
-        else if (currentTick.isPostponed) {
-            tooltip += '\nStatus: ⏳ Postponed';
+        else if (tick.isPostponed) {
+            tooltip += '\n⏳ POSTPONED';
         }
-        // Add Office Focus Lock status to tooltip
-        if (currentTick.officeFocusLock.isActive) {
-            const lockRemaining = (0, timeUtils_1.formatDuration)(currentTick.officeFocusLock.remainingMs);
-            tooltip += `\nFocus Lock: ${currentTick.officeFocusLock.label} (${lockRemaining})`;
+        if (tick.officeFocusLock.isActive) {
+            const lockRemaining = (0, timeUtils_1.formatDuration)(tick.officeFocusLock.remainingMs);
+            tooltip += `\n🔒 ${tick.officeFocusLock.label}: ${lockRemaining}`;
         }
     }
     else {
-        tooltip = 'RhythmDesk\nStatus: Idle';
+        tooltip += '\n💤 No active schedule';
     }
     tray.setToolTip(tooltip);
 }
+// ============================================================================
+// PRIVATE: MENU (STATIC - rebuilt only on critical structural changes)
+// ============================================================================
 /**
- * Build static context menu - no dynamic content to avoid AppIndicator flicker
- * All status info is shown in tooltip instead (hover over icon)
+ * Rebuild menu with open/close tracking
+ * This is the ONLY place that calls tray.setContextMenu()
  */
-function buildContextMenu() {
+function rebuildMenuWithTracking() {
+    if (!tray)
+        return;
+    const menu = buildStaticTrayMenu();
+    // Track menu open/close via menu-will-show/menu-will-close events
+    // Note: These events are available in Electron's Menu
+    menu.on('menu-will-show', () => {
+        console.log('[Tray] Menu opened - freezing updates');
+        isMenuOpen = true;
+    });
+    menu.on('menu-will-close', () => {
+        console.log('[Tray] Menu closed - unfreezing updates');
+        isMenuOpen = false;
+        // Apply pending update if any
+        if (hasPendingUpdate && currentTick) {
+            hasPendingUpdate = false;
+            // Use setTimeout to ensure menu is fully closed
+            setTimeout(() => {
+                if (currentTick && !isMenuOpen) {
+                    console.log('[Tray] Applying pending update after menu close');
+                    updateTrayTooltip(currentTick);
+                    checkAndRebuildMenuIfNeeded(currentTick);
+                }
+            }, 100);
+        }
+    });
+    tray.setContextMenu(menu);
+}
+/**
+ * Extract menu-relevant state from tick
+ * Used to detect structural changes
+ * NOTE: Does NOT include currentPhase - phase changes are in tooltip only
+ */
+function extractMenuState(tick) {
+    return {
+        scheduleName: tick.scheduleName,
+        isPaused: tick.isPaused,
+        isPostponed: tick.isPostponed,
+        focusLockActive: tick.officeFocusLock.isActive,
+        focusLockLabel: tick.officeFocusLock.label,
+    };
+}
+/**
+ * Check if menu state has structurally changed
+ * Only checks critical state changes, NOT phase changes
+ */
+function hasMenuStateChanged(current, previous) {
+    if (!previous)
+        return true;
+    return (current.scheduleName !== previous.scheduleName ||
+        current.isPaused !== previous.isPaused ||
+        current.isPostponed !== previous.isPostponed ||
+        current.focusLockActive !== previous.focusLockActive ||
+        current.focusLockLabel !== previous.focusLockLabel);
+}
+/**
+ * Check if menu needs refresh and rebuild if necessary
+ * Only rebuilds on STRUCTURAL changes, not every tick
+ * CRITICAL: Respects menu open state
+ */
+function checkAndRebuildMenuIfNeeded(tick) {
+    if (!tray)
+        return;
+    // FREEZE: Never rebuild while menu is open
+    if (isMenuOpen) {
+        return;
+    }
+    const currentState = extractMenuState(tick);
+    if (hasMenuStateChanged(currentState, previousMenuState)) {
+        console.log('[Tray] Menu state changed, rebuilding menu');
+        rebuildMenuWithTracking();
+        previousMenuState = currentState;
+    }
+}
+/**
+ * Build static tray menu
+ *
+ * IMPORTANT: No live countdown in labels!
+ * Menu shows current state (phase name, paused status) but NOT remaining time.
+ * Remaining time is shown in tooltip only.
+ */
+function buildStaticTrayMenu() {
     const timerEngine = (0, timerEngine_1.getTimerEngine)();
     const officeFocusLockService = (0, officeFocusLockService_1.getOfficeFocusLockService)();
+    const tick = currentTick;
     const menuItems = [];
-    // Static header - tell user to hover for status
-    menuItems.push({ label: '⏱️ RhythmDesk', enabled: false });
-    menuItems.push({ label: '(Hover icon for status)', enabled: false });
+    // ---- Status Header (static info, no countdown) ----
+    if (tick?.scheduleName) {
+        const phaseName = constants_1.PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
+        menuItems.push({ label: `📅 ${tick.scheduleName}`, enabled: false });
+        menuItems.push({ label: `⏱️ ${phaseName}`, enabled: false });
+        if (tick.isPaused) {
+            menuItems.push({ label: '⏸ PAUSED', enabled: false });
+        }
+        else if (tick.isPostponed) {
+            menuItems.push({ label: '⏳ POSTPONED', enabled: false });
+        }
+        if (tick.officeFocusLock.isActive) {
+            menuItems.push({ label: `🔒 Focus: ${tick.officeFocusLock.label}`, enabled: false });
+        }
+    }
+    else {
+        menuItems.push({ label: '💤 No active schedule', enabled: false });
+    }
     menuItems.push({ type: 'separator' });
-    // Timer controls
-    menuItems.push({ label: '⏸ Pause Timer', click: () => timerEngine.pause() });
-    menuItems.push({ label: '▶️ Resume Timer', click: () => timerEngine.resume() });
+    // ---- Timer Controls ----
+    menuItems.push({
+        label: '⏸ Pause Timer',
+        click: () => timerEngine.pause(),
+        enabled: tick ? !tick.isPaused : false,
+    });
+    menuItems.push({
+        label: '▶️ Resume Timer',
+        click: () => timerEngine.resume(),
+        enabled: tick?.isPaused || false,
+    });
     menuItems.push({ type: 'separator' });
-    // Pause durations
+    // ---- Pause Durations ----
     menuItems.push({
         label: '⏸ Pause for...',
         submenu: [
@@ -181,8 +401,11 @@ function buildContextMenu() {
             { label: '30 minutes', click: () => timerEngine.pauseForDuration(30) },
         ],
     });
+    // ---- Postpone Options ----
+    const canPostpone = tick?.canPostpone || false;
     menuItems.push({
         label: '⏳ Postpone...',
+        enabled: canPostpone,
         submenu: [
             { label: '2 minutes', click: () => timerEngine.postpone(2) },
             { label: '5 minutes', click: () => timerEngine.postpone(5) },
@@ -190,10 +413,13 @@ function buildContextMenu() {
         ],
     });
     menuItems.push({ label: '⏭ Skip Phase', click: () => timerEngine.skipPhase() });
+    menuItems.push({ label: '✓ Complete Phase', click: () => timerEngine.completePhase() });
     menuItems.push({ type: 'separator' });
-    // Office Focus Lock
+    // ---- Office Focus Lock ----
+    const focusLockActive = tick?.officeFocusLock.isActive || false;
     menuItems.push({
         label: '🔒 Start Focus Lock',
+        enabled: !focusLockActive,
         submenu: [
             {
                 label: 'EPAM',
@@ -211,9 +437,13 @@ function buildContextMenu() {
             },
         ],
     });
-    menuItems.push({ label: '🔓 Stop Focus Lock', click: () => officeFocusLockService.stop() });
+    menuItems.push({
+        label: '🔓 Stop Focus Lock',
+        click: () => officeFocusLockService.stop(),
+        enabled: focusLockActive,
+    });
     menuItems.push({ type: 'separator' });
-    // Main actions
+    // ---- Main Actions ----
     menuItems.push({ label: '📊 Open Dashboard', click: () => (0, windowManager_1.showMainWindow)() });
     menuItems.push({ type: 'separator' });
     menuItems.push({
@@ -224,20 +454,5 @@ function buildContextMenu() {
         },
     });
     return electron_1.Menu.buildFromTemplate(menuItems);
-}
-/**
- * Destroy tray
- */
-function destroyTray() {
-    if (tray) {
-        tray.destroy();
-        tray = null;
-    }
-}
-/**
- * Get tray instance
- */
-function getTray() {
-    return tray;
 }
 //# sourceMappingURL=tray.js.map

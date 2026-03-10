@@ -25,12 +25,23 @@ function isScheduleActiveNow(schedule) {
 }
 /**
  * Resolve which schedule should be active
- * Priority: earliest created active schedule wins if multiple overlap
+ * Priority order:
+ *   1. Higher priority value wins
+ *   2. If priorities equal, earlier createdAt wins
  */
 function resolveActiveSchedule(schedules) {
     const activeSchedules = schedules
         .filter(isScheduleActiveNow)
-        .sort((a, b) => a.createdAt - b.createdAt);
+        .sort((a, b) => {
+        // Higher priority wins (descending)
+        const priorityA = a.priority ?? 0;
+        const priorityB = b.priority ?? 0;
+        if (priorityB !== priorityA) {
+            return priorityB - priorityA;
+        }
+        // Earlier createdAt wins as tiebreaker (ascending)
+        return a.createdAt - b.createdAt;
+    });
     return activeSchedules.length > 0 ? activeSchedules[0] : null;
 }
 /**

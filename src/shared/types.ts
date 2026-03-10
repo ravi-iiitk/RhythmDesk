@@ -16,6 +16,43 @@ export type PhaseType =
   | 'long-break'
   | 'idle';
 
+// Break/transition types for per-break configuration
+export type BreakType = 'sitToStandTransition' | 'standToSitTransition' | 'shortBreak' | 'longBreak';
+
+// Timer engine events
+export enum TimerEvent {
+  PHASE_COMPLETED = 'phase:completed',
+  SHORT_BREAK_DUE = 'break:short:due',
+  LONG_BREAK_DUE = 'break:long:due',
+  POSTPONE_REQUESTED = 'postpone:requested',
+  POSTPONE_ENDED = 'postpone:ended',
+  PAUSE_STARTED = 'pause:started',
+  PAUSE_ENDED = 'pause:ended',
+  SCHEDULE_ACTIVATED = 'schedule:activated',
+  SCHEDULE_DEACTIVATED = 'schedule:deactivated',
+  FOCUS_LOCK_STARTED = 'focusLock:started',
+  FOCUS_LOCK_STOPPED = 'focusLock:stopped',
+}
+
+// Per-break/transition configuration
+export interface TransitionConfig {
+  durationSeconds: number;
+  strictModeEnabled: boolean;
+  allowPostpone: boolean;
+  postponeOptionsMinutes: number[];
+  maxPostponesPerDay: number;
+}
+
+export interface BreakConfig {
+  enabled: boolean;
+  everyMinutes: number;
+  durationMinutes: number;
+  strictModeEnabled: boolean;
+  allowPostpone: boolean;
+  postponeOptionsMinutes: number[];
+  maxPostponesPerDay: number;
+}
+
 // Schedule configuration
 export interface Schedule {
   id: string;
@@ -24,32 +61,58 @@ export interface Schedule {
   activeDays: DayOfWeek[];
   startTime: string; // HH:MM format
   endTime: string;   // HH:MM format, can be next day if < startTime
+  priority: number;  // Higher = more important (tiebreaker if schedules overlap)
   
-  // Cycle configuration (in minutes/seconds as specified)
+  // Work phase durations
   sitMinutes: number;
-  sitToStandTransitionSeconds: number;
   standMinutes: number;
-  standToSitTransitionSeconds: number;
   
-  // Short break configuration
-  shortBreakEnabled: boolean;
-  shortBreakEveryMinutes: number;
-  shortBreakDurationMinutes: number;
+  // Per-break/transition configuration
+  transitions: {
+    sitToStand: TransitionConfig;
+    standToSit: TransitionConfig;
+  };
+  shortBreak: BreakConfig;
+  longBreak: BreakConfig;
   
-  // Long break configuration
-  longBreakEnabled: boolean;
-  longBreakEveryMinutes: number;
-  longBreakDurationMinutes: number;
-  
-  // Strict mode configuration
-  strictModeEnabled: boolean;
-  allowPostpone: boolean;
-  postponeOptionsMinutes: number[];
-  maxPostponesPerDay: number;
-  lockOverlayInStrictMode: boolean;
+  // Legacy fields (kept for migration, will be removed in future)
+  // @deprecated Use transitions.sitToStand.durationSeconds
+  sitToStandTransitionSeconds?: number;
+  // @deprecated Use transitions.standToSit.durationSeconds
+  standToSitTransitionSeconds?: number;
+  // @deprecated Use shortBreak.enabled
+  shortBreakEnabled?: boolean;
+  // @deprecated Use shortBreak.everyMinutes
+  shortBreakEveryMinutes?: number;
+  // @deprecated Use shortBreak.durationMinutes
+  shortBreakDurationMinutes?: number;
+  // @deprecated Use longBreak.enabled
+  longBreakEnabled?: boolean;
+  // @deprecated Use longBreak.everyMinutes
+  longBreakEveryMinutes?: number;
+  // @deprecated Use longBreak.durationMinutes
+  longBreakDurationMinutes?: number;
+  // @deprecated Use per-break strictModeEnabled
+  strictModeEnabled?: boolean;
+  // @deprecated Use per-break allowPostpone
+  allowPostpone?: boolean;
+  // @deprecated Use per-break postponeOptionsMinutes
+  postponeOptionsMinutes?: number[];
+  // @deprecated Use per-break maxPostponesPerDay
+  maxPostponesPerDay?: number;
+  // @deprecated
+  lockOverlayInStrictMode?: boolean;
   
   // Metadata
-  createdAt: number; // timestamp for priority ordering
+  createdAt: number;
+}
+
+// Per-break-type postpone counters
+export interface PostponeCountsToday {
+  sitToStandTransition: number;
+  standToSitTransition: number;
+  shortBreak: number;
+  longBreak: number;
 }
 
 // Current session state - persisted to survive restarts
@@ -68,9 +131,17 @@ export interface SessionState {
   lastShortBreakAtWorkTimeMs: number;
   lastLongBreakAtWorkTimeMs: number;
   
-  // Postpone tracking for current day
-  postponeCountToday: number;
+  // Interrupted phase tracking (for short break resume)
+  interruptedPhase: PhaseType | null;
+  interruptedPhaseRemainingMs: number;
+  
+  // Per-break-type postpone tracking
+  postponeCountsToday: PostponeCountsToday;
   postponeResetDate: string; // YYYY-MM-DD format
+  
+  // Legacy single counter (for migration)
+  // @deprecated Use postponeCountsToday
+  postponeCountToday?: number;
   
   // Pause state
   isPaused: boolean;
@@ -81,6 +152,7 @@ export interface SessionState {
   isPostponed: boolean;
   postponedUntil: number | null;
   postponedPhase: PhaseType | null; // the phase that was postponed
+  postponedBreakType: BreakType | null; // which break type was postponed
 }
 
 // App configuration
@@ -173,27 +245,59 @@ export const IPC_CHANNELS = {
   QUIT_APP: 'app:quit',
 } as const;
 
+// Default transition config
+export const DEFAULT_TRANSITION_CONFIG: TransitionConfig = {
+  durationSeconds: 60,
+  strictModeEnabled: true,
+  allowPostpone: true,
+  postponeOptionsMinutes: [2, 5, 10],
+  maxPostponesPerDay: 4,
+};
+
+// Default break config
+export const DEFAULT_SHORT_BREAK_CONFIG: BreakConfig = {
+  enabled: true,
+  everyMinutes: 60,
+  durationMinutes: 5,
+  strictModeEnabled: true,
+  allowPostpone: true,
+  postponeOptionsMinutes: [2, 5, 10],
+  maxPostponesPerDay: 4,
+};
+
+export const DEFAULT_LONG_BREAK_CONFIG: BreakConfig = {
+  enabled: true,
+  everyMinutes: 150,
+  durationMinutes: 15,
+  strictModeEnabled: true,
+  allowPostpone: true,
+  postponeOptionsMinutes: [2, 5, 10],
+  maxPostponesPerDay: 2,
+};
+
 // Default values for new schedules
 export const DEFAULT_SCHEDULE: Omit<Schedule, 'id' | 'name' | 'createdAt'> = {
   enabled: true,
   activeDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
   startTime: '09:00',
   endTime: '17:00',
+  priority: 0,
   sitMinutes: 12,
-  sitToStandTransitionSeconds: 60,
   standMinutes: 8,
-  standToSitTransitionSeconds: 60,
-  shortBreakEnabled: true,
-  shortBreakEveryMinutes: 60,
-  shortBreakDurationMinutes: 5,
-  longBreakEnabled: true,
-  longBreakEveryMinutes: 150,
-  longBreakDurationMinutes: 15,
-  strictModeEnabled: true,
-  allowPostpone: true,
-  postponeOptionsMinutes: [2, 5, 10],
-  maxPostponesPerDay: 4,
-  lockOverlayInStrictMode: true,
+  transitions: {
+    sitToStand: { ...DEFAULT_TRANSITION_CONFIG },
+    standToSit: { ...DEFAULT_TRANSITION_CONFIG },
+  },
+  shortBreak: { ...DEFAULT_SHORT_BREAK_CONFIG },
+  longBreak: { ...DEFAULT_LONG_BREAK_CONFIG },
+};
+
+// Initial postpone counts
+export const INITIAL_POSTPONE_COUNTS: PostponeCountsToday = {
+  sitToStandTransition: 0,
+  standToSitTransition: 0,
+  shortBreak: 0,
+  longBreak: 0,
 };
 
 // Initial session state
@@ -207,7 +311,9 @@ export const INITIAL_SESSION_STATE: SessionState = {
   cumulativeWorkTimeMs: 0,
   lastShortBreakAtWorkTimeMs: 0,
   lastLongBreakAtWorkTimeMs: 0,
-  postponeCountToday: 0,
+  interruptedPhase: null,
+  interruptedPhaseRemainingMs: 0,
+  postponeCountsToday: { ...INITIAL_POSTPONE_COUNTS },
   postponeResetDate: new Date().toISOString().split('T')[0],
   isPaused: false,
   pausedAt: null,
@@ -215,6 +321,7 @@ export const INITIAL_SESSION_STATE: SessionState = {
   isPostponed: false,
   postponedUntil: null,
   postponedPhase: null,
+  postponedBreakType: null,
 };
 
 // Default general settings

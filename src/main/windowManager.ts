@@ -1,6 +1,18 @@
 /**
  * RhythmDesk Window Manager
  * Manages main settings window and overlay windows
+ * 
+ * MULTI-MONITOR POLICY:
+ * TODO: Future enhancement - support multi-monitor setups
+ * Current behavior: Overlay appears on primary monitor only
+ * Future options:
+ *   - Show overlay on all monitors
+ *   - Show overlay on monitor where user is working
+ *   - Allow user to select which monitor(s) for overlay
+ * Implementation notes:
+ *   - Use screen.getAllDisplays() to get all monitors
+ *   - Create separate overlay window per display if needed
+ *   - Track which display the main window is on
  */
 
 import { BrowserWindow, screen, app } from 'electron';

@@ -1,6 +1,12 @@
 /**
  * RhythmDesk Main Process
  * Entry point for the Electron application
+ * 
+ * ARCHITECTURE NOTES:
+ * - Main process owns all timer state, schedule resolution, phase transitions
+ * - Renderer only displays state received via IPC
+ * - Overlay decisions go through centralized overlayPolicy module
+ * - Focus Lock resets to OFF on restart (not persisted)
  */
 
 import { app, BrowserWindow } from 'electron';
@@ -13,45 +19,28 @@ import { getOfficeFocusLockService } from '../core/officeFocusLockService';
 import { IPC_CHANNELS, TimerTick, PhaseType } from '../shared/types';
 import configService from '../core/configService';
 import { createDefaultSchedules } from './defaultSchedules';
+import { getOverlayPolicy, OverlayPolicyInput, isWorkPhase } from '../core/overlayPolicy';
 
 /**
- * Check if a phase is a work phase (sit or stand)
+ * Get overlay policy for current state
+ * Centralized decision engine - all overlay logic goes through here
  */
-function isWorkPhase(phase: PhaseType): boolean {
-  return phase === 'sit' || phase === 'stand';
-}
-
-/**
- * Check if a phase is a break/transition phase (always requires overlay)
- */
-function isBreakOrTransitionPhase(phase: PhaseType): boolean {
-  return [
-    'sit-to-stand-transition',
-    'stand-to-sit-transition',
-    'short-break',
-    'long-break',
-  ].includes(phase);
-}
-
-/**
- * Determine if overlay should be shown for a given phase
- * Rules:
- * - Breaks and transitions: ALWAYS show overlay
- * - Work phases (sit/stand): ONLY if Office Focus Lock is active
- */
-function shouldShowOverlayForPhase(phase: PhaseType): boolean {
-  // Breaks and transitions always require overlay
-  if (isBreakOrTransitionPhase(phase)) {
-    return true;
-  }
+function getOverlayPolicyForState(phase: PhaseType): ReturnType<typeof getOverlayPolicy> {
+  const timerEngine = getTimerEngine();
+  const officeFocusLockService = getOfficeFocusLockService();
+  const schedule = timerEngine.getCurrentSchedule();
+  const state = timerEngine.getState();
   
-  // Work phases only require overlay if Office Focus Lock is active
-  if (isWorkPhase(phase)) {
-    const officeFocusLockService = getOfficeFocusLockService();
-    return officeFocusLockService.isActive();
-  }
+  const input: OverlayPolicyInput = {
+    phase,
+    schedule,
+    focusLockActive: officeFocusLockService.isActive(),
+    focusLockState: officeFocusLockService.getState(),
+    isPaused: state.isPaused,
+    isPostponed: state.isPostponed,
+  };
   
-  return false;
+  return getOverlayPolicy(input);
 }
 
 function initialize(): void {
@@ -113,16 +102,14 @@ function initialize(): void {
     timerEngine.on('phaseChange', (data: { prevPhase: PhaseType; newPhase: PhaseType }) => {
       sendToAll(IPC_CHANNELS.PHASE_CHANGE, data);
 
-      // Determine if overlay should be shown based on phase and Focus Mode
-      const shouldShowOverlay = shouldShowOverlayForPhase(data.newPhase);
-      const wasShowingOverlay = shouldShowOverlayForPhase(data.prevPhase);
+      // Use centralized overlay policy for decisions
+      const newPolicy = getOverlayPolicyForState(data.newPhase);
+      const prevPolicy = getOverlayPolicyForState(data.prevPhase);
 
-      if (shouldShowOverlay) {
-        const schedule = timerEngine.getCurrentSchedule();
-        const strictMode = schedule?.strictModeEnabled || false;
-        showOverlay(strictMode);
+      if (newPolicy.showOverlay) {
+        showOverlay(newPolicy.strictMode);
         sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: data.newPhase });
-      } else if (wasShowingOverlay) {
+      } else if (prevPolicy.showOverlay) {
         // Close overlay when leaving a phase that required it
         closeOverlay();
         sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
@@ -206,17 +193,15 @@ function ensureOverlayIfRequired(): void {
   const state = timerEngine.getState();
   const currentPhase = state.currentPhase;
   
-  // Skip if paused or postponed
-  if (state.isPaused || state.isPostponed) return;
+  // Use centralized overlay policy
+  const policy = getOverlayPolicyForState(currentPhase);
   
   // Check if overlay should be showing
-  if (shouldShowOverlayForPhase(currentPhase)) {
+  if (policy.showOverlay) {
     const overlay = getOverlayWindow();
     if (!overlay || overlay.isDestroyed()) {
       logger.warn('Main', 'Overlay should be visible but is not - reopening', { phase: currentPhase });
-      const schedule = timerEngine.getCurrentSchedule();
-      const strictMode = schedule?.strictModeEnabled || false;
-      showOverlay(strictMode);
+      showOverlay(policy.strictMode);
     }
   }
 }
