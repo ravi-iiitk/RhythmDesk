@@ -143,6 +143,26 @@ function SettingsPage() {
         </div>
       </div>
 
+      <div className="card">
+        <div className="card-header">
+          <span className="card-title">Developer</span>
+        </div>
+
+        <div className="form-group">
+          <label className="form-checkbox">
+            <input
+              type="checkbox"
+              checked={settings.simulateMode}
+              onChange={(e) => handleChange('simulateMode', e.target.checked)}
+            />
+            Simulate Mode (30x speed)
+          </label>
+          <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+            ⚡ For testing: 1 minute = 2 seconds. Restart timer after toggling.
+          </p>
+        </div>
+      </div>
+
       <div className="mt-2">
         <button className="btn btn-primary" onClick={handleSave}>
           Save Settings

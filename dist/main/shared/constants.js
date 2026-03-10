@@ -1,11 +1,13 @@
 "use strict";
 /**
- * PostureGuard Constants
+ * RhythmDesk Constants
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DAY_SHORT_LABELS = exports.DAY_LABELS = exports.PHASE_COLORS = exports.PHASE_DISPLAY_NAMES = exports.SESSION_FILENAME = exports.CONFIG_FILENAME = exports.TRAY_UPDATE_INTERVAL_MS = exports.OVERLAY_MIN_HEIGHT = exports.OVERLAY_MIN_WIDTH = exports.PHASE_CHECK_DEBOUNCE_MS = exports.TIMER_TICK_INTERVAL_MS = void 0;
+exports.DAY_SHORT_LABELS = exports.DAY_LABELS = exports.PHASE_COLORS = exports.PHASE_DISPLAY_NAMES = exports.SESSION_FILENAME = exports.CONFIG_FILENAME = exports.TRAY_UPDATE_INTERVAL_MS = exports.OVERLAY_MIN_HEIGHT = exports.OVERLAY_MIN_WIDTH = exports.PHASE_CHECK_DEBOUNCE_MS = exports.SIMULATE_MODE_SPEED = exports.TIMER_TICK_INTERVAL_MS = void 0;
 // Timer tick interval in milliseconds
 exports.TIMER_TICK_INTERVAL_MS = 1000;
+// Simulate mode speed multiplier (1 minute real = 2 seconds simulated)
+exports.SIMULATE_MODE_SPEED = 30; // 30x speed (1 min = 2 sec)
 // Minimum time between phase checks to prevent rapid toggling
 exports.PHASE_CHECK_DEBOUNCE_MS = 500;
 // Overlay window dimensions (will be fullscreen, but used for minimum)

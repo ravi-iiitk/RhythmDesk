@@ -24,7 +24,7 @@ import {
   secondsToMs, 
   getTodayDateString,
 } from '../shared/timeUtils';
-import { TIMER_TICK_INTERVAL_MS } from '../shared/constants';
+import { TIMER_TICK_INTERVAL_MS, SIMULATE_MODE_SPEED } from '../shared/constants';
 import configService from './configService';
 import { resolveActiveSchedule } from './scheduleResolver';
 import logger from './logger';
@@ -155,18 +155,32 @@ export class TimerEngine extends EventEmitter {
   }
 
   /**
+   * Get the effective delta time, applying simulate mode speed if enabled
+   */
+  private getEffectiveDelta(realDeltaMs: number): number {
+    const settings = configService.getGeneralSettings();
+    if (settings.simulateMode) {
+      return realDeltaMs * SIMULATE_MODE_SPEED;
+    }
+    return realDeltaMs;
+  }
+
+  /**
    * Main timer tick - called every second
    */
   private tick(): void {
     const now = Date.now();
-    const deltaMs = now - this.lastTickTime;
+    const realDeltaMs = now - this.lastTickTime;
     this.lastTickTime = now;
 
     // Detect time jump (sleep/wake or system time change)
-    if (deltaMs > TIME_JUMP_THRESHOLD_MS) {
-      logger.warn('TimerEngine', `Time jump detected: ${deltaMs}ms - recovering state`);
+    if (realDeltaMs > TIME_JUMP_THRESHOLD_MS) {
+      logger.warn('TimerEngine', `Time jump detected: ${realDeltaMs}ms - recovering state`);
       this.recoverStateFromTimestamps();
     }
+
+    // Apply simulate mode speed multiplier
+    const deltaMs = this.getEffectiveDelta(realDeltaMs);
 
     this.validateAndResetPostponeCount();
     

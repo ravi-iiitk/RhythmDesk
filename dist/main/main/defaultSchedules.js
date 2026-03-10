@@ -1,6 +1,6 @@
 "use strict";
 /**
- * PostureGuard Default Schedules
+ * RhythmDesk Default Schedules
  * Creates sample schedules for first-time setup
  */
 var __importDefault = (this && this.__importDefault) || function (mod) {

@@ -1,6 +1,6 @@
 "use strict";
 /**
- * PostureGuard Schedule Resolver
+ * RhythmDesk Schedule Resolver
  * Determines which schedule should be active based on current time and day
  */
 Object.defineProperty(exports, "__esModule", { value: true });

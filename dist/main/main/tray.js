@@ -1,6 +1,6 @@
 "use strict";
 /**
- * PostureGuard System Tray
+ * RhythmDesk System Tray
  * Provides quick access to timer state and controls
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
@@ -43,18 +43,31 @@ exports.destroyTray = destroyTray;
 exports.getTray = getTray;
 const electron_1 = require("electron");
 const path = __importStar(require("path"));
+const types_1 = require("../shared/types");
 const constants_1 = require("../shared/constants");
 const timeUtils_1 = require("../shared/timeUtils");
 const windowManager_1 = require("./windowManager");
 const timerEngine_1 = require("../core/timerEngine");
+const officeFocusLockService_1 = require("../core/officeFocusLockService");
 let tray = null;
 let currentTick = null;
 /**
  * Create the system tray icon
  */
 function createTray() {
-    // Create a simple tray icon (would be replaced with actual icon)
-    const iconPath = path.join(__dirname, '../../resources/icon.png');
+    // Resolve icon path for both dev and production
+    // In dev: __dirname is dist/main/main, project root is 3 levels up
+    // In prod (packaged): resources are in app.asar or extraResources
+    const isDev = !electron_1.app.isPackaged;
+    let iconPath;
+    if (isDev) {
+        // Development: go up from dist/main/main to project root
+        iconPath = path.join(__dirname, '../../../resources/icon.png');
+    }
+    else {
+        // Production: use extraResources path
+        iconPath = path.join(process.resourcesPath, 'resources/icon.png');
+    }
     let icon;
     try {
         icon = electron_1.nativeImage.createFromPath(iconPath);
@@ -67,8 +80,12 @@ function createTray() {
         icon = createFallbackIcon();
     }
     tray = new electron_1.Tray(icon.resize({ width: 22, height: 22 }));
-    tray.setToolTip('PostureGuard');
-    updateTrayMenu();
+    tray.setToolTip('RhythmDesk');
+    // Set static menu once - on Linux/AppIndicator, dynamic updates cause flicker
+    // Status info is shown in tooltip instead (updates every second)
+    const menu = buildContextMenu();
+    tray.setContextMenu(menu);
+    // Left-click opens dashboard (may not work on all Linux DEs)
     tray.on('click', () => {
         (0, windowManager_1.showMainWindow)();
     });
@@ -95,130 +112,118 @@ function createFallbackIcon() {
 }
 /**
  * Update tray with current timer state
+ * Only updates tooltip - menu is completely static to avoid Linux AppIndicator flicker
  */
 function updateTrayWithTick(tick) {
     currentTick = tick;
-    updateTrayMenu();
     updateTrayTooltip();
 }
 /**
  * Update tray tooltip
+ * Format:
+ * RhythmDesk
+ * Schedule: <name>
+ * Phase: <phase>
+ * Remaining: <time>
+ * Focus Lock: <state>
  */
 function updateTrayTooltip() {
     if (!tray || !currentTick)
         return;
-    let tooltip = 'PostureGuard';
+    let tooltip = 'RhythmDesk';
     if (currentTick.scheduleName) {
         const phaseName = constants_1.PHASE_DISPLAY_NAMES[currentTick.currentPhase] || currentTick.currentPhase;
         const remaining = (0, timeUtils_1.formatDuration)(currentTick.phaseRemainingMs);
-        tooltip = `${currentTick.scheduleName}\n${phaseName}: ${remaining}`;
+        tooltip = 'RhythmDesk';
+        tooltip += `\nSchedule: ${currentTick.scheduleName}`;
+        tooltip += `\nPhase: ${phaseName}`;
+        tooltip += `\nRemaining: ${remaining}`;
         if (currentTick.isPaused) {
-            tooltip += ' (Paused)';
+            tooltip += '\nStatus: ⏸ Paused';
         }
         else if (currentTick.isPostponed) {
-            tooltip += ' (Postponed)';
+            tooltip += '\nStatus: ⏳ Postponed';
+        }
+        // Add Office Focus Lock status to tooltip
+        if (currentTick.officeFocusLock.isActive) {
+            const lockRemaining = (0, timeUtils_1.formatDuration)(currentTick.officeFocusLock.remainingMs);
+            tooltip += `\nFocus Lock: ${currentTick.officeFocusLock.label} (${lockRemaining})`;
         }
     }
     else {
-        tooltip = 'PostureGuard - Idle';
+        tooltip = 'RhythmDesk\nStatus: Idle';
     }
     tray.setToolTip(tooltip);
 }
 /**
- * Update tray context menu
+ * Build static context menu - no dynamic content to avoid AppIndicator flicker
+ * All status info is shown in tooltip instead (hover over icon)
  */
-function updateTrayMenu() {
-    if (!tray)
-        return;
+function buildContextMenu() {
     const timerEngine = (0, timerEngine_1.getTimerEngine)();
+    const officeFocusLockService = (0, officeFocusLockService_1.getOfficeFocusLockService)();
     const menuItems = [];
-    // Status header
-    if (currentTick?.scheduleName) {
-        const phaseName = constants_1.PHASE_DISPLAY_NAMES[currentTick.currentPhase] || currentTick.currentPhase;
-        const remaining = (0, timeUtils_1.formatDuration)(currentTick.phaseRemainingMs);
-        menuItems.push({
-            label: currentTick.scheduleName,
-            enabled: false,
-        });
-        menuItems.push({
-            label: `${phaseName}: ${remaining}`,
-            enabled: false,
-        });
-        if (currentTick.isPaused) {
-            menuItems.push({ label: '⏸ Paused', enabled: false });
-        }
-        else if (currentTick.isPostponed) {
-            menuItems.push({ label: '⏳ Postponed', enabled: false });
-        }
-        menuItems.push({ type: 'separator' });
-        // Pause/Resume
-        if (currentTick.isPaused) {
-            menuItems.push({
-                label: 'Resume',
-                click: () => timerEngine.resume(),
-            });
-        }
-        else {
-            menuItems.push({
-                label: 'Pause',
-                click: () => timerEngine.pause(),
-            });
-            menuItems.push({
-                label: 'Pause for...',
-                submenu: [
-                    { label: '5 minutes', click: () => timerEngine.pauseForDuration(5) },
-                    { label: '10 minutes', click: () => timerEngine.pauseForDuration(10) },
-                    { label: '15 minutes', click: () => timerEngine.pauseForDuration(15) },
-                    { label: '30 minutes', click: () => timerEngine.pauseForDuration(30) },
-                ],
-            });
-        }
-        // Postpone
-        if (currentTick.canPostpone && currentTick.postponeOptions.length > 0) {
-            const remainingPostpones = currentTick.maxPostponesPerDay - currentTick.postponeCountToday;
-            menuItems.push({
-                label: `Postpone (${remainingPostpones} left)`,
-                submenu: currentTick.postponeOptions.map((minutes) => ({
-                    label: `${minutes} minutes`,
-                    click: () => timerEngine.postpone(minutes),
-                })),
-            });
-        }
-        // Skip (only if not in strict mode or for non-work phases)
-        if (!currentTick.isStrictMode || !isWorkPhase(currentTick.currentPhase)) {
-            menuItems.push({
-                label: 'Skip Phase',
-                click: () => timerEngine.skipPhase(),
-            });
-        }
-        menuItems.push({ type: 'separator' });
-    }
-    else {
-        menuItems.push({
-            label: 'Idle - No active schedule',
-            enabled: false,
-        });
-        menuItems.push({ type: 'separator' });
-    }
-    // Settings
-    menuItems.push({
-        label: 'Open Settings',
-        click: () => (0, windowManager_1.showMainWindow)(),
-    });
+    // Static header - tell user to hover for status
+    menuItems.push({ label: '⏱️ RhythmDesk', enabled: false });
+    menuItems.push({ label: '(Hover icon for status)', enabled: false });
     menuItems.push({ type: 'separator' });
-    // Quit
+    // Timer controls
+    menuItems.push({ label: '⏸ Pause Timer', click: () => timerEngine.pause() });
+    menuItems.push({ label: '▶️ Resume Timer', click: () => timerEngine.resume() });
+    menuItems.push({ type: 'separator' });
+    // Pause durations
     menuItems.push({
-        label: 'Quit PostureGuard',
-        click: () => electron_1.app.quit(),
+        label: '⏸ Pause for...',
+        submenu: [
+            { label: '5 minutes', click: () => timerEngine.pauseForDuration(5) },
+            { label: '10 minutes', click: () => timerEngine.pauseForDuration(10) },
+            { label: '15 minutes', click: () => timerEngine.pauseForDuration(15) },
+            { label: '30 minutes', click: () => timerEngine.pauseForDuration(30) },
+        ],
     });
-    const contextMenu = electron_1.Menu.buildFromTemplate(menuItems);
-    tray.setContextMenu(contextMenu);
-}
-/**
- * Check if phase is a work phase
- */
-function isWorkPhase(phase) {
-    return phase === 'sit' || phase === 'stand';
+    menuItems.push({
+        label: '⏳ Postpone...',
+        submenu: [
+            { label: '2 minutes', click: () => timerEngine.postpone(2) },
+            { label: '5 minutes', click: () => timerEngine.postpone(5) },
+            { label: '10 minutes', click: () => timerEngine.postpone(10) },
+        ],
+    });
+    menuItems.push({ label: '⏭ Skip Phase', click: () => timerEngine.skipPhase() });
+    menuItems.push({ type: 'separator' });
+    // Office Focus Lock
+    menuItems.push({
+        label: '🔒 Start Focus Lock',
+        submenu: [
+            {
+                label: 'EPAM',
+                submenu: types_1.OFFICE_FOCUS_LOCK_DURATIONS.map((minutes) => ({
+                    label: `${minutes} min`,
+                    click: () => officeFocusLockService.start('EPAM', minutes),
+                })),
+            },
+            {
+                label: 'Resy',
+                submenu: types_1.OFFICE_FOCUS_LOCK_DURATIONS.map((minutes) => ({
+                    label: `${minutes} min`,
+                    click: () => officeFocusLockService.start('Resy', minutes),
+                })),
+            },
+        ],
+    });
+    menuItems.push({ label: '🔓 Stop Focus Lock', click: () => officeFocusLockService.stop() });
+    menuItems.push({ type: 'separator' });
+    // Main actions
+    menuItems.push({ label: '📊 Open Dashboard', click: () => (0, windowManager_1.showMainWindow)() });
+    menuItems.push({ type: 'separator' });
+    menuItems.push({
+        label: '❌ Quit RhythmDesk',
+        click: () => {
+            (0, windowManager_1.setQuitting)(true);
+            electron_1.app.quit();
+        },
+    });
+    return electron_1.Menu.buildFromTemplate(menuItems);
 }
 /**
  * Destroy tray

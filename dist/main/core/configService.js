@@ -1,6 +1,6 @@
 "use strict";
 /**
- * PostureGuard Config Service
+ * RhythmDesk Config Service
  * Handles local JSON persistence with abstraction for future SQLite migration
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {

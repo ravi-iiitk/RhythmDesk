@@ -1,6 +1,6 @@
 "use strict";
 /**
- * PostureGuard Timer Engine
+ * RhythmDesk Timer Engine
  * Core business logic for tracking work phases, breaks, and transitions
  *
  * IMPORTANT RULES:
@@ -17,18 +17,90 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TimerEngine = void 0;
 exports.getTimerEngine = getTimerEngine;
 const events_1 = require("events");
+const electron_1 = require("electron");
+const officeFocusLockService_1 = require("./officeFocusLockService");
 const timeUtils_1 = require("../shared/timeUtils");
 const constants_1 = require("../shared/constants");
 const configService_1 = __importDefault(require("./configService"));
 const scheduleResolver_1 = require("./scheduleResolver");
+const logger_1 = __importDefault(require("./logger"));
+const TIME_JUMP_THRESHOLD_MS = 5000; // 5 seconds - indicates sleep/wake or time jump
+const STATE_SAVE_DEBOUNCE_MS = 5000; // Save state every 5 seconds max
 class TimerEngine extends events_1.EventEmitter {
     constructor() {
         super();
         this.currentSchedule = null;
         this.tickInterval = null;
         this.lastTickTime = 0;
+        this.lastStateSaveTime = 0;
+        this.stateChanged = false;
+        // Track the phase we were in before a break interrupted
+        this.preBreakPhase = null;
         this.state = configService_1.default.getSessionState();
         this.validateAndResetPostponeCount();
+        this.recoverStateFromTimestamps();
+        this.setupPowerMonitor();
+    }
+    /**
+     * Setup power monitor for sleep/wake events
+     */
+    setupPowerMonitor() {
+        electron_1.powerMonitor.on('suspend', () => {
+            logger_1.default.info('TimerEngine', 'System suspending - saving state');
+            this.saveStateImmediately();
+        });
+        electron_1.powerMonitor.on('resume', () => {
+            logger_1.default.info('TimerEngine', 'System resuming - recovering state');
+            this.recoverStateFromTimestamps();
+        });
+        electron_1.powerMonitor.on('lock-screen', () => {
+            logger_1.default.debug('TimerEngine', 'Screen locked');
+        });
+        electron_1.powerMonitor.on('unlock-screen', () => {
+            logger_1.default.debug('TimerEngine', 'Screen unlocked - checking state');
+            this.recoverStateFromTimestamps();
+        });
+    }
+    /**
+     * Recover state from persisted timestamps
+     * Used after sleep/wake, time jumps, or app restart
+     */
+    recoverStateFromTimestamps() {
+        const now = Date.now();
+        // Skip if idle
+        if (this.state.currentPhase === 'idle')
+            return;
+        // If paused, nothing to recover
+        if (this.state.isPaused)
+            return;
+        // If postponed, check if postpone has ended
+        if (this.state.isPostponed && this.state.postponedUntil) {
+            if (now >= this.state.postponedUntil) {
+                this.state.isPostponed = false;
+                this.state.postponedUntil = null;
+                if (this.state.postponedPhase) {
+                    this.startPhase(this.state.postponedPhase);
+                }
+                this.state.postponedPhase = null;
+                return;
+            }
+        }
+        // Recalculate phase remaining from phaseEndsAt
+        if (this.state.phaseEndsAt > 0) {
+            const remaining = this.state.phaseEndsAt - now;
+            if (remaining <= 0) {
+                // Phase should have ended - advance
+                logger_1.default.info('TimerEngine', 'Phase ended during sleep/wake - advancing', {
+                    phase: this.state.currentPhase,
+                    phaseEndsAt: this.state.phaseEndsAt,
+                    now,
+                });
+                this.advancePhase();
+            }
+            else {
+                this.state.phaseRemainingMs = remaining;
+            }
+        }
     }
     /**
      * Reset postpone count if it's a new day
@@ -47,7 +119,9 @@ class TimerEngine extends events_1.EventEmitter {
     start() {
         if (this.tickInterval)
             return;
+        logger_1.default.info('TimerEngine', 'Starting timer engine');
         this.lastTickTime = Date.now();
+        this.lastStateSaveTime = Date.now();
         this.tickInterval = setInterval(() => this.tick(), constants_1.TIMER_TICK_INTERVAL_MS);
         this.tick(); // Initial tick
     }
@@ -55,18 +129,37 @@ class TimerEngine extends events_1.EventEmitter {
      * Stop the timer engine
      */
     stop() {
+        logger_1.default.info('TimerEngine', 'Stopping timer engine');
         if (this.tickInterval) {
             clearInterval(this.tickInterval);
             this.tickInterval = null;
         }
+        this.saveStateImmediately();
+    }
+    /**
+     * Get the effective delta time, applying simulate mode speed if enabled
+     */
+    getEffectiveDelta(realDeltaMs) {
+        const settings = configService_1.default.getGeneralSettings();
+        if (settings.simulateMode) {
+            return realDeltaMs * constants_1.SIMULATE_MODE_SPEED;
+        }
+        return realDeltaMs;
     }
     /**
      * Main timer tick - called every second
      */
     tick() {
         const now = Date.now();
-        const deltaMs = now - this.lastTickTime;
+        const realDeltaMs = now - this.lastTickTime;
         this.lastTickTime = now;
+        // Detect time jump (sleep/wake or system time change)
+        if (realDeltaMs > TIME_JUMP_THRESHOLD_MS) {
+            logger_1.default.warn('TimerEngine', `Time jump detected: ${realDeltaMs}ms - recovering state`);
+            this.recoverStateFromTimestamps();
+        }
+        // Apply simulate mode speed multiplier
+        const deltaMs = this.getEffectiveDelta(realDeltaMs);
         this.validateAndResetPostponeCount();
         // Check for schedule changes
         this.checkScheduleChange();
@@ -146,10 +239,12 @@ class TimerEngine extends events_1.EventEmitter {
     /**
      * Check if a break should be triggered based on cumulative work time
      * Priority: long break > short break
+     * RULE: Only trigger breaks during sit/stand phases, never during transitions
      */
     checkBreakTriggers() {
         if (!this.currentSchedule)
             return;
+        // Only trigger breaks during actual work phases (sit/stand), not transitions
         if (!this.isWorkPhase(this.state.currentPhase))
             return;
         const workTimeMs = this.state.cumulativeWorkTimeMs;
@@ -174,9 +269,11 @@ class TimerEngine extends events_1.EventEmitter {
     }
     /**
      * Trigger a break, interrupting current phase
+     * Stores current phase info to resume after break completes
      */
     triggerBreak(breakType) {
-        // Store remaining time in current phase to resume after break
+        // Store current phase to resume after break
+        this.preBreakPhase = this.state.currentPhase;
         this.emit('breakDue', breakType);
         this.startPhase(breakType);
     }
@@ -201,12 +298,21 @@ class TimerEngine extends events_1.EventEmitter {
                 break;
             case 'short-break':
                 this.state.lastShortBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
-                // Return to sit (could be smarter, but this is deterministic)
-                nextPhase = 'sit';
+                // Resume to pre-break phase if we interrupted a work phase
+                if (this.preBreakPhase && this.isWorkPhase(this.preBreakPhase)) {
+                    nextPhase = this.preBreakPhase;
+                }
+                else {
+                    nextPhase = 'sit';
+                }
+                this.preBreakPhase = null;
                 break;
             case 'long-break':
                 this.state.lastLongBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
+                // After long break, always start fresh with sit
+                // (Long break is a full reset point)
                 nextPhase = 'sit';
+                this.preBreakPhase = null;
                 break;
             default:
                 nextPhase = 'sit';
@@ -218,11 +324,19 @@ class TimerEngine extends events_1.EventEmitter {
      */
     startPhase(phase) {
         const prevPhase = this.state.currentPhase;
+        const now = Date.now();
+        const duration = this.getPhaseDurationMs(phase);
         this.state.currentPhase = phase;
-        this.state.phaseStartedAt = Date.now();
-        this.state.phaseRemainingMs = this.getPhaseDurationMs(phase);
+        this.state.phaseStartedAt = now;
+        this.state.phaseEndsAt = now + duration;
+        this.state.phaseRemainingMs = duration;
+        this.state.phaseTotalMs = duration;
+        logger_1.default.info('TimerEngine', `Phase started: ${phase}`, {
+            duration,
+            endsAt: this.state.phaseEndsAt,
+        });
         this.emit('phaseChange', { prevPhase, newPhase: phase });
-        this.saveState();
+        this.saveStateImmediately(); // Save immediately on phase change
     }
     /**
      * Get duration for a phase in milliseconds
@@ -259,7 +373,10 @@ class TimerEngine extends events_1.EventEmitter {
     setIdleState() {
         this.state.activeScheduleId = null;
         this.state.currentPhase = 'idle';
+        this.state.phaseStartedAt = 0;
+        this.state.phaseEndsAt = 0;
         this.state.phaseRemainingMs = 0;
+        this.state.phaseTotalMs = 0;
     }
     /**
      * Get the next phase after current (for display purposes)
@@ -332,6 +449,8 @@ class TimerEngine extends events_1.EventEmitter {
         this.state.postponedPhase = this.state.currentPhase;
         this.state.postponeCountToday++;
         this.saveState();
+        // Emit event so main process can close overlay
+        this.emit('postponed', { minutes, phase: this.state.postponedPhase });
         return true;
     }
     /**
@@ -356,12 +475,13 @@ class TimerEngine extends events_1.EventEmitter {
      * Emit tick event with current state
      */
     emitTick() {
+        const officeFocusLockService = (0, officeFocusLockService_1.getOfficeFocusLockService)();
         const tick = {
             scheduleId: this.currentSchedule?.id || null,
             scheduleName: this.currentSchedule?.name || null,
             currentPhase: this.state.currentPhase,
             phaseRemainingMs: this.state.phaseRemainingMs,
-            phaseTotalMs: this.getPhaseDurationMs(this.state.currentPhase),
+            phaseTotalMs: this.state.phaseTotalMs,
             nextPhase: this.getNextPhase(),
             cumulativeWorkTimeMs: this.state.cumulativeWorkTimeMs,
             isPaused: this.state.isPaused,
@@ -371,6 +491,7 @@ class TimerEngine extends events_1.EventEmitter {
             canPostpone: this.canPostpone(),
             postponeOptions: this.currentSchedule?.postponeOptionsMinutes || [],
             isStrictMode: this.currentSchedule?.strictModeEnabled || false,
+            officeFocusLock: officeFocusLockService.getState(),
         };
         this.emit('tick', tick);
     }
@@ -401,10 +522,25 @@ class TimerEngine extends events_1.EventEmitter {
         return this.currentSchedule;
     }
     /**
-     * Save state to persistence
+     * Save state to persistence (debounced)
      */
     saveState() {
-        configService_1.default.saveSessionState(this.state);
+        this.stateChanged = true;
+        const now = Date.now();
+        // Debounce: only save if enough time has passed
+        if (now - this.lastStateSaveTime >= STATE_SAVE_DEBOUNCE_MS) {
+            this.saveStateImmediately();
+        }
+    }
+    /**
+     * Save state immediately (bypass debounce)
+     */
+    saveStateImmediately() {
+        if (this.stateChanged || true) { // Always save for reliability
+            configService_1.default.saveSessionState(this.state);
+            this.lastStateSaveTime = Date.now();
+            this.stateChanged = false;
+        }
     }
 }
 exports.TimerEngine = TimerEngine;

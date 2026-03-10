@@ -1,6 +1,6 @@
 "use strict";
 /**
- * PostureGuard Preload Script
+ * RhythmDesk Preload Script
  * Exposes safe IPC methods to renderer process
  */
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -21,6 +21,10 @@ const api = {
     postpone: (minutes) => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.POSTPONE, minutes),
     skipPhase: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.SKIP_PHASE),
     completePhase: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.COMPLETE_PHASE),
+    // Office Focus Lock controls
+    startOfficeFocusLock: (label, durationMinutes) => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes),
+    stopOfficeFocusLock: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.STOP_OFFICE_FOCUS_LOCK),
+    getOfficeFocusLockState: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.GET_OFFICE_FOCUS_LOCK_STATE),
     // Window controls
     openSettings: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.OPEN_SETTINGS),
     closeOverlay: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.CLOSE_OVERLAY),
@@ -52,6 +56,11 @@ const api = {
         electron_1.ipcRenderer.on(types_1.IPC_CHANNELS.CONFIG_UPDATED, handler);
         return () => electron_1.ipcRenderer.removeListener(types_1.IPC_CHANNELS.CONFIG_UPDATED, handler);
     },
+    onOfficeFocusLockChanged: (callback) => {
+        const handler = (_event, state) => callback(state);
+        electron_1.ipcRenderer.on(types_1.IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, handler);
+        return () => electron_1.ipcRenderer.removeListener(types_1.IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, handler);
+    },
 };
-electron_1.contextBridge.exposeInMainWorld('postureGuard', api);
+electron_1.contextBridge.exposeInMainWorld('rhythmDesk', api);
 //# sourceMappingURL=preload.js.map

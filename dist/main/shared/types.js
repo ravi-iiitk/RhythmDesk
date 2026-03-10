@@ -1,10 +1,12 @@
 "use strict";
 /**
- * PostureGuard Shared Types
+ * RhythmDesk Shared Types
  * All data model interfaces used across main and renderer processes
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_GENERAL_SETTINGS = exports.INITIAL_SESSION_STATE = exports.DEFAULT_SCHEDULE = exports.IPC_CHANNELS = void 0;
+exports.OFFICE_FOCUS_LOCK_DURATIONS = exports.INITIAL_OFFICE_FOCUS_LOCK_STATE = exports.DEFAULT_GENERAL_SETTINGS = exports.INITIAL_SESSION_STATE = exports.DEFAULT_SCHEDULE = exports.IPC_CHANNELS = exports.OFFICE_FOCUS_LABELS = void 0;
+// Preset work labels for Office Focus Lock
+exports.OFFICE_FOCUS_LABELS = ['EPAM', 'Resy'];
 // IPC channel names
 exports.IPC_CHANNELS = {
     // Main -> Renderer
@@ -13,6 +15,7 @@ exports.IPC_CHANNELS = {
     SHOW_OVERLAY: 'overlay:show',
     HIDE_OVERLAY: 'overlay:hide',
     CONFIG_UPDATED: 'config:updated',
+    OFFICE_FOCUS_LOCK_CHANGED: 'officeFocusLock:changed',
     // Renderer -> Main
     GET_CONFIG: 'config:get',
     SAVE_CONFIG: 'config:save',
@@ -27,6 +30,10 @@ exports.IPC_CHANNELS = {
     POSTPONE: 'timer:postpone',
     SKIP_PHASE: 'timer:skipPhase',
     COMPLETE_PHASE: 'timer:completePhase',
+    // Office Focus Lock controls
+    START_OFFICE_FOCUS_LOCK: 'officeFocusLock:start',
+    STOP_OFFICE_FOCUS_LOCK: 'officeFocusLock:stop',
+    GET_OFFICE_FOCUS_LOCK_STATE: 'officeFocusLock:getState',
     // Window controls
     OPEN_SETTINGS: 'window:openSettings',
     CLOSE_OVERLAY: 'overlay:close',
@@ -60,7 +67,9 @@ exports.INITIAL_SESSION_STATE = {
     activeScheduleId: null,
     currentPhase: 'idle',
     phaseStartedAt: 0,
+    phaseEndsAt: 0,
     phaseRemainingMs: 0,
+    phaseTotalMs: 0,
     cumulativeWorkTimeMs: 0,
     lastShortBreakAtWorkTimeMs: 0,
     lastLongBreakAtWorkTimeMs: 0,
@@ -81,5 +90,16 @@ exports.DEFAULT_GENERAL_SETTINGS = {
     startMinimized: false,
     startOnLogin: false,
     showNotifications: true,
+    simulateMode: false,
 };
+// Initial Office Focus Lock state (inactive)
+exports.INITIAL_OFFICE_FOCUS_LOCK_STATE = {
+    isActive: false,
+    label: '',
+    startedAt: null,
+    durationMs: 0,
+    remainingMs: 0,
+};
+// Office Focus Lock duration presets (in minutes)
+exports.OFFICE_FOCUS_LOCK_DURATIONS = [30, 60, 90, 120];
 //# sourceMappingURL=types.js.map

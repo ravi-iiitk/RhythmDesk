@@ -1,6 +1,6 @@
 "use strict";
 /**
- * PostureGuard Window Manager
+ * RhythmDesk Window Manager
  * Manages main settings window and overlay windows
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
@@ -37,11 +37,13 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.setQuitting = setQuitting;
 exports.createMainWindow = createMainWindow;
 exports.createOverlayWindow = createOverlayWindow;
 exports.showOverlay = showOverlay;
 exports.hideOverlay = hideOverlay;
 exports.closeOverlay = closeOverlay;
+exports.isOverlayStrict = isOverlayStrict;
 exports.getMainWindow = getMainWindow;
 exports.getOverlayWindow = getOverlayWindow;
 exports.showMainWindow = showMainWindow;
@@ -53,8 +55,25 @@ const electron_1 = require("electron");
 const path = __importStar(require("path"));
 let mainWindow = null;
 let overlayWindow = null;
+let currentOverlayStrictMode = false;
+let isQuitting = false;
+/**
+ * Set quitting flag - call before app.quit()
+ */
+function setQuitting(value) {
+    isQuitting = value;
+}
 function isDev() {
     return process.env.NODE_ENV === 'development' || !electron_1.app.isPackaged;
+}
+/**
+ * Get the icon path for both dev and production
+ */
+function getIconPath() {
+    if (isDev()) {
+        return path.join(__dirname, '../../../resources/icon.png');
+    }
+    return path.join(process.resourcesPath, 'resources/icon.png');
 }
 /**
  * Create the main settings window
@@ -69,8 +88,8 @@ function createMainWindow() {
         height: 700,
         minWidth: 600,
         minHeight: 500,
-        title: 'PostureGuard',
-        icon: path.join(__dirname, '../../../resources/icon.png'),
+        title: 'RhythmDesk',
+        icon: getIconPath(),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -84,9 +103,11 @@ function createMainWindow() {
         mainWindow?.show();
     });
     mainWindow.on('close', (event) => {
-        // Minimize to tray instead of closing
-        event.preventDefault();
-        mainWindow?.hide();
+        // If quitting, allow close; otherwise minimize to tray
+        if (!isQuitting) {
+            event.preventDefault();
+            mainWindow?.hide();
+        }
     });
     mainWindow.on('closed', () => {
         mainWindow = null;
@@ -104,14 +125,29 @@ function createMainWindow() {
 /**
  * Create fullscreen overlay window
  * Designed for Linux - stays on top and covers the screen
+ *
+ * LINUX STRICT MODE BEHAVIOR:
+ * - Uses kiosk mode for maximum blocking
+ * - setAlwaysOnTop with 'screen-saver' level (highest)
+ * - Visible on all workspaces
+ * - Blocks close/minimize in strict mode
+ * - Note: Some Linux WMs may still allow Alt+Tab; this is a WM limitation
  */
 function createOverlayWindow(strictMode = false) {
+    // If overlay exists with different strict mode, destroy and recreate
     if (overlayWindow && !overlayWindow.isDestroyed()) {
-        overlayWindow.focus();
-        return overlayWindow;
+        if (currentOverlayStrictMode !== strictMode) {
+            overlayWindow.destroy();
+            overlayWindow = null;
+        }
+        else {
+            overlayWindow.focus();
+            return overlayWindow;
+        }
     }
+    currentOverlayStrictMode = strictMode;
     const primaryDisplay = electron_1.screen.getPrimaryDisplay();
-    const { width, height } = primaryDisplay.workAreaSize;
+    const { width, height } = primaryDisplay.size; // Use full size, not workArea
     overlayWindow = new electron_1.BrowserWindow({
         width,
         height,
@@ -125,10 +161,13 @@ function createOverlayWindow(strictMode = false) {
         resizable: false,
         movable: false,
         minimizable: !strictMode,
+        maximizable: false,
         closable: !strictMode,
         focusable: true,
-        title: 'PostureGuard Overlay',
-        icon: path.join(__dirname, '../../../resources/icon.png'),
+        // Kiosk mode for strict - provides strongest blocking on Linux
+        kiosk: strictMode,
+        title: 'RhythmDesk Overlay',
+        icon: getIconPath(),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -137,13 +176,32 @@ function createOverlayWindow(strictMode = false) {
         },
         backgroundColor: '#1a1a2e',
     });
-    // Attempt to grab focus on Linux
+    // Linux-specific: strongest always-on-top level
     overlayWindow.setAlwaysOnTop(true, 'screen-saver');
-    overlayWindow.setVisibleOnAllWorkspaces(true);
+    overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     overlayWindow.setFullScreenable(true);
     overlayWindow.setFullScreen(true);
+    // In strict mode, prevent window from being closed via window manager
+    if (strictMode) {
+        overlayWindow.on('close', (event) => {
+            // Prevent closing in strict mode - can only be closed programmatically
+            event.preventDefault();
+        });
+        // Re-focus if somehow loses focus in strict mode
+        overlayWindow.on('blur', () => {
+            if (overlayWindow && !overlayWindow.isDestroyed() && currentOverlayStrictMode) {
+                // Small delay to avoid focus fight
+                setTimeout(() => {
+                    if (overlayWindow && !overlayWindow.isDestroyed()) {
+                        overlayWindow.focus();
+                    }
+                }, 100);
+            }
+        });
+    }
     overlayWindow.on('closed', () => {
         overlayWindow = null;
+        currentOverlayStrictMode = false;
     });
     // Load overlay view
     if (isDev()) {
@@ -159,14 +217,18 @@ function createOverlayWindow(strictMode = false) {
 }
 /**
  * Show overlay window
+ * Always recreates if strict mode changed to ensure correct behavior
  */
 function showOverlay(strictMode = false) {
-    if (!overlayWindow || overlayWindow.isDestroyed()) {
+    if (!overlayWindow || overlayWindow.isDestroyed() || currentOverlayStrictMode !== strictMode) {
         createOverlayWindow(strictMode);
     }
     else {
         overlayWindow.setAlwaysOnTop(true, 'screen-saver');
         overlayWindow.setFullScreen(true);
+        if (strictMode) {
+            overlayWindow.setKiosk(true);
+        }
         overlayWindow.show();
         overlayWindow.focus();
     }
@@ -181,12 +243,22 @@ function hideOverlay() {
 }
 /**
  * Close overlay window
+ * In strict mode, this should only be called when phase completes
  */
 function closeOverlay() {
     if (overlayWindow && !overlayWindow.isDestroyed()) {
+        // Remove close prevention handler for strict mode
+        overlayWindow.removeAllListeners('close');
         overlayWindow.destroy();
         overlayWindow = null;
+        currentOverlayStrictMode = false;
     }
+}
+/**
+ * Check if overlay is currently in strict mode
+ */
+function isOverlayStrict() {
+    return currentOverlayStrictMode;
 }
 /**
  * Get main window instance

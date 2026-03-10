@@ -1,6 +1,6 @@
 "use strict";
 /**
- * PostureGuard IPC Handlers
+ * RhythmDesk IPC Handlers
  * Handles communication between main and renderer processes
  */
 var __importDefault = (this && this.__importDefault) || function (mod) {
@@ -12,6 +12,7 @@ const electron_1 = require("electron");
 const types_1 = require("../shared/types");
 const configService_1 = __importDefault(require("../core/configService"));
 const timerEngine_1 = require("../core/timerEngine");
+const officeFocusLockService_1 = require("../core/officeFocusLockService");
 const windowManager_1 = require("./windowManager");
 const electron_2 = require("electron");
 /**
@@ -69,6 +70,19 @@ function registerIpcHandlers() {
     });
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.QUIT_APP, () => {
         electron_2.app.quit();
+    });
+    // Office Focus Lock handlers
+    const officeFocusLockService = (0, officeFocusLockService_1.getOfficeFocusLockService)();
+    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, (_event, label, durationMinutes) => {
+        officeFocusLockService.start(label, durationMinutes);
+        return officeFocusLockService.getState();
+    });
+    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.STOP_OFFICE_FOCUS_LOCK, () => {
+        officeFocusLockService.stop();
+        return officeFocusLockService.getState();
+    });
+    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.GET_OFFICE_FOCUS_LOCK_STATE, () => {
+        return officeFocusLockService.getState();
     });
 }
 //# sourceMappingURL=ipc.js.map

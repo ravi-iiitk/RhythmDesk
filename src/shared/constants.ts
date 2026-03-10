@@ -5,6 +5,9 @@
 // Timer tick interval in milliseconds
 export const TIMER_TICK_INTERVAL_MS = 1000;
 
+// Simulate mode speed multiplier (1 minute real = 2 seconds simulated)
+export const SIMULATE_MODE_SPEED = 30; // 30x speed (1 min = 2 sec)
+
 // Minimum time between phase checks to prevent rapid toggling
 export const PHASE_CHECK_DEBOUNCE_MS = 500;
 

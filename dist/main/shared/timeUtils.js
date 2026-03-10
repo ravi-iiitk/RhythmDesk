@@ -1,6 +1,6 @@
 "use strict";
 /**
- * PostureGuard Time Utilities
+ * RhythmDesk Time Utilities
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCurrentDayOfWeek = getCurrentDayOfWeek;

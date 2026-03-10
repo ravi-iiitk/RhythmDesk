@@ -98,6 +98,7 @@ export interface GeneralSettings {
   startMinimized: boolean;
   startOnLogin: boolean;
   showNotifications: boolean;
+  simulateMode: boolean;      // Speed up timers for testing (1 min = 2 sec)
 }
 
 // Office Focus Lock state - runtime only, not persisted across restarts
@@ -224,6 +225,7 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   startMinimized: false,
   startOnLogin: false,
   showNotifications: true,
+  simulateMode: false,
 };
 
 // Initial Office Focus Lock state (inactive)

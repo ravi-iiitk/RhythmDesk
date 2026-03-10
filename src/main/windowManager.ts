@@ -9,9 +9,27 @@ import * as path from 'path';
 let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
 let currentOverlayStrictMode: boolean = false;
+let isQuitting: boolean = false;
+
+/**
+ * Set quitting flag - call before app.quit()
+ */
+export function setQuitting(value: boolean): void {
+  isQuitting = value;
+}
 
 function isDev(): boolean {
   return process.env.NODE_ENV === 'development' || !app.isPackaged;
+}
+
+/**
+ * Get the icon path for both dev and production
+ */
+function getIconPath(): string {
+  if (isDev()) {
+    return path.join(__dirname, '../../../resources/icon.png');
+  }
+  return path.join(process.resourcesPath, 'resources/icon.png');
 }
 
 /**
@@ -29,7 +47,7 @@ export function createMainWindow(): BrowserWindow {
     minWidth: 600,
     minHeight: 500,
     title: 'RhythmDesk',
-    icon: path.join(__dirname, '../../../resources/icon.png'),
+    icon: getIconPath(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -45,9 +63,11 @@ export function createMainWindow(): BrowserWindow {
   });
 
   mainWindow.on('close', (event) => {
-    // Minimize to tray instead of closing
-    event.preventDefault();
-    mainWindow?.hide();
+    // If quitting, allow close; otherwise minimize to tray
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
   });
 
   mainWindow.on('closed', () => {
@@ -111,7 +131,7 @@ export function createOverlayWindow(strictMode: boolean = false): BrowserWindow 
     // Kiosk mode for strict - provides strongest blocking on Linux
     kiosk: strictMode,
     title: 'RhythmDesk Overlay',
-    icon: path.join(__dirname, '../../../resources/icon.png'),
+    icon: getIconPath(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
