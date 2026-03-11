@@ -3,7 +3,7 @@
  * Create and edit schedules
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Schedule, DayOfWeek, DEFAULT_SCHEDULE, ScheduleMode, FlowStep, FlowStepType } from '../../shared/types';
 import { DAY_SHORT_LABELS } from '../../shared/constants';
@@ -11,8 +11,6 @@ import {
   getDefaultFlowSteps,
   createFlowStep,
   getFlowStepDisplayName,
-  moveFlowStepUp,
-  moveFlowStepDown,
   removeFlowStep,
   validateFlowSteps,
 } from '../../core/flowUtils';
@@ -43,6 +41,11 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>('rule-based');
   const [flowSteps, setFlowSteps] = useState<FlowStep[]>(getDefaultFlowSteps());
   const [flowValidationErrors, setFlowValidationErrors] = useState<string[]>([]);
+  
+  // Drag and drop state
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const dragNodeRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (schedule) {
@@ -138,12 +141,56 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
     setFlowSteps(removeFlowStep(flowSteps, index));
   };
 
-  const handleMoveFlowStepUp = (index: number) => {
-    setFlowSteps(moveFlowStepUp(flowSteps, index));
+  // Drag and drop handlers for flow steps
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
+    setDraggedIndex(index);
+    dragNodeRef.current = e.currentTarget;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index.toString());
+    // Add visual feedback after a brief delay
+    setTimeout(() => {
+      if (dragNodeRef.current) {
+        dragNodeRef.current.style.opacity = '0.5';
+      }
+    }, 0);
   };
 
-  const handleMoveFlowStepDown = (index: number) => {
-    setFlowSteps(moveFlowStepDown(flowSteps, index));
+  const handleDragEnd = () => {
+    if (dragNodeRef.current) {
+      dragNodeRef.current.style.opacity = '1';
+    }
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+    dragNodeRef.current = null;
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (draggedIndex !== null && draggedIndex !== index) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDragOverIndex(null);
+      return;
+    }
+    
+    // Reorder the flow steps
+    const newSteps = [...flowSteps];
+    const [draggedStep] = newSteps.splice(draggedIndex, 1);
+    newSteps.splice(dropIndex, 0, draggedStep);
+    setFlowSteps(newSteps);
+    
+    setDraggedIndex(null);
+    setDragOverIndex(null);
   };
 
   const handleFlowStepDurationChange = (index: number, durationSeconds: number) => {
@@ -343,15 +390,38 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
               <div 
                 key={step.id} 
                 className="flow-step"
+                draggable
+                onDragStart={(e) => handleDragStart(e, index)}
+                onDragEnd={handleDragEnd}
+                onDragOver={(e) => handleDragOver(e, index)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, index)}
                 style={{ 
                   display: 'flex', 
                   alignItems: 'center', 
                   gap: '0.5rem',
                   padding: '0.5rem',
-                  background: 'var(--bg-secondary)',
+                  background: dragOverIndex === index ? 'var(--primary-hover)' : 'var(--bg-secondary)',
                   borderRadius: '0.375rem',
+                  cursor: 'grab',
+                  transition: 'background 0.15s ease',
+                  border: dragOverIndex === index ? '2px dashed var(--primary)' : '2px solid transparent',
                 }}
               >
+                {/* Drag handle */}
+                <span 
+                  style={{ 
+                    width: '1.5rem', 
+                    textAlign: 'center', 
+                    color: 'var(--text-muted)',
+                    cursor: 'grab',
+                    fontSize: '1rem',
+                    userSelect: 'none',
+                  }}
+                  title="Drag to reorder"
+                >
+                  ⋮⋮
+                </span>
                 <span style={{ width: '1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                   {index + 1}.
                 </span>
@@ -368,6 +438,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
                     style={{ width: '3.5rem', textAlign: 'center', padding: '0.5rem' }}
                     className="form-input"
                     placeholder="0"
+                    draggable={false}
                   />
                   <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 500 }}>h</span>
                   <input
@@ -379,6 +450,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
                     style={{ width: '3.5rem', textAlign: 'center', padding: '0.5rem' }}
                     className="form-input"
                     placeholder="0"
+                    draggable={false}
                   />
                   <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 500 }}>m</span>
                   <input
@@ -390,35 +462,17 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
                     style={{ width: '3.5rem', textAlign: 'center', padding: '0.5rem' }}
                     className="form-input"
                     placeholder="0"
+                    draggable={false}
                   />
                   <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 500 }}>s</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleMoveFlowStepUp(index)}
-                  disabled={index === 0}
-                  className="btn btn-secondary"
-                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                  title="Move up"
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleMoveFlowStepDown(index)}
-                  disabled={index === flowSteps.length - 1}
-                  className="btn btn-secondary"
-                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                  title="Move down"
-                >
-                  ↓
-                </button>
                 <button
                   type="button"
                   onClick={() => handleRemoveFlowStep(index)}
                   className="btn btn-secondary"
                   style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: '#ef4444' }}
                   title="Remove"
+                  draggable={false}
                 >
                   ✕
                 </button>

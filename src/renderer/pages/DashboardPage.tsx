@@ -3,8 +3,8 @@
  * Shows current timer state and quick controls
  */
 
-import { useState } from 'react';
-import { TimerTick, OFFICE_FOCUS_LABELS, OFFICE_FOCUS_LOCK_DURATIONS, PhaseType, ConfiguredDurations, DEFAULT_REST_BLOCK_PRESETS } from '../../shared/types';
+import { useState, useEffect } from 'react';
+import { TimerTick, OFFICE_FOCUS_LOCK_DURATIONS, PhaseType, ConfiguredDurations, DEFAULT_REST_BLOCK_PRESETS, Schedule } from '../../shared/types';
 import { PHASE_DISPLAY_NAMES, PHASE_COLORS } from '../../shared/constants';
 import { formatDurationHuman, formatDuration } from '../../shared/timeUtils';
 
@@ -36,13 +36,27 @@ function getConfiguredDurationForPhase(phase: PhaseType, durations: ConfiguredDu
 
 function DashboardPage({ tick }: DashboardPageProps) {
   const [showLockOptions, setShowLockOptions] = useState(false);
-  const [selectedLabel, setSelectedLabel] = useState<string>('EPAM');
+  const [scheduleNames, setScheduleNames] = useState<string[]>([]);
+  const [selectedLabel, setSelectedLabel] = useState<string>('');
   const [customHours, setCustomHours] = useState<number>(0);
   const [customMinutes, setCustomMinutes] = useState<number>(30);
   const [focusStrictMode, setFocusStrictMode] = useState<boolean>(false);
   const [restStrictMode, setRestStrictMode] = useState<boolean>(false);
   const [restCustomHours, setRestCustomHours] = useState<number>(0);
   const [restCustomMinutes, setRestCustomMinutes] = useState<number>(15);
+  const [restCustomName, setRestCustomName] = useState<string>('My Break');
+  
+  // Fetch schedule names for Office Focus Lock dropdown
+  useEffect(() => {
+    window.rhythmDesk.getSchedules().then((schedules: Schedule[]) => {
+      const names = schedules.map(s => s.name).filter(Boolean);
+      setScheduleNames(names);
+      // Set default selected label to first schedule or current schedule
+      if (names.length > 0 && !selectedLabel) {
+        setSelectedLabel(tick?.scheduleName || names[0]);
+      }
+    });
+  }, [tick?.scheduleName]);
 
   const handlePause = () => window.rhythmDesk.pause();
   const handleResume = () => window.rhythmDesk.resume();
@@ -143,9 +157,15 @@ function DashboardPage({ tick }: DashboardPageProps) {
                 ))}
               </div>
               
-              {/* Custom duration */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
-                <span style={{ color: '#94a3b8' }}>Custom:</span>
+              {/* Custom duration with name */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  value={restCustomName}
+                  onChange={(e) => setRestCustomName(e.target.value)}
+                  placeholder="Break name"
+                  style={{ width: '100px', padding: '0.25rem 0.5rem', borderRadius: '4px', backgroundColor: '#2a2a3e', color: '#e2e8f0', border: '1px solid #444' }}
+                />
                 <input
                   type="number"
                   min="0"
@@ -166,7 +186,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
                 <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>m</span>
                 <button
                   className="btn btn-primary"
-                  onClick={() => handleStartRestBlock('Custom Rest', restCustomHours * 60 + restCustomMinutes, restStrictMode)}
+                  onClick={() => handleStartRestBlock(restCustomName || 'Custom Rest', restCustomHours * 60 + restCustomMinutes, restStrictMode)}
                   disabled={restCustomHours === 0 && restCustomMinutes === 0}
                   style={{ padding: '0.3rem 0.75rem', marginLeft: 'auto' }}
                 >
@@ -236,8 +256,8 @@ function DashboardPage({ tick }: DashboardPageProps) {
                     onChange={(e) => setSelectedLabel(e.target.value)}
                     style={{ padding: '0.4rem', borderRadius: '6px', backgroundColor: '#2a2a3e', color: '#e2e8f0', border: '1px solid #444', fontSize: '0.85rem' }}
                   >
-                    {OFFICE_FOCUS_LABELS.map((label) => (
-                      <option key={label} value={label}>{label}</option>
+                    {scheduleNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
                     ))}
                   </select>
                   <span style={{ color: '#64748b', fontSize: '0.8rem' }}>|</span>
@@ -544,9 +564,22 @@ function DashboardPage({ tick }: DashboardPageProps) {
                 </button>
               ))}
             </div>
-            {/* Custom duration row */}
+            {/* Custom duration row with name input */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
-              <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Custom:</span>
+              <input
+                type="text"
+                value={restCustomName}
+                onChange={(e) => setRestCustomName(e.target.value)}
+                placeholder="Break name"
+                style={{
+                  width: '100px',
+                  padding: '0.3rem 0.5rem',
+                  borderRadius: '4px',
+                  border: '1px solid #374151',
+                  backgroundColor: '#1f2937',
+                  color: '#e2e8f0'
+                }}
+              />
               <input
                 type="number"
                 min="0"
@@ -583,7 +616,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
               <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>m</span>
               <button
                 className="btn btn-primary"
-                onClick={() => handleStartRestBlock('Custom Rest', restCustomHours * 60 + restCustomMinutes, restStrictMode)}
+                onClick={() => handleStartRestBlock(restCustomName || 'Custom Rest', restCustomHours * 60 + restCustomMinutes, restStrictMode)}
                 disabled={restCustomHours === 0 && restCustomMinutes === 0}
                 style={{ padding: '0.3rem 0.75rem', marginLeft: 'auto' }}
               >
