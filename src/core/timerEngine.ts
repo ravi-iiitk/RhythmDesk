@@ -999,6 +999,14 @@ export class TimerEngine extends EventEmitter {
     
     logger.info('TimerEngine', `Resetting session for schedule: ${this.currentSchedule.name}`);
     
+    // Reload schedule from config to restore original flow order
+    // (shuffle/reverse may have modified the in-memory flowSteps)
+    const schedules = configService.getSchedules();
+    const originalSchedule = schedules.find(s => s.id === this.currentSchedule!.id);
+    if (originalSchedule) {
+      this.currentSchedule = originalSchedule;
+    }
+    
     const now = Date.now();
     
     // Determine starting phase and duration based on schedule mode
