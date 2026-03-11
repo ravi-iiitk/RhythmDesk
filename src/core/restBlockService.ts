@@ -15,6 +15,7 @@ import {
   DEFAULT_REST_BLOCK_PRESETS 
 } from '../shared/types';
 import { minutesToMs } from '../shared/timeUtils';
+import logger from './logger';
 
 class RestBlockService extends EventEmitter {
   private state: RestBlockState;
@@ -36,6 +37,14 @@ class RestBlockService extends EventEmitter {
    */
   start(name: string, durationMinutes: number, isStrictMode: boolean = false, presetId: string | null = null): void {
     const durationMs = minutesToMs(durationMinutes);
+    
+    logger.info('RestBlockService', 'Starting rest block', {
+      name,
+      durationMinutes,
+      durationMs,
+      isStrictMode,
+      presetId,
+    });
     
     this.state = {
       isActive: true,
@@ -80,6 +89,7 @@ class RestBlockService extends EventEmitter {
    * Force stop (used when timer expires)
    */
   private forceStop(): void {
+    logger.info('RestBlockService', 'Force stopping rest block');
     this.stopTicking();
     this.state = { ...INITIAL_REST_BLOCK_STATE };
     this.emit('stopped');
@@ -149,6 +159,7 @@ class RestBlockService extends EventEmitter {
 
   /**
    * Internal tick to update remaining time
+   * Emits 'tick' event on every update for overlay sync
    */
   private tick(): void {
     if (!this.state.isActive || !this.state.startedAt) {
@@ -157,11 +168,27 @@ class RestBlockService extends EventEmitter {
 
     const elapsed = Date.now() - this.state.startedAt;
     const remaining = Math.max(0, this.state.durationMs - elapsed);
+    const prevRemaining = this.state.remainingMs;
 
     this.state.remainingMs = remaining;
+    
+    // Emit tick event for overlay sync - this is critical for long rest blocks
+    this.emit('tick', this.state);
+    
+    // Log progress every minute for debugging
+    const prevMinutes = Math.floor(prevRemaining / 60000);
+    const currentMinutes = Math.floor(remaining / 60000);
+    if (prevMinutes !== currentMinutes) {
+      logger.debug('RestBlockService', 'Rest block progress', {
+        name: this.state.name,
+        remainingMinutes: currentMinutes,
+        elapsedMs: elapsed,
+      });
+    }
 
     if (remaining <= 0) {
       // Rest block duration expired
+      logger.info('RestBlockService', 'Rest block expired', { name: this.state.name });
       this.forceStop();
       this.emit('expired');
     }

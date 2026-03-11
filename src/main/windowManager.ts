@@ -17,6 +17,7 @@
 
 import { BrowserWindow, screen, app } from 'electron';
 import * as path from 'path';
+import logger from '../core/logger';
 
 let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
@@ -263,6 +264,59 @@ export function getMainWindow(): BrowserWindow | null {
  */
 export function getOverlayWindow(): BrowserWindow | null {
   return overlayWindow;
+}
+
+/**
+ * Check if overlay window is healthy (exists and responsive)
+ * Returns true if overlay is healthy, false if it needs recreation
+ */
+export function isOverlayHealthy(): boolean {
+  if (!overlayWindow) return false;
+  if (overlayWindow.isDestroyed()) return false;
+  
+  // Check if webContents is still valid
+  try {
+    const webContents = overlayWindow.webContents;
+    if (!webContents || webContents.isDestroyed()) return false;
+    
+    // Check if not crashed
+    if (webContents.isCrashed()) {
+      logger.error('WindowManager', 'Overlay webContents has crashed');
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    logger.error('WindowManager', 'Error checking overlay health', { error });
+    return false;
+  }
+}
+
+/**
+ * Recover overlay window if it's unhealthy
+ * Used by watchdog to ensure overlay stays alive during long rest blocks
+ */
+export function recoverOverlayIfNeeded(strictMode: boolean): boolean {
+  if (isOverlayHealthy()) {
+    return false; // No recovery needed
+  }
+  
+  logger.warn('WindowManager', 'Recovering unhealthy overlay window', { strictMode });
+  
+  // Clean up old window if it exists
+  if (overlayWindow) {
+    try {
+      overlayWindow.removeAllListeners('close');
+      overlayWindow.destroy();
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+    overlayWindow = null;
+  }
+  
+  // Create new overlay
+  createOverlayWindow(strictMode);
+  return true; // Recovery was performed
 }
 
 /**

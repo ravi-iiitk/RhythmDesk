@@ -7,11 +7,15 @@
  * Shows fullscreen overlay with timer countdown
  * Presets can be saved for quick access (e.g., "Quick Rest", "Lunch", "Meditation")
  */
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getRestBlockService = getRestBlockService;
 const events_1 = require("events");
 const types_1 = require("../shared/types");
 const timeUtils_1 = require("../shared/timeUtils");
+const logger_1 = __importDefault(require("./logger"));
 class RestBlockService extends events_1.EventEmitter {
     constructor() {
         super();
@@ -28,6 +32,13 @@ class RestBlockService extends events_1.EventEmitter {
      */
     start(name, durationMinutes, isStrictMode = false, presetId = null) {
         const durationMs = (0, timeUtils_1.minutesToMs)(durationMinutes);
+        logger_1.default.info('RestBlockService', 'Starting rest block', {
+            name,
+            durationMinutes,
+            durationMs,
+            isStrictMode,
+            presetId,
+        });
         this.state = {
             isActive: true,
             presetId,
@@ -67,6 +78,7 @@ class RestBlockService extends events_1.EventEmitter {
      * Force stop (used when timer expires)
      */
     forceStop() {
+        logger_1.default.info('RestBlockService', 'Force stopping rest block');
         this.stopTicking();
         this.state = { ...types_1.INITIAL_REST_BLOCK_STATE };
         this.emit('stopped');
@@ -129,6 +141,7 @@ class RestBlockService extends events_1.EventEmitter {
     }
     /**
      * Internal tick to update remaining time
+     * Emits 'tick' event on every update for overlay sync
      */
     tick() {
         if (!this.state.isActive || !this.state.startedAt) {
@@ -136,9 +149,23 @@ class RestBlockService extends events_1.EventEmitter {
         }
         const elapsed = Date.now() - this.state.startedAt;
         const remaining = Math.max(0, this.state.durationMs - elapsed);
+        const prevRemaining = this.state.remainingMs;
         this.state.remainingMs = remaining;
+        // Emit tick event for overlay sync - this is critical for long rest blocks
+        this.emit('tick', this.state);
+        // Log progress every minute for debugging
+        const prevMinutes = Math.floor(prevRemaining / 60000);
+        const currentMinutes = Math.floor(remaining / 60000);
+        if (prevMinutes !== currentMinutes) {
+            logger_1.default.debug('RestBlockService', 'Rest block progress', {
+                name: this.state.name,
+                remainingMinutes: currentMinutes,
+                elapsedMs: elapsed,
+            });
+        }
         if (remaining <= 0) {
             // Rest block duration expired
+            logger_1.default.info('RestBlockService', 'Rest block expired', { name: this.state.name });
             this.forceStop();
             this.emit('expired');
         }

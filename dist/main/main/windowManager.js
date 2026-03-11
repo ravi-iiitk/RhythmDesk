@@ -48,6 +48,9 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.setQuitting = setQuitting;
 exports.createMainWindow = createMainWindow;
@@ -58,6 +61,8 @@ exports.closeOverlay = closeOverlay;
 exports.isOverlayStrict = isOverlayStrict;
 exports.getMainWindow = getMainWindow;
 exports.getOverlayWindow = getOverlayWindow;
+exports.isOverlayHealthy = isOverlayHealthy;
+exports.recoverOverlayIfNeeded = recoverOverlayIfNeeded;
 exports.showMainWindow = showMainWindow;
 exports.hideMainWindow = hideMainWindow;
 exports.sendToOverlay = sendToOverlay;
@@ -65,6 +70,7 @@ exports.sendToMain = sendToMain;
 exports.sendToAll = sendToAll;
 const electron_1 = require("electron");
 const path = __importStar(require("path"));
+const logger_1 = __importDefault(require("../core/logger"));
 let mainWindow = null;
 let overlayWindow = null;
 let currentOverlayStrictMode = false;
@@ -288,6 +294,56 @@ function getMainWindow() {
  */
 function getOverlayWindow() {
     return overlayWindow;
+}
+/**
+ * Check if overlay window is healthy (exists and responsive)
+ * Returns true if overlay is healthy, false if it needs recreation
+ */
+function isOverlayHealthy() {
+    if (!overlayWindow)
+        return false;
+    if (overlayWindow.isDestroyed())
+        return false;
+    // Check if webContents is still valid
+    try {
+        const webContents = overlayWindow.webContents;
+        if (!webContents || webContents.isDestroyed())
+            return false;
+        // Check if not crashed
+        if (webContents.isCrashed()) {
+            logger_1.default.error('WindowManager', 'Overlay webContents has crashed');
+            return false;
+        }
+        return true;
+    }
+    catch (error) {
+        logger_1.default.error('WindowManager', 'Error checking overlay health', { error });
+        return false;
+    }
+}
+/**
+ * Recover overlay window if it's unhealthy
+ * Used by watchdog to ensure overlay stays alive during long rest blocks
+ */
+function recoverOverlayIfNeeded(strictMode) {
+    if (isOverlayHealthy()) {
+        return false; // No recovery needed
+    }
+    logger_1.default.warn('WindowManager', 'Recovering unhealthy overlay window', { strictMode });
+    // Clean up old window if it exists
+    if (overlayWindow) {
+        try {
+            overlayWindow.removeAllListeners('close');
+            overlayWindow.destroy();
+        }
+        catch (e) {
+            // Ignore cleanup errors
+        }
+        overlayWindow = null;
+    }
+    // Create new overlay
+    createOverlayWindow(strictMode);
+    return true; // Recovery was performed
 }
 /**
  * Show main window

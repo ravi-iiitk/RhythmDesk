@@ -10,7 +10,7 @@
  */
 
 import { app, BrowserWindow } from 'electron';
-import { createMainWindow, showOverlay, closeOverlay, sendToAll, getMainWindow, getOverlayWindow } from './windowManager';
+import { createMainWindow, showOverlay, closeOverlay, sendToAll, getMainWindow, getOverlayWindow, recoverOverlayIfNeeded } from './windowManager';
 import logger from '../core/logger';
 import { createTray, updateTrayWithTick } from './tray';
 import { registerIpcHandlers } from './ipc';
@@ -183,15 +183,25 @@ function initialize(): void {
     
     restBlockService.on('started', () => {
       // When Rest Block starts, pause the normal timer flow and show overlay
+      logger.info('Main', 'Rest block started - pausing timer and showing overlay');
       timerEngine.pause();
       const restState = restBlockService.getState();
       showOverlay(restState.isStrictMode);
       sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: 'rest-block', restBlock: restState });
       sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
     });
+    
+    // CRITICAL: Handle RestBlockService tick events to keep overlay updated
+    // This is essential for long rest blocks - without this, the overlay freezes
+    restBlockService.on('tick', (restState) => {
+      // Send rest block state to overlay on every tick
+      // This ensures the overlay countdown stays in sync for long durations
+      sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
+    });
 
     restBlockService.on('stopped', () => {
       // When Rest Block stops, resume timer and check if overlay should close
+      logger.info('Main', 'Rest block stopped - resuming timer');
       timerEngine.resume();
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
@@ -205,6 +215,7 @@ function initialize(): void {
 
     restBlockService.on('expired', () => {
       // Rest Block timer expired - resume timer and check overlay
+      logger.info('Main', 'Rest block expired - resuming timer');
       timerEngine.resume();
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
@@ -218,6 +229,27 @@ function initialize(): void {
 
     // Start the timer
     timerEngine.start();
+    
+    // WATCHDOG: Periodically check overlay health during rest blocks
+    // This ensures long rest blocks don't get stuck due to overlay issues
+    setInterval(() => {
+      const restBlockService = getRestBlockService();
+      if (restBlockService.isActive()) {
+        const restState = restBlockService.getState();
+        const overlayWindow = getOverlayWindow();
+        
+        // If rest block is active but overlay is not healthy, recover it
+        if (!overlayWindow || overlayWindow.isDestroyed()) {
+          logger.warn('Main', 'Watchdog: Rest block active but overlay missing - recovering');
+          const recovered = recoverOverlayIfNeeded(restState.isStrictMode);
+          if (recovered) {
+            // Send current state to the new overlay
+            sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
+            sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: 'rest-block', restBlock: restState });
+          }
+        }
+      }
+    }, 10000); // Check every 10 seconds
 
     // Handle app activation (macOS specific, but doesn't hurt on Linux)
     app.on('activate', () => {

@@ -70,12 +70,111 @@ function DashboardPage({ tick }: DashboardPageProps) {
   };
 
   if (!tick || tick.currentPhase === 'idle') {
+    // Show rest block UI even when no schedule is active
+    const isRestBlockActive = tick?.restBlock?.isActive ?? false;
+    
     return (
-      <div className="page" style={{ padding: '1rem' }}>
+      <div className="page" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <div className="card" style={{ padding: '1.5rem', textAlign: 'center' }}>
           <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>⏸️</div>
           <div style={{ fontSize: '1.25rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.5rem' }}>No Active Schedule</div>
           <div style={{ fontSize: '0.9rem', color: '#64748b' }}>Check your schedule settings to ensure you have enabled schedules for the current time and day.</div>
+        </div>
+        
+        {/* Rest Blocks - Available even without schedule */}
+        <div className="card" style={{ padding: '0.75rem 1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#e2e8f0' }}>🛋️ Take a Rest</div>
+            {isRestBlockActive ? (
+              <span style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: 500 }}>
+                Active: {tick?.restBlock?.name}
+              </span>
+            ) : (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: '#94a3b8' }}>
+                <input
+                  type="checkbox"
+                  checked={restStrictMode}
+                  onChange={(e) => setRestStrictMode(e.target.checked)}
+                  style={{ width: '14px', height: '14px' }}
+                />
+                🔒 Strict Mode
+              </label>
+            )}
+          </div>
+          
+          {isRestBlockActive ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', justifyContent: 'center', padding: '1rem' }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '2rem', fontWeight: 700, color: '#22c55e' }}>
+                  {formatDuration(tick?.restBlock?.remainingMs ?? 0)}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>remaining</div>
+              </div>
+              {!tick?.restBlock?.isStrictMode && (
+                <button className="btn btn-secondary" onClick={handleStopRestBlock}>
+                  End Rest
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Quick presets */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                {DEFAULT_REST_BLOCK_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    className="btn btn-secondary"
+                    onClick={() => handleStartRestBlock(preset.name, preset.durationMinutes, restStrictMode)}
+                    style={{ 
+                      padding: '0.5rem 0.5rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '0.1rem'
+                    }}
+                  >
+                    <span style={{ fontSize: '0.8rem', fontWeight: 500 }}>{preset.name}</span>
+                    <span style={{ fontSize: '0.65rem', color: '#64748b' }}>
+                      {preset.durationMinutes >= 60 
+                        ? `${Math.floor(preset.durationMinutes / 60)}h` 
+                        : `${preset.durationMinutes}m`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              
+              {/* Custom duration */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                <span style={{ color: '#94a3b8' }}>Custom:</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="23"
+                  value={restCustomHours}
+                  onChange={(e) => setRestCustomHours(Math.max(0, Math.min(23, parseInt(e.target.value) || 0)))}
+                  style={{ width: '50px', padding: '0.25rem', textAlign: 'center' }}
+                />
+                <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>h</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="59"
+                  value={restCustomMinutes}
+                  onChange={(e) => setRestCustomMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                  style={{ width: '50px', padding: '0.25rem', textAlign: 'center' }}
+                />
+                <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>m</span>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => handleStartRestBlock('Custom Rest', restCustomHours * 60 + restCustomMinutes, restStrictMode)}
+                  disabled={restCustomHours === 0 && restCustomMinutes === 0}
+                  style={{ padding: '0.3rem 0.75rem', marginLeft: 'auto' }}
+                >
+                  Start
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );

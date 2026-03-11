@@ -1110,10 +1110,36 @@ export class TimerEngine extends EventEmitter {
     const schedule = this.currentSchedule;
     const workTimeMs = this.state.cumulativeWorkTimeMs;
     
-    // Short break settings
-    const shortBreakEnabled = schedule?.shortBreak?.enabled ?? schedule?.shortBreakEnabled ?? false;
-    const shortBreakEveryMinutes = schedule?.shortBreak?.everyMinutes ?? schedule?.shortBreakEveryMinutes ?? 60;
-    const shortBreakDurationMinutes = schedule?.shortBreak?.durationMinutes ?? schedule?.shortBreakDurationMinutes ?? 5;
+    // In flow-based mode, calculate short break timing from flow cycle
+    let shortBreakEveryMinutes = schedule?.shortBreak?.everyMinutes ?? schedule?.shortBreakEveryMinutes ?? 60;
+    let shortBreakDurationMinutes = schedule?.shortBreak?.durationMinutes ?? schedule?.shortBreakDurationMinutes ?? 5;
+    let shortBreakEnabled = schedule?.shortBreak?.enabled ?? schedule?.shortBreakEnabled ?? false;
+    
+    if (schedule && isFlowBasedSchedule(schedule)) {
+      const flowSteps = schedule.flowSteps!;
+      // In flow mode, short breaks are part of the flow
+      // Calculate total cycle time (all steps including short break)
+      let totalCycleSeconds = 0;
+      let hasShortBreak = false;
+      
+      for (const step of flowSteps) {
+        totalCycleSeconds += step.durationSeconds;
+        if (step.type === 'short-break') {
+          hasShortBreak = true;
+          shortBreakDurationMinutes = Math.round(step.durationSeconds / 60);
+        }
+      }
+      
+      // Short break "every" is the total cycle time minus the break duration
+      // (time between short breaks)
+      if (hasShortBreak) {
+        shortBreakEnabled = true;
+        const cycleMinutes = Math.round(totalCycleSeconds / 60);
+        shortBreakEveryMinutes = cycleMinutes - shortBreakDurationMinutes;
+      } else {
+        shortBreakEnabled = false;
+      }
+    }
     const shortBreakThresholdMs = minutesToMs(shortBreakEveryMinutes);
     
     // Long break settings
@@ -1304,10 +1330,54 @@ export class TimerEngine extends EventEmitter {
   
   /**
    * Get configured durations from active schedule
+   * In flow-based mode, reads durations from the flow steps
    */
   private getConfiguredDurations(): ConfiguredDurations {
     const schedule = this.currentSchedule;
     
+    // Flow-based mode: extract durations from flow steps
+    if (schedule && isFlowBasedSchedule(schedule)) {
+      const flowSteps = schedule.flowSteps!;
+      
+      // Find durations from flow steps (use first occurrence of each type)
+      let sitMinutes = 12;
+      let standMinutes = 12;
+      let sitToStandTransitionSeconds = 60;
+      let standToSitTransitionSeconds = 60;
+      let shortBreakDurationMinutes = 5;
+      
+      for (const step of flowSteps) {
+        switch (step.type) {
+          case 'sit':
+            sitMinutes = Math.round(step.durationSeconds / 60);
+            break;
+          case 'stand':
+            standMinutes = Math.round(step.durationSeconds / 60);
+            break;
+          case 'sit-to-stand-transition':
+            sitToStandTransitionSeconds = step.durationSeconds;
+            break;
+          case 'stand-to-sit-transition':
+            standToSitTransitionSeconds = step.durationSeconds;
+            break;
+          case 'short-break':
+            shortBreakDurationMinutes = Math.round(step.durationSeconds / 60);
+            break;
+        }
+      }
+      
+      return {
+        sitMinutes,
+        standMinutes,
+        sitToStandTransitionSeconds,
+        standToSitTransitionSeconds,
+        shortBreakDurationMinutes,
+        longBreakDurationMinutes: schedule.longBreak?.durationMinutes 
+          ?? schedule.longBreakDurationMinutes ?? 15,
+      };
+    }
+    
+    // Rule-based mode: use legacy fields
     return {
       sitMinutes: schedule?.sitMinutes ?? 12,
       standMinutes: schedule?.standMinutes ?? 8,
