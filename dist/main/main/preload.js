@@ -27,6 +27,13 @@ const api = {
     startOfficeFocusLock: (label, durationMinutes, isStrictMode = false) => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes, isStrictMode),
     stopOfficeFocusLock: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.STOP_OFFICE_FOCUS_LOCK),
     getOfficeFocusLockState: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.GET_OFFICE_FOCUS_LOCK_STATE),
+    // Rest Block controls
+    startRestBlock: (name, durationMinutes, isStrictMode = false, presetId = null) => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.START_REST_BLOCK, name, durationMinutes, isStrictMode, presetId),
+    stopRestBlock: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.STOP_REST_BLOCK),
+    getRestBlockState: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.GET_REST_BLOCK_STATE),
+    getRestBlockPresets: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.GET_REST_BLOCK_PRESETS),
+    saveRestBlockPreset: (preset) => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.SAVE_REST_BLOCK_PRESET, preset),
+    deleteRestBlockPreset: (presetId) => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.DELETE_REST_BLOCK_PRESET, presetId),
     // Window controls
     openSettings: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.OPEN_SETTINGS),
     closeOverlay: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.CLOSE_OVERLAY),
@@ -62,6 +69,11 @@ const api = {
         const handler = (_event, state) => callback(state);
         electron_1.ipcRenderer.on(types_1.IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, handler);
         return () => electron_1.ipcRenderer.removeListener(types_1.IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, handler);
+    },
+    onRestBlockChanged: (callback) => {
+        const handler = (_event, state) => callback(state);
+        electron_1.ipcRenderer.on(types_1.IPC_CHANNELS.REST_BLOCK_CHANGED, handler);
+        return () => electron_1.ipcRenderer.removeListener(types_1.IPC_CHANNELS.REST_BLOCK_CHANGED, handler);
     },
 };
 electron_1.contextBridge.exposeInMainWorld('rhythmDesk', api);

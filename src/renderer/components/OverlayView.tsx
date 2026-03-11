@@ -43,6 +43,10 @@ function OverlayView({ tick }: OverlayViewProps) {
   const handleSkip = () => window.rhythmDesk.skipPhase();
   const handleCloseOverlay = () => window.rhythmDesk.closeOverlay();
   const handleStopOfficeFocusLock = () => window.rhythmDesk.stopOfficeFocusLock();
+  const handleStopRestBlock = () => window.rhythmDesk.stopRestBlock();
+
+  // Check if rest block is active - takes priority over normal phases
+  const isRestBlockActive = tick.restBlock.isActive;
 
   // Determine phase type
   const isTransitionOrBreak = [
@@ -64,6 +68,66 @@ function OverlayView({ tick }: OverlayViewProps) {
   // But hide stop button if Focus Mode strict mode is enabled
   const showCloseButton = !tick.isStrictMode && !isOfficeFocusLockActive;
   const showStopLockButton = isOfficeFocusLockActive && isWorkPhase && !tick.officeFocusLock.isStrictMode;
+
+  // If rest block is active, show rest block overlay
+  if (isRestBlockActive) {
+    const restBlockColor = '#22c55e'; // Green color for rest
+    return (
+      <div className="overlay">
+        <div className="overlay-content">
+          {/* Rest Block Title */}
+          <div className="overlay-schedule-name">
+            🛋️ Rest Block
+          </div>
+
+          {/* Rest Block Name */}
+          <div className="overlay-phase" style={{ color: restBlockColor }}>
+            {tick.restBlock.name}
+          </div>
+
+          {/* Timer */}
+          <div className="overlay-timer" style={{ color: restBlockColor }}>
+            {formatDuration(tick.restBlock.remainingMs)}
+          </div>
+
+          {/* Message */}
+          <div className="overlay-message">
+            Take a break and relax
+          </div>
+
+          {/* Progress Bar */}
+          <div style={{ width: '60%', margin: '1rem auto' }}>
+            <div style={{ height: '8px', backgroundColor: 'rgba(34, 197, 94, 0.2)', borderRadius: '4px', overflow: 'hidden' }}>
+              <div style={{ 
+                width: `${((tick.restBlock.durationMs - tick.restBlock.remainingMs) / tick.restBlock.durationMs) * 100}%`, 
+                height: '100%', 
+                backgroundColor: restBlockColor,
+                transition: 'width 0.3s ease'
+              }} />
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="overlay-actions">
+            {tick.restBlock.isStrictMode ? (
+              <div style={{ 
+                padding: '0.5rem 1rem', 
+                backgroundColor: 'rgba(239, 68, 68, 0.2)', 
+                borderRadius: '8px',
+                color: '#ef4444'
+              }}>
+                🔒 Strict Mode - Cannot end early
+              </div>
+            ) : (
+              <button className="btn btn-success" onClick={handleStopRestBlock}>
+                End Rest
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="overlay">

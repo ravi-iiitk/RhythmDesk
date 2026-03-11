@@ -4,7 +4,7 @@
  * All data model interfaces used across main and renderer processes
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.OFFICE_FOCUS_LOCK_DURATIONS = exports.INITIAL_OFFICE_FOCUS_LOCK_STATE = exports.DEFAULT_GENERAL_SETTINGS = exports.INITIAL_SESSION_STATE = exports.INITIAL_POSTPONE_COUNTS = exports.DEFAULT_SCHEDULE = exports.DEFAULT_LONG_BREAK_CONFIG = exports.DEFAULT_SHORT_BREAK_CONFIG = exports.DEFAULT_TRANSITION_CONFIG = exports.IPC_CHANNELS = exports.OFFICE_FOCUS_LABELS = exports.TimerEvent = void 0;
+exports.OFFICE_FOCUS_LOCK_DURATIONS = exports.INITIAL_OFFICE_FOCUS_LOCK_STATE = exports.DEFAULT_GENERAL_SETTINGS = exports.INITIAL_SESSION_STATE = exports.INITIAL_POSTPONE_COUNTS = exports.DEFAULT_SCHEDULE = exports.DEFAULT_LONG_BREAK_CONFIG = exports.DEFAULT_SHORT_BREAK_CONFIG = exports.DEFAULT_TRANSITION_CONFIG = exports.IPC_CHANNELS = exports.DEFAULT_REST_BLOCK_PRESETS = exports.INITIAL_REST_BLOCK_STATE = exports.OFFICE_FOCUS_LABELS = exports.TimerEvent = void 0;
 exports.computeFlowConfigHash = computeFlowConfigHash;
 /**
  * Compute a hash of flowSteps to detect when flow config changed.
@@ -34,6 +34,24 @@ var TimerEvent;
 })(TimerEvent || (exports.TimerEvent = TimerEvent = {}));
 // Preset work labels for Office Focus Lock
 exports.OFFICE_FOCUS_LABELS = ['EPAM', 'Resy'];
+// Initial rest block state (inactive)
+exports.INITIAL_REST_BLOCK_STATE = {
+    isActive: false,
+    presetId: null,
+    name: '',
+    startedAt: null,
+    durationMs: 0,
+    remainingMs: 0,
+    isStrictMode: false,
+};
+// Default rest block presets
+exports.DEFAULT_REST_BLOCK_PRESETS = [
+    { id: 'quick-rest', name: 'Quick Rest', durationMinutes: 5, strictMode: false },
+    { id: 'meditation', name: 'Meditation', durationMinutes: 10, strictMode: true },
+    { id: 'lunch-break', name: 'Lunch Break', durationMinutes: 30, strictMode: false },
+    { id: '1-hour', name: '1 Hour', durationMinutes: 60, strictMode: false },
+    { id: '2-hours', name: '2 Hours', durationMinutes: 120, strictMode: false },
+];
 // IPC channel names
 exports.IPC_CHANNELS = {
     // Main -> Renderer
@@ -63,6 +81,14 @@ exports.IPC_CHANNELS = {
     START_OFFICE_FOCUS_LOCK: 'officeFocusLock:start',
     STOP_OFFICE_FOCUS_LOCK: 'officeFocusLock:stop',
     GET_OFFICE_FOCUS_LOCK_STATE: 'officeFocusLock:getState',
+    // Rest Block controls
+    START_REST_BLOCK: 'restBlock:start',
+    STOP_REST_BLOCK: 'restBlock:stop',
+    GET_REST_BLOCK_STATE: 'restBlock:getState',
+    GET_REST_BLOCK_PRESETS: 'restBlock:getPresets',
+    SAVE_REST_BLOCK_PRESET: 'restBlock:savePreset',
+    DELETE_REST_BLOCK_PRESET: 'restBlock:deletePreset',
+    REST_BLOCK_CHANGED: 'restBlock:changed',
     // Window controls
     OPEN_SETTINGS: 'window:openSettings',
     CLOSE_OVERLAY: 'overlay:close',

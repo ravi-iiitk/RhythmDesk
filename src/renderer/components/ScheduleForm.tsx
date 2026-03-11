@@ -64,6 +64,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         longBreakDurationMinutes: rest.longBreakDurationMinutes ?? 15,
         // Strict mode
         strictModeEnabled: rest.strictModeEnabled ?? true,
+        // No skip mode
+        noSkipEnabled: rest.noSkipEnabled ?? false,
         // Postpone fields
         allowPostpone: rest.allowPostpone ?? true,
         postponeOptionsMinutes: rest.postponeOptionsMinutes ?? [2, 5, 10],
@@ -618,7 +620,22 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
           Enable Strict Mode
         </label>
         <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
-          In strict mode, overlays cannot be easily dismissed
+          In strict mode, overlays cannot be dismissed early (must wait for timer)
+        </p>
+      </div>
+
+      {/* No Skip Mode */}
+      <div className="form-group">
+        <label className="form-checkbox">
+          <input
+            type="checkbox"
+            checked={formData.noSkipEnabled ?? false}
+            onChange={(e) => handleChange('noSkipEnabled', e.target.checked)}
+          />
+          Disable Skip
+        </label>
+        <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+          Prevents skipping to the next activity in the flow
         </p>
       </div>
 

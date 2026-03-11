@@ -16,6 +16,7 @@ import { createTray, updateTrayWithTick } from './tray';
 import { registerIpcHandlers } from './ipc';
 import { getTimerEngine } from '../core/timerEngine';
 import { getOfficeFocusLockService } from '../core/officeFocusLockService';
+import { getRestBlockService } from '../core/restBlockService';
 import { IPC_CHANNELS, TimerTick, PhaseType } from '../shared/types';
 import configService from '../core/configService';
 import { createDefaultSchedules } from './defaultSchedules';
@@ -106,11 +107,16 @@ function initialize(): void {
       const newPolicy = getOverlayPolicyForState(data.newPhase);
       const prevPolicy = getOverlayPolicyForState(data.prevPhase);
 
+      // Check if RestBlock is active - don't interfere with its overlay
+      const restBlockService = getRestBlockService();
+      const isRestBlockActive = restBlockService.isActive();
+
       if (newPolicy.showOverlay) {
         showOverlay(newPolicy.strictMode);
         sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: data.newPhase });
-      } else if (prevPolicy.showOverlay) {
+      } else if (prevPolicy.showOverlay && !isRestBlockActive) {
         // Close overlay when leaving a phase that required it
+        // BUT only if no RestBlock is active (RestBlock takes priority)
         closeOverlay();
         sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
       }
@@ -122,8 +128,12 @@ function initialize(): void {
 
     // Handle postpone - close overlay when user postpones
     timerEngine.on('postponed', () => {
-      closeOverlay();
-      sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
+      // Don't close overlay if RestBlock is active
+      const restBlockService = getRestBlockService();
+      if (!restBlockService.isActive()) {
+        closeOverlay();
+        sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
+      }
     });
 
     // Initialize Office Focus Lock service and handle its events
@@ -145,9 +155,10 @@ function initialize(): void {
       // When Office Focus Lock stops, use centralized policy to determine if overlay should close
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
+      const restBlockService = getRestBlockService();
       
-      // Close overlay if policy says no overlay needed (work phase without focus lock)
-      if (!policy.showOverlay) {
+      // Close overlay if policy says no overlay needed AND no RestBlock is active
+      if (!policy.showOverlay && !restBlockService.isActive()) {
         closeOverlay();
         sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
       }
@@ -158,12 +169,51 @@ function initialize(): void {
       // Office Focus Lock timer expired - same logic as stopped
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
+      const restBlockService = getRestBlockService();
+      
+      if (!policy.showOverlay && !restBlockService.isActive()) {
+        closeOverlay();
+        sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
+      }
+      sendToAll(IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, officeFocusLockService.getState());
+    });
+
+    // Initialize Rest Block service and handle its events
+    const restBlockService = getRestBlockService();
+    
+    restBlockService.on('started', () => {
+      // When Rest Block starts, pause the normal timer flow and show overlay
+      timerEngine.pause();
+      const restState = restBlockService.getState();
+      showOverlay(restState.isStrictMode);
+      sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: 'rest-block', restBlock: restState });
+      sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
+    });
+
+    restBlockService.on('stopped', () => {
+      // When Rest Block stops, resume timer and check if overlay should close
+      timerEngine.resume();
+      const currentPhase = timerEngine.getState().currentPhase;
+      const policy = getOverlayPolicyForState(currentPhase);
       
       if (!policy.showOverlay) {
         closeOverlay();
         sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
       }
-      sendToAll(IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, officeFocusLockService.getState());
+      sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restBlockService.getState());
+    });
+
+    restBlockService.on('expired', () => {
+      // Rest Block timer expired - resume timer and check overlay
+      timerEngine.resume();
+      const currentPhase = timerEngine.getState().currentPhase;
+      const policy = getOverlayPolicyForState(currentPhase);
+      
+      if (!policy.showOverlay) {
+        closeOverlay();
+        sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
+      }
+      sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restBlockService.getState());
     });
 
     // Start the timer

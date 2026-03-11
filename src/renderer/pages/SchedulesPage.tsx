@@ -100,13 +100,16 @@ function SchedulesPage() {
                     </div>
                   </div>
                   <div className="schedule-actions">
-                    <label className="toggle-switch">
+                    <label className="toggle-switch" title="Enable/Disable Schedule">
                       <input
                         type="checkbox"
                         checked={schedule.enabled}
                         onChange={() => handleToggleEnabled(schedule)}
                       />
                       <span className="toggle-slider"></span>
+                      <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: schedule.enabled ? '#22c55e' : '#64748b' }}>
+                        {schedule.enabled ? 'Enabled' : 'Disabled'}
+                      </span>
                     </label>
                     <button
                       className="btn btn-secondary"

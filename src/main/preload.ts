@@ -31,6 +31,14 @@ export interface RhythmDeskAPI {
   stopOfficeFocusLock: () => Promise<any>;
   getOfficeFocusLockState: () => Promise<any>;
   
+  // Rest Block controls
+  startRestBlock: (name: string, durationMinutes: number, isStrictMode?: boolean, presetId?: string | null) => Promise<any>;
+  stopRestBlock: () => Promise<{ stopped: boolean; state: any }>;
+  getRestBlockState: () => Promise<any>;
+  getRestBlockPresets: () => Promise<any[]>;
+  saveRestBlockPreset: (preset: any) => Promise<any[]>;
+  deleteRestBlockPreset: (presetId: string) => Promise<{ deleted: boolean; presets: any[] }>;
+  
   // Window controls
   openSettings: () => Promise<void>;
   closeOverlay: () => Promise<void>;
@@ -44,6 +52,7 @@ export interface RhythmDeskAPI {
   onHideOverlay: (callback: () => void) => () => void;
   onConfigUpdated: (callback: (config: any) => void) => () => void;
   onOfficeFocusLockChanged: (callback: (state: any) => void) => () => void;
+  onRestBlockChanged: (callback: (state: any) => void) => () => void;
 }
 
 const api: RhythmDeskAPI = {
@@ -69,6 +78,14 @@ const api: RhythmDeskAPI = {
   startOfficeFocusLock: (label, durationMinutes, isStrictMode = false) => ipcRenderer.invoke(IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes, isStrictMode),
   stopOfficeFocusLock: () => ipcRenderer.invoke(IPC_CHANNELS.STOP_OFFICE_FOCUS_LOCK),
   getOfficeFocusLockState: () => ipcRenderer.invoke(IPC_CHANNELS.GET_OFFICE_FOCUS_LOCK_STATE),
+
+  // Rest Block controls
+  startRestBlock: (name, durationMinutes, isStrictMode = false, presetId = null) => ipcRenderer.invoke(IPC_CHANNELS.START_REST_BLOCK, name, durationMinutes, isStrictMode, presetId),
+  stopRestBlock: () => ipcRenderer.invoke(IPC_CHANNELS.STOP_REST_BLOCK),
+  getRestBlockState: () => ipcRenderer.invoke(IPC_CHANNELS.GET_REST_BLOCK_STATE),
+  getRestBlockPresets: () => ipcRenderer.invoke(IPC_CHANNELS.GET_REST_BLOCK_PRESETS),
+  saveRestBlockPreset: (preset) => ipcRenderer.invoke(IPC_CHANNELS.SAVE_REST_BLOCK_PRESET, preset),
+  deleteRestBlockPreset: (presetId) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_REST_BLOCK_PRESET, presetId),
 
   // Window controls
   openSettings: () => ipcRenderer.invoke(IPC_CHANNELS.OPEN_SETTINGS),
@@ -111,6 +128,12 @@ const api: RhythmDeskAPI = {
     const handler = (_event: any, state: any) => callback(state);
     ipcRenderer.on(IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, handler);
+  },
+
+  onRestBlockChanged: (callback) => {
+    const handler = (_event: any, state: any) => callback(state);
+    ipcRenderer.on(IPC_CHANNELS.REST_BLOCK_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.REST_BLOCK_CHANGED, handler);
   },
 };
 

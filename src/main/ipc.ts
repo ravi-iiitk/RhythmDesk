@@ -8,6 +8,7 @@ import { IPC_CHANNELS } from '../shared/types';
 import configService from '../core/configService';
 import { getTimerEngine } from '../core/timerEngine';
 import { getOfficeFocusLockService } from '../core/officeFocusLockService';
+import { getRestBlockService } from '../core/restBlockService';
 import { showMainWindow, closeOverlay, hideMainWindow } from './windowManager';
 import { app } from 'electron';
 
@@ -107,5 +108,36 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.GET_OFFICE_FOCUS_LOCK_STATE, () => {
     return officeFocusLockService.getState();
+  });
+
+  // Rest Block handlers
+  const restBlockService = getRestBlockService();
+
+  ipcMain.handle(IPC_CHANNELS.START_REST_BLOCK, (_event, name: string, durationMinutes: number, isStrictMode: boolean = false, presetId: string | null = null) => {
+    restBlockService.start(name, durationMinutes, isStrictMode, presetId);
+    return restBlockService.getState();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.STOP_REST_BLOCK, () => {
+    const stopped = restBlockService.stop();
+    return { stopped, state: restBlockService.getState() };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GET_REST_BLOCK_STATE, () => {
+    return restBlockService.getState();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GET_REST_BLOCK_PRESETS, () => {
+    return restBlockService.getPresets();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SAVE_REST_BLOCK_PRESET, (_event, preset) => {
+    restBlockService.savePreset(preset);
+    return restBlockService.getPresets();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DELETE_REST_BLOCK_PRESET, (_event, presetId: string) => {
+    const deleted = restBlockService.deletePreset(presetId);
+    return { deleted, presets: restBlockService.getPresets() };
   });
 }

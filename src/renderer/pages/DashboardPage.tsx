@@ -4,7 +4,7 @@
  */
 
 import { useState } from 'react';
-import { TimerTick, OFFICE_FOCUS_LABELS, OFFICE_FOCUS_LOCK_DURATIONS, PhaseType, ConfiguredDurations } from '../../shared/types';
+import { TimerTick, OFFICE_FOCUS_LABELS, OFFICE_FOCUS_LOCK_DURATIONS, PhaseType, ConfiguredDurations, DEFAULT_REST_BLOCK_PRESETS } from '../../shared/types';
 import { PHASE_DISPLAY_NAMES, PHASE_COLORS } from '../../shared/constants';
 import { formatDurationHuman, formatDuration } from '../../shared/timeUtils';
 
@@ -40,6 +40,9 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const [customHours, setCustomHours] = useState<number>(0);
   const [customMinutes, setCustomMinutes] = useState<number>(30);
   const [focusStrictMode, setFocusStrictMode] = useState<boolean>(false);
+  const [restStrictMode, setRestStrictMode] = useState<boolean>(false);
+  const [restCustomHours, setRestCustomHours] = useState<number>(0);
+  const [restCustomMinutes, setRestCustomMinutes] = useState<number>(15);
 
   const handlePause = () => window.rhythmDesk.pause();
   const handleResume = () => window.rhythmDesk.resume();
@@ -55,6 +58,15 @@ function DashboardPage({ tick }: DashboardPageProps) {
   
   const handleStopOfficeFocusLock = () => {
     window.rhythmDesk.stopOfficeFocusLock();
+  };
+
+  // Rest Block handlers
+  const handleStartRestBlock = (name: string, minutes: number, strictMode: boolean) => {
+    window.rhythmDesk.startRestBlock(name, minutes, strictMode);
+  };
+
+  const handleStopRestBlock = () => {
+    window.rhythmDesk.stopRestBlock();
   };
 
   if (!tick || tick.currentPhase === 'idle') {
@@ -282,9 +294,9 @@ function DashboardPage({ tick }: DashboardPageProps) {
             <button 
               className="btn btn-secondary" 
               onClick={handleSkip}
-              disabled={tick.isStrictMode}
-              title={tick.isStrictMode ? "Skip disabled in Strict Mode" : "Skip to next activity"}
-              style={tick.isStrictMode ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+              disabled={tick.noSkipEnabled}
+              title={tick.noSkipEnabled ? "Skip disabled for this schedule" : "Skip to next activity"}
+              style={tick.noSkipEnabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
             >
               ⏭️ Skip
             </button>
@@ -351,7 +363,139 @@ function DashboardPage({ tick }: DashboardPageProps) {
         )}
       </div>
 
-      {/* Row 5: Configured Durations - 2 rows */}
+      {/* Row 5: Rest Blocks - Quick Access */}
+      <div className="card" style={{ padding: '0.75rem 1rem', marginBottom: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#e2e8f0' }}>🛋️ Take a Rest</div>
+          {tick.restBlock.isActive ? (
+            <span style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: 500 }}>
+              Active: {tick.restBlock.name}
+            </span>
+          ) : (
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={restStrictMode}
+                onChange={(e) => setRestStrictMode(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: '0.8rem', color: restStrictMode ? '#ef4444' : '#94a3b8' }}>
+                🔒 Strict Mode
+              </span>
+            </label>
+          )}
+        </div>
+        
+        {tick.restBlock.isActive ? (
+          <div style={{ 
+            padding: '1rem', 
+            backgroundColor: 'rgba(34, 197, 94, 0.1)', 
+            borderRadius: '8px', 
+            border: '1px solid rgba(34, 197, 94, 0.3)',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#22c55e', marginBottom: '0.25rem' }}>
+              {tick.restBlock.name}
+            </div>
+            <div style={{ fontSize: '2rem', fontWeight: 700, color: '#22c55e', fontFamily: 'monospace', marginBottom: '0.5rem' }}>
+              {formatDuration(tick.restBlock.remainingMs)}
+            </div>
+            <div style={{ height: '8px', backgroundColor: 'rgba(34, 197, 94, 0.2)', borderRadius: '4px', overflow: 'hidden', marginBottom: '0.75rem' }}>
+              <div style={{ 
+                width: `${((tick.restBlock.durationMs - tick.restBlock.remainingMs) / tick.restBlock.durationMs) * 100}%`, 
+                height: '100%', 
+                backgroundColor: '#22c55e',
+                transition: 'width 0.3s ease'
+              }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', alignItems: 'center' }}>
+              {tick.restBlock.isStrictMode ? (
+                <span style={{ fontSize: '0.8rem', color: '#ef4444' }}>🔒 Strict Mode - Cannot end early</span>
+              ) : (
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={handleStopRestBlock}
+                  style={{ padding: '0.4rem 1rem' }}
+                >
+                  End Rest
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem' }}>
+              {DEFAULT_REST_BLOCK_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  className="btn btn-secondary"
+                  onClick={() => handleStartRestBlock(preset.name, preset.durationMinutes, restStrictMode)}
+                  style={{ 
+                    padding: '0.5rem 0.5rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    width: '100%'
+                  }}
+                >
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{preset.name}</span>
+                  <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                    {preset.durationMinutes >= 60 ? `${preset.durationMinutes / 60}h` : `${preset.durationMinutes}m`}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {/* Custom duration row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Custom:</span>
+              <input
+                type="number"
+                min="0"
+                max="23"
+                value={restCustomHours}
+                onChange={(e) => setRestCustomHours(Math.max(0, Math.min(23, parseInt(e.target.value) || 0)))}
+                style={{
+                  width: '50px',
+                  padding: '0.3rem 0.5rem',
+                  borderRadius: '4px',
+                  border: '1px solid #374151',
+                  backgroundColor: '#1f2937',
+                  color: '#e2e8f0',
+                  textAlign: 'center'
+                }}
+              />
+              <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>h</span>
+              <input
+                type="number"
+                min="0"
+                max="59"
+                value={restCustomMinutes}
+                onChange={(e) => setRestCustomMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                style={{
+                  width: '50px',
+                  padding: '0.3rem 0.5rem',
+                  borderRadius: '4px',
+                  border: '1px solid #374151',
+                  backgroundColor: '#1f2937',
+                  color: '#e2e8f0',
+                  textAlign: 'center'
+                }}
+              />
+              <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>m</span>
+              <button
+                className="btn btn-primary"
+                onClick={() => handleStartRestBlock('Custom Rest', restCustomHours * 60 + restCustomMinutes, restStrictMode)}
+                disabled={restCustomHours === 0 && restCustomMinutes === 0}
+                style={{ padding: '0.3rem 0.75rem', marginLeft: 'auto' }}
+              >
+                Start
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Row 6: Configured Durations - 2 rows */}
       <div className="card" style={{ padding: '0.75rem 1rem', marginBottom: 0 }}>
         <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.5rem' }}>Configured Durations</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>

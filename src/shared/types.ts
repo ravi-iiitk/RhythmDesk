@@ -136,6 +136,8 @@ export interface Schedule {
   longBreakDurationMinutes?: number;
   // @deprecated Use per-break strictModeEnabled
   strictModeEnabled?: boolean;
+  // Prevent skipping to next activity (separate from strict mode which prevents early dismiss)
+  noSkipEnabled?: boolean;
   // @deprecated Use per-break allowPostpone
   allowPostpone?: boolean;
   // @deprecated Use per-break postponeOptionsMinutes
@@ -250,6 +252,45 @@ export interface OfficeFocusLockState {
 export const OFFICE_FOCUS_LABELS = ['EPAM', 'Resy'] as const;
 export type OfficeFocusLabel = typeof OFFICE_FOCUS_LABELS[number] | string;
 
+// Rest Block - saved preset for manual rest/break blocks
+export interface RestBlockPreset {
+  id: string;
+  name: string;                  // Display name (e.g., "Quick Rest", "Meditation", "Lunch")
+  durationMinutes: number;       // Duration in minutes
+  strictMode: boolean;           // If true, cannot end early
+}
+
+// Rest Block runtime state - when a rest block is active
+export interface RestBlockState {
+  isActive: boolean;
+  presetId: string | null;       // ID of the preset being used (null if custom)
+  name: string;                  // Name of current rest block
+  startedAt: number | null;      // timestamp when started
+  durationMs: number;            // total duration in milliseconds
+  remainingMs: number;           // remaining time
+  isStrictMode: boolean;         // if true, cannot stop early
+}
+
+// Initial rest block state (inactive)
+export const INITIAL_REST_BLOCK_STATE: RestBlockState = {
+  isActive: false,
+  presetId: null,
+  name: '',
+  startedAt: null,
+  durationMs: 0,
+  remainingMs: 0,
+  isStrictMode: false,
+};
+
+// Default rest block presets
+export const DEFAULT_REST_BLOCK_PRESETS: RestBlockPreset[] = [
+  { id: 'quick-rest', name: 'Quick Rest', durationMinutes: 5, strictMode: false },
+  { id: 'meditation', name: 'Meditation', durationMinutes: 10, strictMode: true },
+  { id: 'lunch-break', name: 'Lunch Break', durationMinutes: 30, strictMode: false },
+  { id: '1-hour', name: '1 Hour', durationMinutes: 60, strictMode: false },
+  { id: '2-hours', name: '2 Hours', durationMinutes: 120, strictMode: false },
+];
+
 // Break progress information
 export interface BreakProgress {
   // Short break progress
@@ -313,8 +354,12 @@ export interface TimerTick {
   canPostpone: boolean;
   postponeOptions: number[];
   isStrictMode: boolean;
+  // No skip mode - prevents skipping to next activity
+  noSkipEnabled: boolean;
   // Office Focus Lock state
   officeFocusLock: OfficeFocusLockState;
+  // Rest Block state
+  restBlock: RestBlockState;
   // Break progress information
   breakProgress: BreakProgress;
   // Configured durations from active schedule
@@ -353,6 +398,15 @@ export const IPC_CHANNELS = {
   START_OFFICE_FOCUS_LOCK: 'officeFocusLock:start',
   STOP_OFFICE_FOCUS_LOCK: 'officeFocusLock:stop',
   GET_OFFICE_FOCUS_LOCK_STATE: 'officeFocusLock:getState',
+  
+  // Rest Block controls
+  START_REST_BLOCK: 'restBlock:start',
+  STOP_REST_BLOCK: 'restBlock:stop',
+  GET_REST_BLOCK_STATE: 'restBlock:getState',
+  GET_REST_BLOCK_PRESETS: 'restBlock:getPresets',
+  SAVE_REST_BLOCK_PRESET: 'restBlock:savePreset',
+  DELETE_REST_BLOCK_PRESET: 'restBlock:deletePreset',
+  REST_BLOCK_CHANGED: 'restBlock:changed',
   
   // Window controls
   OPEN_SETTINGS: 'window:openSettings',

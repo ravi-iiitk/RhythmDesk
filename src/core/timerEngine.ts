@@ -24,6 +24,7 @@ import {
   computeFlowConfigHash,
 } from '../shared/types';
 import { getOfficeFocusLockService } from './officeFocusLockService';
+import { getRestBlockService } from './restBlockService';
 import { 
   minutesToMs, 
   secondsToMs, 
@@ -38,7 +39,6 @@ import {
   isFlowBasedSchedule, 
   getNextFlowStepIndex, 
   getFlowStepDurationMs,
-  getFlowStepAtOffset,
 } from './flowUtils';
 
 const TIME_JUMP_THRESHOLD_MS = 5000; // 5 seconds - indicates sleep/wake or time jump
@@ -440,6 +440,10 @@ export class TimerEngine extends EventEmitter {
       // After long break, restart flow from first step
       this.state.currentFlowStepIndex = 0;
       const firstStep = flowSteps[0];
+      logger.info('TimerEngine', 'advanceFlowBasedPhase - after long break, reset to step 0', {
+        newIndex: 0,
+        newPhase: firstStep.type,
+      });
       this.startPhase(firstStep.type);
       return;
     }
@@ -449,12 +453,42 @@ export class TimerEngine extends EventEmitter {
       this.state.lastShortBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
     }
     
-    // Advance to next step in flow
+    // CRITICAL: Verify currentFlowStepIndex matches the current phase
+    // If there's a desync (e.g., from a rule-based break interrupt), resync first
     const currentIndex = this.state.currentFlowStepIndex ?? 0;
-    const nextIndex = getNextFlowStepIndex(currentIndex, flowSteps);
+    const expectedPhaseAtIndex = flowSteps[currentIndex]?.type;
+    
+    // If we're coming from a phase that doesn't match the flow step,
+    // it means we were interrupted (e.g., by a break). Find the correct index.
+    // Note: long-break already returned early above, so only check short-break here
+    let syncedIndex = currentIndex;
+    const isShortBreak = prevPhase === 'short-break';
+    if (expectedPhaseAtIndex !== prevPhase && !isShortBreak) {
+      // The flow index is out of sync - find where we actually are
+      // This can happen if a break was triggered as an interrupt
+      logger.warn('TimerEngine', 'Flow index desync detected - resyncing', {
+        prevPhase,
+        currentIndex,
+        expectedPhaseAtIndex,
+      });
+      // We'll just advance from current index anyway - the index represents
+      // where we SHOULD be, not necessarily where we were interrupted from
+    }
+    
+    // Advance to next step in flow
+    const nextIndex = getNextFlowStepIndex(syncedIndex, flowSteps);
     this.state.currentFlowStepIndex = nextIndex;
     
     const nextStep = flowSteps[nextIndex];
+    
+    logger.info('TimerEngine', 'advanceFlowBasedPhase - advancing', {
+      prevPhase,
+      fromIndex: syncedIndex,
+      toIndex: nextIndex,
+      newPhase: nextStep.type,
+      flowStepIds: flowSteps.map((s, i) => `${i}:${s.type}`).join(', '),
+    });
+    
     this.startPhase(nextStep.type);
   }
   
@@ -640,9 +674,17 @@ export class TimerEngine extends EventEmitter {
     if (isFlowBasedSchedule(schedule)) {
       const flowSteps = schedule.flowSteps!;
       const currentIndex = this.state.currentFlowStepIndex ?? 0;
-      // Then phase is 2 steps ahead
+      // Then phase is 2 steps ahead from current
       const thenIndex = (currentIndex + 2) % flowSteps.length;
-      return flowSteps[thenIndex].type;
+      const thenPhase = flowSteps[thenIndex].type;
+      
+      logger.debug('TimerEngine', 'getThenPhase - flow mode', {
+        currentIndex,
+        thenIndex,
+        thenPhase,
+      });
+      
+      return thenPhase;
     }
 
     // Rule-based mode - predict what comes after nextPhase
@@ -750,8 +792,25 @@ export class TimerEngine extends EventEmitter {
     }
     
     const currentIndex = this.state.currentFlowStepIndex ?? 0;
-    const nextStep = getFlowStepAtOffset(currentIndex, 1, flowSteps);
-    return nextStep?.type ?? 'idle';
+    const nextIndex = (currentIndex + 1) % flowSteps.length;
+    const nextStep = flowSteps[nextIndex];
+    const nextPhase = nextStep?.type ?? 'idle';
+    
+    // Safety check: detect if current and next are the same unexpectedly
+    const currentStepType = flowSteps[currentIndex]?.type;
+    if (currentStepType === nextPhase && currentIndex !== nextIndex) {
+      // This is only expected if the flow has consecutive duplicate step types
+      // Log for debugging
+      logger.debug('TimerEngine', 'getNextFlowBasedPhase - same phase types', {
+        currentIndex,
+        nextIndex,
+        currentPhase: this.state.currentPhase,
+        currentStepType,
+        nextPhase,
+      });
+    }
+    
+    return nextPhase;
   }
 
   /**
@@ -876,10 +935,36 @@ export class TimerEngine extends EventEmitter {
    */
   skipPhase(): void {
     if (!this.currentSchedule) return;
-    // Only allow skipping if not in strict mode for current phase
-    const isStrictMode = this.getStrictModeForCurrentPhase();
-    if (isStrictMode) return;
+    // Only allow skipping if noSkipEnabled is false
+    if (this.currentSchedule.noSkipEnabled) return;
+    
+    // Debug logging for flow state before skip
+    if (isFlowBasedSchedule(this.currentSchedule)) {
+      const flowSteps = this.currentSchedule.flowSteps!;
+      logger.info('TimerEngine', 'Skip Phase - BEFORE', {
+        currentPhase: this.state.currentPhase,
+        currentFlowStepIndex: this.state.currentFlowStepIndex,
+        flowStepAtIndex: flowSteps[this.state.currentFlowStepIndex ?? 0]?.type,
+        nextFlowStep: flowSteps[((this.state.currentFlowStepIndex ?? 0) + 1) % flowSteps.length]?.type,
+        flowLength: flowSteps.length,
+      });
+    }
+    
     this.advancePhase();
+    
+    // Debug logging for flow state after skip
+    if (isFlowBasedSchedule(this.currentSchedule)) {
+      const flowSteps = this.currentSchedule.flowSteps!;
+      logger.info('TimerEngine', 'Skip Phase - AFTER', {
+        currentPhase: this.state.currentPhase,
+        currentFlowStepIndex: this.state.currentFlowStepIndex,
+        flowStepAtIndex: flowSteps[this.state.currentFlowStepIndex ?? 0]?.type,
+        nextFlowStep: flowSteps[((this.state.currentFlowStepIndex ?? 0) + 1) % flowSteps.length]?.type,
+      });
+    }
+    
+    // Emit tick immediately after skip to update UI
+    this.emitTick();
   }
 
   /**
@@ -1006,6 +1091,11 @@ export class TimerEngine extends EventEmitter {
     this.state.postponeCountsToday = { ...INITIAL_POSTPONE_COUNTS };
     this.state.postponeResetDate = today;
     
+    // Reset break counts
+    this.state.shortBreakCountToday = 0;
+    this.state.longBreakCountToday = 0;
+    this.state.breakCountResetDate = today;
+    
     // Save state and emit tick
     this.saveState();
     this.emitTick();
@@ -1118,6 +1208,9 @@ export class TimerEngine extends EventEmitter {
     // Get strict mode for current phase
     const isStrictMode = this.getStrictModeForCurrentPhase();
     
+    // Get no skip setting from schedule
+    const noSkipEnabled = schedule?.noSkipEnabled ?? false;
+    
     // Calculate break progress
     const breakProgress = this.calculateBreakProgress();
     
@@ -1129,6 +1222,53 @@ export class TimerEngine extends EventEmitter {
     const nextPhaseDurationMs = this.getPhaseDurationMsForPhase(nextPhase);
     const thenPhase = this.getThenPhase(nextPhase);
     const thenPhaseDurationMs = this.getPhaseDurationMsForPhase(thenPhase);
+    
+    // CRITICAL: Verify flow state consistency in flow-based mode
+    if (schedule && isFlowBasedSchedule(schedule)) {
+      const flowSteps = schedule.flowSteps!;
+      const currentIndex = this.state.currentFlowStepIndex ?? 0;
+      const expectedCurrentPhase = flowSteps[currentIndex]?.type;
+      const currentPhase = this.state.currentPhase;
+      
+      // Check for desync: currentPhase should match the flow step at currentIndex
+      // Exception: during breaks (long-break is not in flow, short-break might be)
+      const isInBreak = currentPhase === 'long-break';
+      if (!isInBreak && expectedCurrentPhase !== currentPhase) {
+        logger.warn('TimerEngine', 'FLOW STATE DESYNC DETECTED in emitTick', {
+          currentPhase,
+          currentFlowStepIndex: currentIndex,
+          expectedCurrentPhase,
+          nextPhase,
+          flowSteps: flowSteps.map((s, i) => `${i}:${s.type}`).join(', '),
+        });
+        
+        // Attempt to resync: find the correct index for currentPhase
+        const correctIndex = flowSteps.findIndex(s => s.type === currentPhase);
+        if (correctIndex !== -1 && correctIndex !== currentIndex) {
+          logger.info('TimerEngine', 'Resyncing flow index', {
+            oldIndex: currentIndex,
+            newIndex: correctIndex,
+            phase: currentPhase,
+          });
+          this.state.currentFlowStepIndex = correctIndex;
+        }
+      }
+      
+      // Also check: if current and next are same but flow doesn't have consecutive duplicates
+      if (currentPhase === nextPhase && currentPhase !== 'idle') {
+        const nextIndex = (currentIndex + 1) % flowSteps.length;
+        if (flowSteps[currentIndex]?.type !== flowSteps[nextIndex]?.type) {
+          logger.error('TimerEngine', 'CRITICAL: current == next but flow has no consecutive duplicates', {
+            currentPhase,
+            nextPhase,
+            currentIndex,
+            nextIndex,
+            flowStepAtCurrent: flowSteps[currentIndex]?.type,
+            flowStepAtNext: flowSteps[nextIndex]?.type,
+          });
+        }
+      }
+    }
     
     const tick: TimerTick = {
       scheduleId: schedule?.id || null,
@@ -1152,7 +1292,9 @@ export class TimerEngine extends EventEmitter {
       canPostpone: this.canPostpone(),
       postponeOptions,
       isStrictMode,
+      noSkipEnabled,
       officeFocusLock: officeFocusLockService.getState(),
+      restBlock: getRestBlockService().getState(),
       breakProgress,
       configuredDurations,
     };

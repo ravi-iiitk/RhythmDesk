@@ -13,6 +13,7 @@ const types_1 = require("../shared/types");
 const configService_1 = __importDefault(require("../core/configService"));
 const timerEngine_1 = require("../core/timerEngine");
 const officeFocusLockService_1 = require("../core/officeFocusLockService");
+const restBlockService_1 = require("../core/restBlockService");
 const windowManager_1 = require("./windowManager");
 const electron_2 = require("electron");
 /**
@@ -89,6 +90,30 @@ function registerIpcHandlers() {
     });
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.GET_OFFICE_FOCUS_LOCK_STATE, () => {
         return officeFocusLockService.getState();
+    });
+    // Rest Block handlers
+    const restBlockService = (0, restBlockService_1.getRestBlockService)();
+    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.START_REST_BLOCK, (_event, name, durationMinutes, isStrictMode = false, presetId = null) => {
+        restBlockService.start(name, durationMinutes, isStrictMode, presetId);
+        return restBlockService.getState();
+    });
+    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.STOP_REST_BLOCK, () => {
+        const stopped = restBlockService.stop();
+        return { stopped, state: restBlockService.getState() };
+    });
+    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.GET_REST_BLOCK_STATE, () => {
+        return restBlockService.getState();
+    });
+    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.GET_REST_BLOCK_PRESETS, () => {
+        return restBlockService.getPresets();
+    });
+    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.SAVE_REST_BLOCK_PRESET, (_event, preset) => {
+        restBlockService.savePreset(preset);
+        return restBlockService.getPresets();
+    });
+    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.DELETE_REST_BLOCK_PRESET, (_event, presetId) => {
+        const deleted = restBlockService.deletePreset(presetId);
+        return { deleted, presets: restBlockService.getPresets() };
     });
 }
 //# sourceMappingURL=ipc.js.map
