@@ -966,6 +966,80 @@ class TimerEngine extends events_1.EventEmitter {
         logger_1.default.info('TimerEngine', 'Today\'s counters reset complete');
     }
     /**
+     * Shuffle flow steps - swap sit/stand positions to start with standing work
+     * Pattern: 1,2,3,4,5 -> 3,4,1,2,5 (Stand, Stand→Sit, Sit, Sit→Stand, Break)
+     * If shuffled again, reverts to original order
+     */
+    shuffleFlow() {
+        if (!this.currentSchedule || !(0, flowUtils_1.isFlowBasedSchedule)(this.currentSchedule)) {
+            logger_1.default.warn('TimerEngine', 'Cannot shuffle - no flow-based schedule active');
+            return;
+        }
+        const flowSteps = this.currentSchedule.flowSteps;
+        if (flowSteps.length < 4) {
+            logger_1.default.warn('TimerEngine', 'Cannot shuffle - need at least 4 flow steps');
+            return;
+        }
+        logger_1.default.info('TimerEngine', 'Shuffling flow steps (swap sit/stand)');
+        // Swap positions: move items 2,3 (index 2,3) to front, items 0,1 after
+        // [0,1,2,3,4...] -> [2,3,0,1,4...]
+        const newSteps = [
+            flowSteps[2], // Stand
+            flowSteps[3], // Stand→Sit Transition
+            flowSteps[0], // Sit
+            flowSteps[1], // Sit→Stand Transition
+            ...flowSteps.slice(4) // Rest (Short Break, etc.)
+        ];
+        this.currentSchedule.flowSteps = newSteps;
+        // Reset session to start from new first step
+        this.state.currentFlowStepIndex = 0;
+        this.state.flowConfigHash = (0, types_1.computeFlowConfigHash)(newSteps);
+        const firstStep = newSteps[0];
+        const now = Date.now();
+        const durationMs = (0, flowUtils_1.getFlowStepDurationMs)(firstStep);
+        this.state.currentPhase = firstStep.type;
+        this.state.phaseStartedAt = now;
+        this.state.phaseEndsAt = now + durationMs;
+        this.state.phaseRemainingMs = durationMs;
+        this.state.phaseTotalMs = durationMs;
+        this.saveState();
+        this.emitTick();
+        logger_1.default.info('TimerEngine', 'Flow shuffled - now starting with', { phase: firstStep.type });
+    }
+    /**
+     * Reverse flow steps - reverse entire order so break comes first
+     * Pattern: 1,2,3,4,5 -> 5,4,3,2,1
+     */
+    reverseFlow() {
+        if (!this.currentSchedule || !(0, flowUtils_1.isFlowBasedSchedule)(this.currentSchedule)) {
+            logger_1.default.warn('TimerEngine', 'Cannot reverse - no flow-based schedule active');
+            return;
+        }
+        const flowSteps = this.currentSchedule.flowSteps;
+        if (flowSteps.length < 2) {
+            logger_1.default.warn('TimerEngine', 'Cannot reverse - need at least 2 flow steps');
+            return;
+        }
+        logger_1.default.info('TimerEngine', 'Reversing flow steps');
+        // Reverse the array
+        const newSteps = [...flowSteps].reverse();
+        this.currentSchedule.flowSteps = newSteps;
+        // Reset session to start from new first step
+        this.state.currentFlowStepIndex = 0;
+        this.state.flowConfigHash = (0, types_1.computeFlowConfigHash)(newSteps);
+        const firstStep = newSteps[0];
+        const now = Date.now();
+        const durationMs = (0, flowUtils_1.getFlowStepDurationMs)(firstStep);
+        this.state.currentPhase = firstStep.type;
+        this.state.phaseStartedAt = now;
+        this.state.phaseEndsAt = now + durationMs;
+        this.state.phaseRemainingMs = durationMs;
+        this.state.phaseTotalMs = durationMs;
+        this.saveState();
+        this.emitTick();
+        logger_1.default.info('TimerEngine', 'Flow reversed - now starting with', { phase: firstStep.type });
+    }
+    /**
      * Calculate break progress information
      */
     calculateBreakProgress() {

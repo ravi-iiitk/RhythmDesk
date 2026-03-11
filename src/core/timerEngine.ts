@@ -1104,6 +1104,165 @@ export class TimerEngine extends EventEmitter {
   }
 
   /**
+   * Shuffle flow steps - swap sit/stand positions to start with standing work
+   * Pattern: 1,2,3,4,5 -> 3,4,1,2,5 (Stand, Stand→Sit, Sit, Sit→Stand, Break)
+   * If shuffled again, reverts to original order
+   */
+  shuffleFlow(): void {
+    if (!this.currentSchedule || !isFlowBasedSchedule(this.currentSchedule)) {
+      logger.warn('TimerEngine', 'Cannot shuffle - no flow-based schedule active');
+      return;
+    }
+
+    const flowSteps = this.currentSchedule.flowSteps!;
+    if (flowSteps.length < 4) {
+      logger.warn('TimerEngine', 'Cannot shuffle - need at least 4 flow steps');
+      return;
+    }
+
+    logger.info('TimerEngine', 'Shuffling flow steps (swap sit/stand)');
+
+    // Capture previous phase for phaseChange event
+    const prevPhase = this.state.currentPhase;
+
+    // Swap positions: move items 2,3 (index 2,3) to front, items 0,1 after
+    // [0,1,2,3,4...] -> [2,3,0,1,4...]
+    const newSteps = [
+      flowSteps[2], // Stand
+      flowSteps[3], // Stand→Sit Transition
+      flowSteps[0], // Sit
+      flowSteps[1], // Sit→Stand Transition
+      ...flowSteps.slice(4) // Rest (Short Break, etc.)
+    ];
+
+    this.currentSchedule.flowSteps = newSteps;
+    
+    // Reset session state (same as resetSession to avoid regressions)
+    const now = Date.now();
+    const firstStep = newSteps[0];
+    const durationMs = getFlowStepDurationMs(firstStep);
+    
+    this.state.currentFlowStepIndex = 0;
+    this.state.flowConfigHash = computeFlowConfigHash(newSteps);
+    this.state.currentPhase = firstStep.type;
+    this.state.phaseStartedAt = now;
+    this.state.phaseEndsAt = now + durationMs;
+    this.state.phaseRemainingMs = durationMs;
+    this.state.phaseTotalMs = durationMs;
+    
+    // Reset cumulative work time and break tracking
+    this.state.cumulativeWorkTimeMs = 0;
+    this.state.lastShortBreakAtWorkTimeMs = 0;
+    this.state.lastLongBreakAtWorkTimeMs = 0;
+    
+    // Clear interrupted phase
+    this.state.interruptedPhase = null;
+    this.state.interruptedPhaseRemainingMs = 0;
+    
+    // Clear postponed state
+    this.state.isPostponed = false;
+    this.state.postponedUntil = null;
+    this.state.postponedPhase = null;
+    this.state.postponedBreakType = null;
+    this.state.prePostponeWorkPhase = null;
+    this.state.prePostponeWorkPhaseRemainingMs = 0;
+    
+    // Clear paused state
+    this.state.isPaused = false;
+    this.state.pausedAt = null;
+    this.state.pauseResumeAt = null;
+    
+    // Clear pre-break tracking
+    this.preBreakPhase = null;
+    
+    // Update tick time
+    this.lastTickTime = now;
+    
+    this.saveState();
+    this.emitTick();
+    
+    // Emit phaseChange so overlay properly shows/hides
+    this.emit('phaseChange', { prevPhase, newPhase: firstStep.type });
+    
+    logger.info('TimerEngine', 'Flow shuffled - now starting with', { phase: firstStep.type });
+  }
+
+  /**
+   * Reverse flow steps - reverse entire order so break comes first
+   * Pattern: 1,2,3,4,5 -> 5,4,3,2,1
+   */
+  reverseFlow(): void {
+    if (!this.currentSchedule || !isFlowBasedSchedule(this.currentSchedule)) {
+      logger.warn('TimerEngine', 'Cannot reverse - no flow-based schedule active');
+      return;
+    }
+
+    const flowSteps = this.currentSchedule.flowSteps!;
+    if (flowSteps.length < 2) {
+      logger.warn('TimerEngine', 'Cannot reverse - need at least 2 flow steps');
+      return;
+    }
+
+    logger.info('TimerEngine', 'Reversing flow steps');
+
+    // Capture previous phase for phaseChange event
+    const prevPhase = this.state.currentPhase;
+
+    // Reverse the array
+    const newSteps = [...flowSteps].reverse();
+    this.currentSchedule.flowSteps = newSteps;
+    
+    // Reset session state (same as resetSession to avoid regressions)
+    const now = Date.now();
+    const firstStep = newSteps[0];
+    const durationMs = getFlowStepDurationMs(firstStep);
+    
+    this.state.currentFlowStepIndex = 0;
+    this.state.flowConfigHash = computeFlowConfigHash(newSteps);
+    this.state.currentPhase = firstStep.type;
+    this.state.phaseStartedAt = now;
+    this.state.phaseEndsAt = now + durationMs;
+    this.state.phaseRemainingMs = durationMs;
+    this.state.phaseTotalMs = durationMs;
+    
+    // Reset cumulative work time and break tracking
+    this.state.cumulativeWorkTimeMs = 0;
+    this.state.lastShortBreakAtWorkTimeMs = 0;
+    this.state.lastLongBreakAtWorkTimeMs = 0;
+    
+    // Clear interrupted phase
+    this.state.interruptedPhase = null;
+    this.state.interruptedPhaseRemainingMs = 0;
+    
+    // Clear postponed state
+    this.state.isPostponed = false;
+    this.state.postponedUntil = null;
+    this.state.postponedPhase = null;
+    this.state.postponedBreakType = null;
+    this.state.prePostponeWorkPhase = null;
+    this.state.prePostponeWorkPhaseRemainingMs = 0;
+    
+    // Clear paused state
+    this.state.isPaused = false;
+    this.state.pausedAt = null;
+    this.state.pauseResumeAt = null;
+    
+    // Clear pre-break tracking
+    this.preBreakPhase = null;
+    
+    // Update tick time
+    this.lastTickTime = now;
+    
+    this.saveState();
+    this.emitTick();
+    
+    // Emit phaseChange so overlay properly shows/hides
+    this.emit('phaseChange', { prevPhase, newPhase: firstStep.type });
+    
+    logger.info('TimerEngine', 'Flow reversed - now starting with', { phase: firstStep.type });
+  }
+
+  /**
    * Calculate break progress information
    */
   private calculateBreakProgress(): BreakProgress {

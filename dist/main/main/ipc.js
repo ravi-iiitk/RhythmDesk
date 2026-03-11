@@ -65,6 +65,12 @@ function registerIpcHandlers() {
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.RESET_TODAY_COUNTERS, () => {
         timerEngine.resetTodayCounters();
     });
+    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.SHUFFLE_FLOW, () => {
+        timerEngine.shuffleFlow();
+    });
+    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.REVERSE_FLOW, () => {
+        timerEngine.reverseFlow();
+    });
     // Window control handlers
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.OPEN_SETTINGS, () => {
         (0, windowManager_1.showMainWindow)();

@@ -76,6 +76,14 @@ export function registerIpcHandlers(): void {
     timerEngine.resetTodayCounters();
   });
 
+  ipcMain.handle(IPC_CHANNELS.SHUFFLE_FLOW, () => {
+    timerEngine.shuffleFlow();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.REVERSE_FLOW, () => {
+    timerEngine.reverseFlow();
+  });
+
   // Window control handlers
   ipcMain.handle(IPC_CHANNELS.OPEN_SETTINGS, () => {
     showMainWindow();

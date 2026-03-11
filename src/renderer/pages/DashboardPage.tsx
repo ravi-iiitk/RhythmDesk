@@ -52,8 +52,8 @@ function DashboardPage({ tick }: DashboardPageProps) {
       const names = schedules.map(s => s.name).filter(Boolean);
       setScheduleNames(names);
       // Set default selected label to first schedule or current schedule
-      if (names.length > 0 && !selectedLabel) {
-        setSelectedLabel(tick?.scheduleName || names[0]);
+      if (names.length > 0) {
+        setSelectedLabel(prev => prev || tick?.scheduleName || names[0]);
       }
     });
   }, [tick?.scheduleName]);
@@ -64,6 +64,8 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const handleSkip = () => window.rhythmDesk.skipPhase();
   const handleResetSession = () => window.rhythmDesk.resetSession();
   const handleResetTodayCounters = () => window.rhythmDesk.resetTodayCounters();
+  const handleShuffleFlow = () => window.rhythmDesk.shuffleFlow();
+  const handleReverseFlow = () => window.rhythmDesk.reverseFlow();
   
   const handleStartOfficeFocusLock = (minutes: number) => {
     window.rhythmDesk.startOfficeFocusLock(selectedLabel, minutes, focusStrictMode);
@@ -255,10 +257,15 @@ function DashboardPage({ tick }: DashboardPageProps) {
                     value={selectedLabel} 
                     onChange={(e) => setSelectedLabel(e.target.value)}
                     style={{ padding: '0.4rem', borderRadius: '6px', backgroundColor: '#2a2a3e', color: '#e2e8f0', border: '1px solid #444', fontSize: '0.85rem' }}
+                    disabled={scheduleNames.length === 0}
                   >
-                    {scheduleNames.map((name) => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
+                    {scheduleNames.length === 0 ? (
+                      <option value="">No schedules</option>
+                    ) : (
+                      scheduleNames.map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))
+                    )}
                   </select>
                   <span style={{ color: '#64748b', fontSize: '0.8rem' }}>|</span>
                   {OFFICE_FOCUS_LOCK_DURATIONS.slice(0, 3).map((minutes) => (
@@ -421,6 +428,27 @@ function DashboardPage({ tick }: DashboardPageProps) {
             </button>
             <button className="btn btn-secondary" onClick={handleResetSession} title="Reset Session">🔄 Reset</button>
             <button className="btn btn-secondary" onClick={handleResetTodayCounters} title="Reset Counters">📊</button>
+            
+            {/* Flow shuffle controls - only for flow-based schedules */}
+            {tick.scheduleMode === 'flow-based' && (
+              <>
+                <span style={{ color: '#64748b', margin: '0 0.25rem' }}>|</span>
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={handleShuffleFlow} 
+                  title="Shuffle: Swap sit/stand order (start with standing)"
+                >
+                  🔀 Shuffle
+                </button>
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={handleReverseFlow} 
+                  title="Reverse: Reverse entire flow order (start with break)"
+                >
+                  ↩️ Reverse
+                </button>
+              </>
+            )}
             
             {/* Postpone inline */}
             {tick.canPostpone && tick.postponeOptions.length > 0 && (
