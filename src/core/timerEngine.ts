@@ -214,8 +214,24 @@ export class TimerEngine extends EventEmitter {
 
   /**
    * Main timer tick - called every second
+   * Wrapped in try-catch to prevent interval from stopping on exception
    */
   private tick(): void {
+    try {
+      this.tickInternal();
+    } catch (error) {
+      // CRITICAL: Log but don't crash - keep the timer running
+      logger.error('TimerEngine', 'Exception in tick - timer continues', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+    }
+  }
+  
+  /**
+   * Internal tick implementation
+   */
+  private tickInternal(): void {
     const now = Date.now();
     const realDeltaMs = now - this.lastTickTime;
     this.lastTickTime = now;
@@ -313,6 +329,7 @@ export class TimerEngine extends EventEmitter {
 
     if (activeSchedule?.id !== this.currentSchedule?.id) {
       // Schedule changed completely (different ID or became null/active)
+      const prevPhase = this.state.currentPhase;
       this.currentSchedule = activeSchedule;
       
       if (activeSchedule) {
@@ -334,7 +351,11 @@ export class TimerEngine extends EventEmitter {
           this.startPhase('sit'); // Rule-based: always start with sitting
         }
       } else {
+        // CRITICAL FIX: When schedule ends (becomes null), emit phaseChange
+        // so the overlay is properly closed. This prevents blank overlay freeze.
         this.setIdleState();
+        this.emit('phaseChange', { prevPhase, newPhase: 'idle' });
+        logger.info('TimerEngine', 'Schedule ended - emitting phaseChange to close overlay', { prevPhase });
       }
       
       this.emit('scheduleChange', this.currentSchedule);

@@ -478,8 +478,11 @@ body {
 /* Postpone buttons */
 .postpone-options {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 0.5rem;
   margin-top: 1rem;
+  max-width: 90vw;
 }
 
 /* Stats Grid */

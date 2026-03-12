@@ -23,6 +23,8 @@ let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
 let currentOverlayStrictMode: boolean = false;
 let isQuitting: boolean = false;
+let lastBlurFocusTime: number = 0;
+const BLUR_FOCUS_DEBOUNCE_MS = 500; // Prevent focus fights
 
 /**
  * Set quitting flag - call before app.quit()
@@ -172,18 +174,42 @@ export function createOverlayWindow(strictMode: boolean = false): BrowserWindow 
       event.preventDefault();
     });
 
-    // Re-focus if somehow loses focus in strict mode
+    // Re-focus if somehow loses focus in strict mode (with debounce to prevent fights)
     overlayWindow.on('blur', () => {
       if (overlayWindow && !overlayWindow.isDestroyed() && currentOverlayStrictMode) {
-        // Small delay to avoid focus fight
+        const now = Date.now();
+        // Debounce to prevent rapid focus fights that could freeze the system
+        if (now - lastBlurFocusTime < BLUR_FOCUS_DEBOUNCE_MS) {
+          return;
+        }
+        lastBlurFocusTime = now;
+        
         setTimeout(() => {
-          if (overlayWindow && !overlayWindow.isDestroyed()) {
+          if (overlayWindow && !overlayWindow.isDestroyed() && currentOverlayStrictMode) {
             overlayWindow.focus();
           }
-        }, 100);
+        }, 200);
       }
     });
   }
+  
+  // Handle webContents crash - recover the overlay
+  overlayWindow.webContents.on('crashed', () => {
+    logger.error('WindowManager', 'Overlay webContents crashed - will recover');
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.destroy();
+      overlayWindow = null;
+    }
+  });
+  
+  // Handle unresponsive renderer
+  overlayWindow.on('unresponsive', () => {
+    logger.error('WindowManager', 'Overlay became unresponsive - destroying');
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.destroy();
+      overlayWindow = null;
+    }
+  });
 
   overlayWindow.on('closed', () => {
     overlayWindow = null;
