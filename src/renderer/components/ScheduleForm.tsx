@@ -46,6 +46,11 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const dragNodeRef = useRef<HTMLDivElement | null>(null);
+  
+  // Raw text state for postpone options (to allow typing commas)
+  const [postponeOptionsText, setPostponeOptionsText] = useState<string>(
+    (formData.postponeOptionsMinutes ?? [2, 5, 10]).join(', ')
+  );
 
   useEffect(() => {
     if (schedule) {
@@ -85,6 +90,9 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
       } else {
         setFlowSteps(getDefaultFlowSteps());
       }
+      
+      // Update postpone options text
+      setPostponeOptionsText((rest.postponeOptionsMinutes ?? [2, 5, 10]).join(', '));
     }
   }, [schedule]);
 
@@ -124,11 +132,17 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
   };
 
   const handlePostponeOptionsChange = (value: string) => {
-    const options = value
+    // Just store the raw text - parse on blur
+    setPostponeOptionsText(value);
+  };
+  
+  const handlePostponeOptionsBlur = () => {
+    // Parse the text into numbers array on blur
+    const options = postponeOptionsText
       .split(',')
       .map((s) => parseInt(s.trim(), 10))
       .filter((n) => !isNaN(n) && n > 0);
-    handleChange('postponeOptionsMinutes', options);
+    handleChange('postponeOptionsMinutes', options.length > 0 ? options : [2, 5, 10]);
   };
 
   // Flow builder handlers
@@ -711,9 +725,10 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
             <input
               type="text"
               className="form-input"
-              value={(formData.postponeOptionsMinutes ?? [2, 5, 10]).join(', ')}
+              value={postponeOptionsText}
               onChange={(e) => handlePostponeOptionsChange(e.target.value)}
-              placeholder="2, 5, 10"
+              onBlur={handlePostponeOptionsBlur}
+              placeholder="2, 5, 10, 15, 30, 60, 90, 120"
             />
           </div>
           <div className="form-group">
