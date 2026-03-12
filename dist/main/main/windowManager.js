@@ -75,6 +75,8 @@ let mainWindow = null;
 let overlayWindow = null;
 let currentOverlayStrictMode = false;
 let isQuitting = false;
+let lastBlurFocusTime = 0;
+const BLUR_FOCUS_DEBOUNCE_MS = 500; // Prevent focus fights
 /**
  * Set quitting flag - call before app.quit()
  */
@@ -210,18 +212,39 @@ function createOverlayWindow(strictMode = false) {
             // Prevent closing in strict mode - can only be closed programmatically
             event.preventDefault();
         });
-        // Re-focus if somehow loses focus in strict mode
+        // Re-focus if somehow loses focus in strict mode (with debounce to prevent fights)
         overlayWindow.on('blur', () => {
             if (overlayWindow && !overlayWindow.isDestroyed() && currentOverlayStrictMode) {
-                // Small delay to avoid focus fight
+                const now = Date.now();
+                // Debounce to prevent rapid focus fights that could freeze the system
+                if (now - lastBlurFocusTime < BLUR_FOCUS_DEBOUNCE_MS) {
+                    return;
+                }
+                lastBlurFocusTime = now;
                 setTimeout(() => {
-                    if (overlayWindow && !overlayWindow.isDestroyed()) {
+                    if (overlayWindow && !overlayWindow.isDestroyed() && currentOverlayStrictMode) {
                         overlayWindow.focus();
                     }
-                }, 100);
+                }, 200);
             }
         });
     }
+    // Handle webContents crash - recover the overlay
+    overlayWindow.webContents.on('crashed', () => {
+        logger_1.default.error('WindowManager', 'Overlay webContents crashed - will recover');
+        if (overlayWindow && !overlayWindow.isDestroyed()) {
+            overlayWindow.destroy();
+            overlayWindow = null;
+        }
+    });
+    // Handle unresponsive renderer
+    overlayWindow.on('unresponsive', () => {
+        logger_1.default.error('WindowManager', 'Overlay became unresponsive - destroying');
+        if (overlayWindow && !overlayWindow.isDestroyed()) {
+            overlayWindow.destroy();
+            overlayWindow = null;
+        }
+    });
     overlayWindow.on('closed', () => {
         overlayWindow = null;
         currentOverlayStrictMode = false;

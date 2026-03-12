@@ -20,6 +20,7 @@ import {
   BreakType,
   BreakProgress,
   ConfiguredDurations,
+  FlowStep,
   INITIAL_POSTPONE_COUNTS,
   computeFlowConfigHash,
 } from '../shared/types';
@@ -1055,12 +1056,30 @@ export class TimerEngine extends EventEmitter {
     let startDurationMs: number;
     
     if (isFlowBasedSchedule(this.currentSchedule)) {
-      // Flow-based: start from first step
-      this.state.currentFlowStepIndex = 0;
-      this.state.flowConfigHash = computeFlowConfigHash(this.currentSchedule.flowSteps);
-      const firstStep = this.currentSchedule.flowSteps![0];
+      // Flow-based: find first WORK phase (sit or stand), not just index 0
+      // This handles reversed flows that might start with a break
+      const flowSteps = this.currentSchedule.flowSteps!;
+      let startIndex = 0;
+      
+      // Find first work phase
+      for (let i = 0; i < flowSteps.length; i++) {
+        if (flowSteps[i].type === 'sit' || flowSteps[i].type === 'stand') {
+          startIndex = i;
+          break;
+        }
+      }
+      
+      this.state.currentFlowStepIndex = startIndex;
+      this.state.flowConfigHash = computeFlowConfigHash(flowSteps);
+      const firstStep = flowSteps[startIndex];
       startPhase = firstStep.type;
       startDurationMs = getFlowStepDurationMs(firstStep);
+      
+      logger.info('TimerEngine', 'Reset: starting at first work phase', { 
+        startIndex, 
+        startPhase,
+        flowOrder: flowSteps.map(s => s.type).join(' -> ')
+      });
     } else {
       // Rule-based: start with sitting
       this.state.currentFlowStepIndex = undefined;
@@ -1194,8 +1213,11 @@ export class TimerEngine extends EventEmitter {
   }
 
   /**
-   * Reverse flow steps - reverse entire order so break comes first
-   * Pattern: 1,2,3,4,5 -> 5,4,3,2,1
+   * Reverse flow steps - reverse the work phase order
+   * The flow is rotated so that a WORK phase (sit/stand) is always first.
+   * 
+   * Example: sit → trans → stand → trans → break
+   * After reverse: stand → trans → sit → trans → break
    * 
    * Saves to config file - user must click "Reset Now" to apply
    */
@@ -1214,7 +1236,11 @@ export class TimerEngine extends EventEmitter {
     logger.info('TimerEngine', 'Reversing flow steps - saving to config');
 
     // Reverse the array
-    const newSteps = [...flowSteps].reverse();
+    let newSteps = [...flowSteps].reverse();
+    
+    // CRITICAL: Rotate array so first WORK phase is at index 0
+    // This ensures the flow never starts with a break
+    newSteps = this.normalizeFlowToStartWithWork(newSteps);
 
     // Save to config file - this will trigger flow stale detection
     const updatedSchedule = { ...this.currentSchedule, flowSteps: newSteps };
@@ -1223,7 +1249,36 @@ export class TimerEngine extends EventEmitter {
     // Emit tick so UI updates and shows "Flow Updated" banner
     this.emitTick();
     
-    logger.info('TimerEngine', 'Flow reversed in config - user should click Reset Now to apply');
+    logger.info('TimerEngine', 'Flow reversed in config - user should click Reset Now to apply', {
+      newOrder: newSteps.map(s => s.type).join(' → ')
+    });
+  }
+  
+  /**
+   * Normalize flow array to ensure it starts with a work phase (sit or stand).
+   * Rotates the array if necessary so breaks/transitions are not first.
+   */
+  private normalizeFlowToStartWithWork(steps: FlowStep[]): FlowStep[] {
+    if (steps.length === 0) return steps;
+    
+    // Find index of first work phase
+    const firstWorkIndex = steps.findIndex(s => s.type === 'sit' || s.type === 'stand');
+    
+    if (firstWorkIndex <= 0) {
+      // Already starts with work phase or no work phase found
+      return steps;
+    }
+    
+    // Rotate array: move elements before firstWorkIndex to the end
+    const rotated = [...steps.slice(firstWorkIndex), ...steps.slice(0, firstWorkIndex)];
+    
+    logger.info('TimerEngine', 'Normalized flow to start with work phase', {
+      originalFirst: steps[0].type,
+      newFirst: rotated[0].type,
+      rotatedBy: firstWorkIndex
+    });
+    
+    return rotated;
   }
 
   /**

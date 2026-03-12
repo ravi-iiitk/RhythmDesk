@@ -183,8 +183,24 @@ class TimerEngine extends events_1.EventEmitter {
     }
     /**
      * Main timer tick - called every second
+     * Wrapped in try-catch to prevent interval from stopping on exception
      */
     tick() {
+        try {
+            this.tickInternal();
+        }
+        catch (error) {
+            // CRITICAL: Log but don't crash - keep the timer running
+            logger_1.default.error('TimerEngine', 'Exception in tick - timer continues', {
+                error: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+            });
+        }
+    }
+    /**
+     * Internal tick implementation
+     */
+    tickInternal() {
         const now = Date.now();
         const realDeltaMs = now - this.lastTickTime;
         this.lastTickTime = now;
@@ -268,6 +284,7 @@ class TimerEngine extends events_1.EventEmitter {
         const activeSchedule = (0, scheduleResolver_1.resolveActiveSchedule)(schedules);
         if (activeSchedule?.id !== this.currentSchedule?.id) {
             // Schedule changed completely (different ID or became null/active)
+            const prevPhase = this.state.currentPhase;
             this.currentSchedule = activeSchedule;
             if (activeSchedule) {
                 // Starting a new schedule
@@ -289,7 +306,11 @@ class TimerEngine extends events_1.EventEmitter {
                 }
             }
             else {
+                // CRITICAL FIX: When schedule ends (becomes null), emit phaseChange
+                // so the overlay is properly closed. This prevents blank overlay freeze.
                 this.setIdleState();
+                this.emit('phaseChange', { prevPhase, newPhase: 'idle' });
+                logger_1.default.info('TimerEngine', 'Schedule ended - emitting phaseChange to close overlay', { prevPhase });
             }
             this.emit('scheduleChange', this.currentSchedule);
         }
@@ -912,12 +933,27 @@ class TimerEngine extends events_1.EventEmitter {
         let startPhase;
         let startDurationMs;
         if ((0, flowUtils_1.isFlowBasedSchedule)(this.currentSchedule)) {
-            // Flow-based: start from first step
-            this.state.currentFlowStepIndex = 0;
-            this.state.flowConfigHash = (0, types_1.computeFlowConfigHash)(this.currentSchedule.flowSteps);
-            const firstStep = this.currentSchedule.flowSteps[0];
+            // Flow-based: find first WORK phase (sit or stand), not just index 0
+            // This handles reversed flows that might start with a break
+            const flowSteps = this.currentSchedule.flowSteps;
+            let startIndex = 0;
+            // Find first work phase
+            for (let i = 0; i < flowSteps.length; i++) {
+                if (flowSteps[i].type === 'sit' || flowSteps[i].type === 'stand') {
+                    startIndex = i;
+                    break;
+                }
+            }
+            this.state.currentFlowStepIndex = startIndex;
+            this.state.flowConfigHash = (0, types_1.computeFlowConfigHash)(flowSteps);
+            const firstStep = flowSteps[startIndex];
             startPhase = firstStep.type;
             startDurationMs = (0, flowUtils_1.getFlowStepDurationMs)(firstStep);
+            logger_1.default.info('TimerEngine', 'Reset: starting at first work phase', {
+                startIndex,
+                startPhase,
+                flowOrder: flowSteps.map(s => s.type).join(' -> ')
+            });
         }
         else {
             // Rule-based: start with sitting

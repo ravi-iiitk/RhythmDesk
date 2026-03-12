@@ -223,6 +223,22 @@ export class JsonStorageProvider implements IStorageProvider {
   }
 
   saveSchedule(schedule: Schedule): void {
+    // CRITICAL: Normalize flow-based schedules to always start with a work phase
+    // This prevents invalid configurations where breaks/transitions come first
+    if (schedule.mode === 'flow-based' && schedule.flowSteps && schedule.flowSteps.length > 0) {
+      const firstStep = schedule.flowSteps[0];
+      if (firstStep.type !== 'sit' && firstStep.type !== 'stand') {
+        // Find first work phase and rotate array
+        const workIndex = schedule.flowSteps.findIndex(s => s.type === 'sit' || s.type === 'stand');
+        if (workIndex > 0) {
+          schedule.flowSteps = [
+            ...schedule.flowSteps.slice(workIndex),
+            ...schedule.flowSteps.slice(0, workIndex)
+          ];
+        }
+      }
+    }
+    
     const cfg = this.getConfig();
     const index = cfg.schedules.findIndex((s) => s.id === schedule.id);
     if (index >= 0) {
