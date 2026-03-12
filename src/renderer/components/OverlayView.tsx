@@ -11,6 +11,19 @@ interface OverlayViewProps {
   tick: TimerTick | null;
 }
 
+// Format minutes into human-readable format (e.g., "1h 15m" or "30m")
+function formatPostponeMinutes(minutes: number): string {
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (mins === 0) {
+    return `${hours}h`;
+  }
+  return `${hours}h ${mins}m`;
+}
+
 // Phase-specific messages
 const PHASE_MESSAGES: Record<PhaseType, string> = {
   'sit': 'Time to work while sitting',
@@ -205,7 +218,7 @@ function OverlayView({ tick }: OverlayViewProps) {
                   className="btn btn-secondary"
                   onClick={() => handlePostpone(minutes)}
                 >
-                  +{minutes} min
+                  +{formatPostponeMinutes(minutes)}
                 </button>
               ))}
             </div>

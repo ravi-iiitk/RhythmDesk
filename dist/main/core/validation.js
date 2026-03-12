@@ -15,12 +15,12 @@ function validatePostponeOptions(options, fieldPrefix, errors) {
         errors.push({ field: `${fieldPrefix}.postponeOptionsMinutes`, message: 'At least one postpone option is required' });
         return;
     }
-    // Check values are valid
+    // Check values are valid (up to 2 hours = 120 minutes)
     for (const option of options) {
-        if (option <= 0 || option > 60) {
+        if (option <= 0 || option > 120) {
             errors.push({
                 field: `${fieldPrefix}.postponeOptionsMinutes`,
-                message: 'Postpone options must be between 1 and 60 minutes'
+                message: 'Postpone options must be between 1 and 120 minutes'
             });
             break;
         }

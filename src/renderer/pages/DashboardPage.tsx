@@ -13,6 +13,21 @@ interface DashboardPageProps {
 }
 
 /**
+ * Format minutes into human-readable format (e.g., "1h 15m" or "30m")
+ */
+function formatPostponeMinutes(minutes: number): string {
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (mins === 0) {
+    return `${hours}h`;
+  }
+  return `${hours}h ${mins}m`;
+}
+
+/**
  * Get the configured duration for a phase in human-readable format
  */
 function getConfiguredDurationForPhase(phase: PhaseType, durations: ConfiguredDurations): string {
@@ -402,7 +417,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
         </div>
 
         {/* Next Phase + Controls Row */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ fontSize: '1.1rem', color: '#94a3b8' }}>
             Next: <strong style={{ color: '#e2e8f0' }}>{nextPhaseName}</strong>
             <span style={{ color: '#64748b', marginLeft: '0.5rem' }}>
@@ -410,8 +425,8 @@ function DashboardPage({ tick }: DashboardPageProps) {
             </span>
           </span>
           
-          {/* Inline Controls */}
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          {/* Controls - right aligned, wraps on smaller screens */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
             {tick.isPaused ? (
               <button className="btn btn-success" onClick={handleResume}>▶️ Resume</button>
             ) : (
@@ -456,7 +471,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
                 <span style={{ color: '#64748b', margin: '0 0.25rem' }}>|</span>
                 {tick.postponeOptions.map((minutes) => (
                   <button key={minutes} className="btn btn-secondary" onClick={() => handlePostpone(minutes)}>
-                    +{minutes}m
+                    +{formatPostponeMinutes(minutes)}
                   </button>
                 ))}
               </>
