@@ -213,6 +213,103 @@ function DashboardPage({ tick }: DashboardPageProps) {
             </>
           )}
         </div>
+        
+        {/* Office Focus Lock - Available even without schedule */}
+        <div className="card" style={{ padding: '0.75rem 1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#e2e8f0' }}>🎯 Focus Mode</div>
+            {tick?.officeFocusLock?.isActive ? (
+              <span style={{ fontSize: '0.75rem', color: '#fb923c', fontWeight: 500 }}>
+                Active: {tick.officeFocusLock.label}
+              </span>
+            ) : (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: focusStrictMode ? '#ef4444' : '#94a3b8' }}>
+                <input
+                  type="checkbox"
+                  checked={focusStrictMode}
+                  onChange={(e) => setFocusStrictMode(e.target.checked)}
+                  style={{ width: '14px', height: '14px' }}
+                />
+                🔒 Strict Mode
+              </label>
+            )}
+          </div>
+          
+          {tick?.officeFocusLock?.isActive ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', justifyContent: 'center', padding: '1rem' }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '2rem', fontWeight: 700, color: '#fb923c' }}>
+                  {formatDuration(tick.officeFocusLock.remainingMs)}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>remaining</div>
+              </div>
+              {!tick.officeFocusLock.isStrictMode && (
+                <button className="btn btn-secondary" onClick={handleStopOfficeFocusLock}>
+                  End Focus
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Label selector and quick durations */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                <select 
+                  value={selectedLabel} 
+                  onChange={(e) => setSelectedLabel(e.target.value)}
+                  style={{ padding: '0.4rem', borderRadius: '6px', backgroundColor: '#2a2a3e', color: '#e2e8f0', border: '1px solid #444', fontSize: '0.85rem' }}
+                  disabled={scheduleNames.length === 0}
+                >
+                  {scheduleNames.length === 0 ? (
+                    <option value="">No schedules</option>
+                  ) : (
+                    scheduleNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))
+                  )}
+                </select>
+                {OFFICE_FOCUS_LOCK_DURATIONS.slice(0, 4).map((minutes) => (
+                  <button 
+                    key={minutes} 
+                    className="btn btn-secondary" 
+                    onClick={() => handleStartOfficeFocusLock(minutes)} 
+                    style={{ padding: '0.35rem 0.6rem', fontSize: '0.8rem' }}
+                  >
+                    {minutes}m
+                  </button>
+                ))}
+              </div>
+              
+              {/* Custom duration */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Custom:</span>
+                <input 
+                  type="number" 
+                  min="0" max="8" 
+                  value={customHours} 
+                  onChange={(e) => setCustomHours(Math.max(0, Math.min(8, parseInt(e.target.value) || 0)))}
+                  style={{ width: '50px', padding: '0.25rem', textAlign: 'center' }}
+                />
+                <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>h</span>
+                <input 
+                  type="number" 
+                  min="0" max="59" 
+                  value={customMinutes} 
+                  onChange={(e) => setCustomMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                  style={{ width: '50px', padding: '0.25rem', textAlign: 'center' }}
+                />
+                <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>m</span>
+                <button 
+                  className="btn btn-primary" 
+                  onClick={() => handleStartOfficeFocusLock(customHours * 60 + customMinutes)} 
+                  disabled={customHours * 60 + customMinutes === 0}
+                  style={{ padding: '0.3rem 0.75rem', marginLeft: 'auto' }}
+                >
+                  Start
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     );
   }
