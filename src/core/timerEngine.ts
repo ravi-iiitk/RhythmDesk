@@ -71,6 +71,7 @@ import {
   logInvariantViolations,
   TransitionContext,
 } from './runtimeInvariants';
+import { trace } from './traceLogger';
 
 const TIME_JUMP_THRESHOLD_MS = 5000; // 5 seconds - indicates sleep/wake or time jump
 const STATE_SAVE_DEBOUNCE_MS = 5000; // Save state every 5 seconds max
@@ -1131,6 +1132,9 @@ export class TimerEngine extends EventEmitter {
       restoredFlowIndex: flowIndexToRestore,
     });
     
+    // Phase 5: Trace logging
+    trace.postpone(postponedBreakPhase, minutes);
+    
     // ARCHITECTURE HARDENING: Post-transition invariant validation
     this.validateStateInvariants('After postpone');
     
@@ -1238,6 +1242,9 @@ export class TimerEngine extends EventEmitter {
       scheduleId: this.currentSchedule?.id,
     });
     
+    // Phase 5: Trace logging
+    trace.skip(phaseBefore, this.state.currentPhase);
+    
     // Validate and recover if needed (flow mode)
     if (isFlowBasedSchedule(this.currentSchedule)) {
       const validation = validateRuntimeState(this.state, this.currentSchedule, nextPhase);
@@ -1292,6 +1299,9 @@ export class TimerEngine extends EventEmitter {
       currentPhase: this.state.currentPhase,
       scheduleMode: this.currentSchedule.mode,
     });
+    
+    // Phase 5: Trace logging
+    trace.reset(`session reset: ${this.currentSchedule.name}`);
     
     // Reload schedule from config to restore original flow order
     // (shuffle/reverse may have modified the in-memory flowSteps)

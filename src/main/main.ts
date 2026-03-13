@@ -23,6 +23,12 @@ import { createDefaultSchedules } from './defaultSchedules';
 import { getOverlayPolicy, OverlayPolicyInput } from '../core/overlayPolicy';
 import { logRestBlockStart, logRestBlockTick, logRestBlockEnd } from '../core/overlayDebug';
 import { getOverlaySyncService, OVERLAY_SYNC_CHANNELS } from '../core/overlaySync';
+// Phase 5: Production hardening imports
+import { setupMainProcessErrorHandlers } from '../core/errorHandler';
+import { installShutdownHandlers } from '../core/shutdown';
+import { getHealthMonitor } from '../core/healthMonitor';
+import { getTimerWatchdog, getOverlayWatchdog } from '../core/watchdog';
+import { initDebugMode } from '../core/debugMode';
 
 /**
  * Get overlay policy for current state
@@ -47,6 +53,21 @@ function getOverlayPolicyForState(phase: PhaseType): ReturnType<typeof getOverla
 }
 
 function initialize(): void {
+  // ========================================
+  // PHASE 5: Early initialization (before app ready)
+  // ========================================
+  
+  // Setup global error handlers FIRST
+  setupMainProcessErrorHandlers();
+  
+  // Initialize debug mode from environment
+  initDebugMode();
+  
+  // Install shutdown handlers for graceful exit
+  installShutdownHandlers();
+  
+  logger.info('Main', 'Phase 5 production hardening initialized');
+  
   // Prevent multiple instances
   const gotTheLock = app.requestSingleInstanceLock();
 
@@ -97,8 +118,23 @@ function initialize(): void {
     // Initialize and start timer engine
     const timerEngine = getTimerEngine();
 
+    // ========================================
+    // PHASE 5: Start watchdogs and health monitor
+    // ========================================
+    const timerWatchdog = getTimerWatchdog();
+    const overlayWatchdog = getOverlayWatchdog();
+    const healthMonitor = getHealthMonitor();
+    
+    timerWatchdog.start();
+    healthMonitor.start();
+    
+    logger.info('Main', 'Watchdogs and health monitor started');
+    
     // Handle timer events
     timerEngine.on('tick', (tick: TimerTick) => {
+      // Report tick to watchdog for stall detection
+      timerWatchdog.reportTick(tick.phaseRemainingMs);
+      
       // Send tick to all renderer windows
       sendToAll(IPC_CHANNELS.TIMER_TICK, tick);
       // Update tray
@@ -119,11 +155,15 @@ function initialize(): void {
       if (newPolicy.showOverlay) {
         showOverlay(newPolicy.strictMode);
         sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: data.newPhase });
+        // Start overlay watchdog when overlay shows
+        overlayWatchdog.startMonitoring();
       } else if (prevPolicy.showOverlay && !isRestBlockActive) {
         // Close overlay when leaving a phase that required it
         // BUT only if no RestBlock is active (RestBlock takes priority)
         closeOverlay();
         sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
+        // Stop overlay watchdog when overlay hides
+        overlayWatchdog.stopMonitoring();
       }
     });
 
@@ -288,16 +328,8 @@ function initialize(): void {
   });
 }
 
-// Handle uncaught exceptions
-process.on('uncaughtException', (error: Error) => {
-  logger.error('Main', 'Uncaught exception', { message: error.message, stack: error.stack });
-  console.error('Uncaught exception:', error);
-});
-
-process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
-  logger.error('Main', 'Unhandled rejection', { reason });
-  console.error('Unhandled rejection at:', promise, 'reason:', reason);
-});
+// Note: Uncaught exception handlers are now in errorHandler.ts
+// setupMainProcessErrorHandlers() installs them with proper failsafe integration
 
 /**
  * Ensure overlay is shown when required
