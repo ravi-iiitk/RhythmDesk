@@ -383,8 +383,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         </div>
         <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
           {scheduleMode === 'rule-based' 
-            ? 'Breaks trigger based on cumulative work time rules'
-            : 'Activities follow a configured sequence that repeats'}
+            ? 'Breaks trigger based on cumulative work time (sitting + standing only)'
+            : 'Activities follow the exact sequence defined below. The cycle repeats after the final step.'}
         </p>
       </div>
 
@@ -392,6 +392,9 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
       {scheduleMode === 'flow-based' && (
         <div className="form-group">
           <label className="form-label">Flow Steps</label>
+          <p className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '0.5rem', padding: '0.5rem', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderRadius: '4px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+            💡 In Flow Mode, activities follow the exact sequence defined below. The cycle repeats after the final step.
+          </p>
           {flowValidationErrors.length > 0 && (
             <div style={{ color: '#ef4444', fontSize: '0.75rem', marginBottom: '0.5rem' }}>
               {flowValidationErrors.map((err, i) => (
@@ -585,30 +588,35 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
             </label>
           </div>
           {formData.shortBreakEnabled && (
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">Short Break Every (minutes)</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={formData.shortBreakEveryMinutes ?? 60}
-                  onChange={(e) => handleChange('shortBreakEveryMinutes', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
-                  onBlur={(e) => !e.target.value && handleChange('shortBreakEveryMinutes', 60)}
-                  min="1"
-                />
+            <>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Short Break Every (work minutes)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={formData.shortBreakEveryMinutes ?? 60}
+                    onChange={(e) => handleChange('shortBreakEveryMinutes', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                    onBlur={(e) => !e.target.value && handleChange('shortBreakEveryMinutes', 60)}
+                    min="1"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Short Break Duration (minutes)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={formData.shortBreakDurationMinutes ?? 5}
+                    onChange={(e) => handleChange('shortBreakDurationMinutes', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                    onBlur={(e) => !e.target.value && handleChange('shortBreakDurationMinutes', 5)}
+                    min="1"
+                  />
+                </div>
               </div>
-              <div className="form-group">
-                <label className="form-label">Short Break Duration (minutes)</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={formData.shortBreakDurationMinutes ?? 5}
-                  onChange={(e) => handleChange('shortBreakDurationMinutes', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
-                  onBlur={(e) => !e.target.value && handleChange('shortBreakDurationMinutes', 5)}
-                  min="1"
-                />
-              </div>
-            </div>
+              <p className="text-muted" style={{ fontSize: '0.7rem', marginTop: '-0.25rem' }}>
+                Work time = sitting + standing only. Transitions and breaks don't count unless configured below.
+              </p>
+            </>
           )}
         </>
       )}
@@ -628,7 +636,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         <>
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Long Break Every (minutes)</label>
+              <label className="form-label">Long Break Every (work minutes)</label>
               <input
                 type="number"
                 className="form-input"

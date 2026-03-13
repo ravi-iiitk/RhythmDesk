@@ -1,8 +1,11 @@
 /**
  * RhythmDesk Overlay View
  * Fullscreen overlay for phase transitions and breaks
+ * 
+ * Phase 2: Added heartbeat response for overlay sync watchdog
  */
 
+import { useEffect } from 'react';
 import { TimerTick, PhaseType } from '../../shared/types';
 import { PHASE_DISPLAY_NAMES, PHASE_COLORS } from '../../shared/constants';
 import { formatDuration } from '../../shared/timeUtils';
@@ -36,6 +39,15 @@ const PHASE_MESSAGES: Record<PhaseType, string> = {
 };
 
 function OverlayView({ tick }: OverlayViewProps) {
+  // Phase 2: Respond to heartbeat requests from main process
+  // This allows the watchdog to detect if overlay is frozen/unresponsive
+  useEffect(() => {
+    const cleanup = window.rhythmDesk.onHeartbeatRequest(() => {
+      window.rhythmDesk.sendHeartbeatResponse();
+    });
+    return cleanup;
+  }, []);
+
   // Show nothing while waiting for first tick - prevents idle flash
   if (!tick) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;

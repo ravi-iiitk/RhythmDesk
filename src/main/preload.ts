@@ -5,6 +5,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC_CHANNELS } from '../shared/types';
+import { OVERLAY_SYNC_CHANNELS } from '../core/overlaySync';
 
 // Type for the exposed API
 export interface RhythmDeskAPI {
@@ -55,6 +56,10 @@ export interface RhythmDeskAPI {
   onConfigUpdated: (callback: (config: any) => void) => () => void;
   onOfficeFocusLockChanged: (callback: (state: any) => void) => () => void;
   onRestBlockChanged: (callback: (state: any) => void) => () => void;
+  
+  // Phase 2: Overlay sync (heartbeat)
+  sendHeartbeatResponse: () => void;
+  onHeartbeatRequest: (callback: () => void) => () => void;
 }
 
 const api: RhythmDeskAPI = {
@@ -138,6 +143,17 @@ const api: RhythmDeskAPI = {
     const handler = (_event: any, state: any) => callback(state);
     ipcRenderer.on(IPC_CHANNELS.REST_BLOCK_CHANGED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.REST_BLOCK_CHANGED, handler);
+  },
+
+  // Phase 2: Overlay sync (heartbeat)
+  sendHeartbeatResponse: () => {
+    ipcRenderer.send(OVERLAY_SYNC_CHANNELS.HEARTBEAT_RESPONSE);
+  },
+  
+  onHeartbeatRequest: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on(OVERLAY_SYNC_CHANNELS.HEARTBEAT_REQUEST, handler);
+    return () => ipcRenderer.removeListener(OVERLAY_SYNC_CHANNELS.HEARTBEAT_REQUEST, handler);
   },
 };
 

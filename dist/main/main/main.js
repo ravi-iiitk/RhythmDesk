@@ -25,6 +25,8 @@ const types_1 = require("../shared/types");
 const configService_1 = __importDefault(require("../core/configService"));
 const defaultSchedules_1 = require("./defaultSchedules");
 const overlayPolicy_1 = require("../core/overlayPolicy");
+const overlayDebug_1 = require("../core/overlayDebug");
+const overlaySync_1 = require("../core/overlaySync");
 /**
  * Get overlay policy for current state
  * Centralized decision engine - all overlay logic goes through here
@@ -65,8 +67,11 @@ function initialize() {
     });
     // Clean up on quit
     electron_1.app.on('before-quit', () => {
+        logger_1.default.info('Main', 'App quitting - flushing session snapshot');
         const timerEngine = (0, timerEngine_1.getTimerEngine)();
         timerEngine.stop();
+        // Flush any pending session snapshot before quit
+        configService_1.default.flushSessionSnapshot();
     });
     // App ready
     electron_1.app.whenReady().then(() => {
@@ -161,15 +166,23 @@ function initialize() {
         restBlockService.on('started', () => {
             // When Rest Block starts, pause the normal timer flow and show overlay
             logger_1.default.info('Main', 'Rest block started - pausing timer and showing overlay');
-            timerEngine.pause();
             const restState = restBlockService.getState();
+            (0, overlayDebug_1.logRestBlockStart)(restState.name, restState.durationMs, restState.isStrictMode);
+            timerEngine.pause();
             (0, windowManager_1.showOverlay)(restState.isStrictMode);
             (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.SHOW_OVERLAY, { phase: 'rest-block', restBlock: restState });
             (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
+            // Start overlay sync watchdog for rest blocks
+            const overlaySyncService = (0, overlaySync_1.getOverlaySyncService)();
+            overlaySyncService.start(() => (0, windowManager_1.sendToOverlay)(overlaySync_1.OVERLAY_SYNC_CHANNELS.HEARTBEAT_REQUEST, {}), () => (0, windowManager_1.recoverOverlayIfNeeded)(restState.isStrictMode));
         });
         // CRITICAL: Handle RestBlockService tick events to keep overlay updated
         // This is essential for long rest blocks - without this, the overlay freezes
         restBlockService.on('tick', (restState) => {
+            // Log every 10th tick to reduce noise (tick every second)
+            if (restState.remainingMs % 10000 < 1000) {
+                (0, overlayDebug_1.logRestBlockTick)(restState.name, restState.remainingMs);
+            }
             // Send rest block state to overlay on every tick
             // This ensures the overlay countdown stays in sync for long durations
             (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
@@ -177,6 +190,9 @@ function initialize() {
         restBlockService.on('stopped', () => {
             // When Rest Block stops, resume timer and check if overlay should close
             logger_1.default.info('Main', 'Rest block stopped - resuming timer');
+            (0, overlayDebug_1.logRestBlockEnd)('manual', 'user stopped');
+            // Stop overlay sync watchdog
+            (0, overlaySync_1.getOverlaySyncService)().stop();
             timerEngine.resume();
             const currentPhase = timerEngine.getState().currentPhase;
             const policy = getOverlayPolicyForState(currentPhase);
@@ -189,6 +205,9 @@ function initialize() {
         restBlockService.on('expired', () => {
             // Rest Block timer expired - resume timer and check overlay
             logger_1.default.info('Main', 'Rest block expired - resuming timer');
+            (0, overlayDebug_1.logRestBlockEnd)('expired', 'timer completed');
+            // Stop overlay sync watchdog
+            (0, overlaySync_1.getOverlaySyncService)().stop();
             timerEngine.resume();
             const currentPhase = timerEngine.getState().currentPhase;
             const policy = getOverlayPolicyForState(currentPhase);

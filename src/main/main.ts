@@ -10,7 +10,7 @@
  */
 
 import { app, BrowserWindow } from 'electron';
-import { createMainWindow, showOverlay, closeOverlay, sendToAll, getMainWindow, getOverlayWindow, recoverOverlayIfNeeded } from './windowManager';
+import { createMainWindow, showOverlay, closeOverlay, sendToAll, sendToOverlay, getMainWindow, getOverlayWindow, recoverOverlayIfNeeded } from './windowManager';
 import logger from '../core/logger';
 import { createTray, updateTrayWithTick } from './tray';
 import { registerIpcHandlers } from './ipc';
@@ -21,6 +21,8 @@ import { IPC_CHANNELS, TimerTick, PhaseType } from '../shared/types';
 import configService from '../core/configService';
 import { createDefaultSchedules } from './defaultSchedules';
 import { getOverlayPolicy, OverlayPolicyInput } from '../core/overlayPolicy';
+import { logRestBlockStart, logRestBlockTick, logRestBlockEnd } from '../core/overlayDebug';
+import { getOverlaySyncService, OVERLAY_SYNC_CHANNELS } from '../core/overlaySync';
 
 /**
  * Get overlay policy for current state
@@ -68,8 +70,11 @@ function initialize(): void {
 
   // Clean up on quit
   app.on('before-quit', () => {
+    logger.info('Main', 'App quitting - flushing session snapshot');
     const timerEngine = getTimerEngine();
     timerEngine.stop();
+    // Flush any pending session snapshot before quit
+    configService.flushSessionSnapshot();
   });
 
   // App ready
@@ -184,16 +189,29 @@ function initialize(): void {
     restBlockService.on('started', () => {
       // When Rest Block starts, pause the normal timer flow and show overlay
       logger.info('Main', 'Rest block started - pausing timer and showing overlay');
-      timerEngine.pause();
       const restState = restBlockService.getState();
+      logRestBlockStart(restState.name, restState.durationMs, restState.isStrictMode);
+      
+      timerEngine.pause();
       showOverlay(restState.isStrictMode);
       sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: 'rest-block', restBlock: restState });
       sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
+      
+      // Start overlay sync watchdog for rest blocks
+      const overlaySyncService = getOverlaySyncService();
+      overlaySyncService.start(
+        () => sendToOverlay(OVERLAY_SYNC_CHANNELS.HEARTBEAT_REQUEST, {}),
+        () => recoverOverlayIfNeeded(restState.isStrictMode)
+      );
     });
     
     // CRITICAL: Handle RestBlockService tick events to keep overlay updated
     // This is essential for long rest blocks - without this, the overlay freezes
     restBlockService.on('tick', (restState) => {
+      // Log every 10th tick to reduce noise (tick every second)
+      if (restState.remainingMs % 10000 < 1000) {
+        logRestBlockTick(restState.name, restState.remainingMs);
+      }
       // Send rest block state to overlay on every tick
       // This ensures the overlay countdown stays in sync for long durations
       sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
@@ -202,6 +220,11 @@ function initialize(): void {
     restBlockService.on('stopped', () => {
       // When Rest Block stops, resume timer and check if overlay should close
       logger.info('Main', 'Rest block stopped - resuming timer');
+      logRestBlockEnd('manual', 'user stopped');
+      
+      // Stop overlay sync watchdog
+      getOverlaySyncService().stop();
+      
       timerEngine.resume();
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
@@ -216,6 +239,11 @@ function initialize(): void {
     restBlockService.on('expired', () => {
       // Rest Block timer expired - resume timer and check overlay
       logger.info('Main', 'Rest block expired - resuming timer');
+      logRestBlockEnd('expired', 'timer completed');
+      
+      // Stop overlay sync watchdog
+      getOverlaySyncService().stop();
+      
       timerEngine.resume();
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);

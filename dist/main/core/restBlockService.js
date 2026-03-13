@@ -16,12 +16,12 @@ const events_1 = require("events");
 const types_1 = require("../shared/types");
 const timeUtils_1 = require("../shared/timeUtils");
 const logger_1 = __importDefault(require("./logger"));
+const configService_1 = __importDefault(require("./configService"));
 class RestBlockService extends events_1.EventEmitter {
     constructor() {
         super();
         this.tickInterval = null;
         this.state = { ...types_1.INITIAL_REST_BLOCK_STATE };
-        this.presets = [...types_1.DEFAULT_REST_BLOCK_PRESETS];
     }
     /**
      * Start a rest block with specified parameters
@@ -57,7 +57,8 @@ class RestBlockService extends events_1.EventEmitter {
      * @param presetId ID of the preset to use
      */
     startFromPreset(presetId) {
-        const preset = this.presets.find(p => p.id === presetId);
+        const presets = configService_1.default.getRestBlockPresets();
+        const preset = presets.find((p) => p.id === presetId);
         if (!preset) {
             return false;
         }
@@ -103,41 +104,27 @@ class RestBlockService extends events_1.EventEmitter {
         return this.state.remainingMs;
     }
     /**
-     * Get all saved presets
+     * Get all saved presets (from ConfigStore)
      */
     getPresets() {
-        return [...this.presets];
+        return configService_1.default.getRestBlockPresets();
     }
     /**
-     * Save or update a preset
+     * Save or update a preset (to ConfigStore)
      */
     savePreset(preset) {
-        const existingIndex = this.presets.findIndex(p => p.id === preset.id);
-        if (existingIndex >= 0) {
-            this.presets[existingIndex] = { ...preset };
-        }
-        else {
-            this.presets.push({ ...preset });
-        }
-        this.emit('presetsChanged', this.presets);
+        configService_1.default.saveRestBlockPreset(preset);
+        this.emit('presetsChanged', this.getPresets());
     }
     /**
-     * Delete a preset
+     * Delete a preset (from ConfigStore)
      */
     deletePreset(presetId) {
-        const index = this.presets.findIndex(p => p.id === presetId);
-        if (index >= 0) {
-            this.presets.splice(index, 1);
-            this.emit('presetsChanged', this.presets);
-            return true;
+        const deleted = configService_1.default.deleteRestBlockPreset(presetId);
+        if (deleted) {
+            this.emit('presetsChanged', this.getPresets());
         }
-        return false;
-    }
-    /**
-     * Load presets from config (called during initialization)
-     */
-    loadPresets(presets) {
-        this.presets = [...presets];
+        return deleted;
     }
     /**
      * Internal tick to update remaining time

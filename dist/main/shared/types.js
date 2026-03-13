@@ -177,6 +177,7 @@ exports.INITIAL_SESSION_STATE = {
     breakCountResetDate: new Date().toISOString().split('T')[0],
     interruptedPhase: null,
     interruptedPhaseRemainingMs: 0,
+    interruptedFlowIndex: undefined,
     postponeCountsToday: { ...exports.INITIAL_POSTPONE_COUNTS },
     postponeResetDate: new Date().toISOString().split('T')[0],
     isPaused: false,
@@ -188,6 +189,7 @@ exports.INITIAL_SESSION_STATE = {
     postponedBreakType: null,
     prePostponeWorkPhase: null,
     prePostponeWorkPhaseRemainingMs: 0,
+    prePostponeFlowIndex: undefined,
 };
 // Default general settings
 exports.DEFAULT_GENERAL_SETTINGS = {

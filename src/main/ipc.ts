@@ -11,6 +11,7 @@ import { getOfficeFocusLockService } from '../core/officeFocusLockService';
 import { getRestBlockService } from '../core/restBlockService';
 import { showMainWindow, closeOverlay, hideMainWindow } from './windowManager';
 import { app } from 'electron';
+import { getOverlaySyncService, OVERLAY_SYNC_CHANNELS } from '../core/overlaySync';
 
 /**
  * Register all IPC handlers
@@ -147,5 +148,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.DELETE_REST_BLOCK_PRESET, (_event, presetId: string) => {
     const deleted = restBlockService.deletePreset(presetId);
     return { deleted, presets: restBlockService.getPresets() };
+  });
+
+  // Phase 2: Overlay sync heartbeat handler
+  ipcMain.on(OVERLAY_SYNC_CHANNELS.HEARTBEAT_RESPONSE, () => {
+    getOverlaySyncService().onHeartbeatResponse();
   });
 }

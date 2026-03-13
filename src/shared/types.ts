@@ -159,7 +159,40 @@ export interface PostponeCountsToday {
   longBreak: number;
 }
 
-// Current session state - persisted to survive restarts
+/**
+ * Current session state - persisted to survive restarts
+ * 
+ * SESSION STATE INVARIANTS:
+ * 
+ * 1. PHASE-MODE CONSISTENCY:
+ *    - If schedule mode is 'flow-based', currentFlowStepIndex MUST be valid (0 to flowSteps.length-1)
+ *    - If schedule mode is 'rule-based', currentFlowStepIndex MUST be undefined
+ * 
+ * 2. FLOW INDEX-PHASE CONSISTENCY:
+ *    - In flow mode, currentPhase SHOULD match flowSteps[currentFlowStepIndex].type
+ *    - EXCEPTION: during long-break (rule-based interrupt), phase won't match index
+ * 
+ * 3. POSTPONE STATE CONSISTENCY:
+ *    - If isPostponed is true: postponedPhase MUST be a break phase, currentPhase SHOULD be work phase
+ *    - If isPostponed is false: postponedPhase MUST be null, postponedUntil MUST be null
+ * 
+ * 4. PAUSE STATE CONSISTENCY:
+ *    - If isPaused is true: pausedAt MUST be set
+ *    - If isPaused is false: pausedAt MUST be null, pauseResumeAt MUST be null
+ * 
+ * 5. TIMESTAMP CONSISTENCY:
+ *    - phaseEndsAt should be > phaseStartedAt (unless idle)
+ *    - phaseRemainingMs should be <= phaseTotalMs
+ * 
+ * 6. RESET PRODUCES CLEAN STATE:
+ *    - After reset: currentPhase is first work phase (sit or stand)
+ *    - After reset: all postpone/pause/interrupted state is cleared
+ *    - After reset: cumulative work time is 0
+ * 
+ * 7. CURRENT/NEXT/THEN DERIVATION:
+ *    - next and then are ALWAYS derived, never stored
+ *    - In flow mode: next = flowSteps[(currentFlowStepIndex + 1) % length].type
+ */
 export interface SessionState {
   activeScheduleId: string | null;
   currentPhase: PhaseType;
@@ -190,6 +223,7 @@ export interface SessionState {
   // Interrupted phase tracking (for short break resume)
   interruptedPhase: PhaseType | null;
   interruptedPhaseRemainingMs: number;
+  interruptedFlowIndex: number | undefined; // Flow index when break interrupted work
   
   // Per-break-type postpone tracking
   postponeCountsToday: PostponeCountsToday;
@@ -217,6 +251,7 @@ export interface SessionState {
   // Used to restore work after postponed break completes
   prePostponeWorkPhase: PhaseType | null;
   prePostponeWorkPhaseRemainingMs: number;
+  prePostponeFlowIndex: number | undefined; // Flow index to restore after postpone
 }
 
 // App configuration
@@ -364,6 +399,12 @@ export interface TimerTick {
   breakProgress: BreakProgress;
   // Configured durations from active schedule
   configuredDurations: ConfiguredDurations;
+  // Phase 1.5: Debug snapshot for dev mode dashboard panel
+  debugSnapshot?: {
+    currentFlowStepIndex: number | undefined;
+    validationStatus: 'ok' | 'warning' | 'error';
+    flowStepsCount: number;
+  };
 }
 
 // IPC channel names
@@ -502,6 +543,7 @@ export const INITIAL_SESSION_STATE: SessionState = {
   breakCountResetDate: new Date().toISOString().split('T')[0],
   interruptedPhase: null,
   interruptedPhaseRemainingMs: 0,
+  interruptedFlowIndex: undefined,
   postponeCountsToday: { ...INITIAL_POSTPONE_COUNTS },
   postponeResetDate: new Date().toISOString().split('T')[0],
   isPaused: false,
@@ -513,6 +555,7 @@ export const INITIAL_SESSION_STATE: SessionState = {
   postponedBreakType: null,
   prePostponeWorkPhase: null,
   prePostponeWorkPhaseRemainingMs: 0,
+  prePostponeFlowIndex: undefined,
 };
 
 // Default general settings

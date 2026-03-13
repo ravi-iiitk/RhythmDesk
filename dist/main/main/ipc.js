@@ -16,6 +16,7 @@ const officeFocusLockService_1 = require("../core/officeFocusLockService");
 const restBlockService_1 = require("../core/restBlockService");
 const windowManager_1 = require("./windowManager");
 const electron_2 = require("electron");
+const overlaySync_1 = require("../core/overlaySync");
 /**
  * Register all IPC handlers
  */
@@ -120,6 +121,10 @@ function registerIpcHandlers() {
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.DELETE_REST_BLOCK_PRESET, (_event, presetId) => {
         const deleted = restBlockService.deletePreset(presetId);
         return { deleted, presets: restBlockService.getPresets() };
+    });
+    // Phase 2: Overlay sync heartbeat handler
+    electron_1.ipcMain.on(overlaySync_1.OVERLAY_SYNC_CHANNELS.HEARTBEAT_RESPONSE, () => {
+        (0, overlaySync_1.getOverlaySyncService)().onHeartbeatResponse();
     });
 }
 //# sourceMappingURL=ipc.js.map

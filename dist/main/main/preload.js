@@ -6,6 +6,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const types_1 = require("../shared/types");
+const overlaySync_1 = require("../core/overlaySync");
 const api = {
     // Config operations
     getConfig: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.GET_CONFIG),
@@ -76,6 +77,15 @@ const api = {
         const handler = (_event, state) => callback(state);
         electron_1.ipcRenderer.on(types_1.IPC_CHANNELS.REST_BLOCK_CHANGED, handler);
         return () => electron_1.ipcRenderer.removeListener(types_1.IPC_CHANNELS.REST_BLOCK_CHANGED, handler);
+    },
+    // Phase 2: Overlay sync (heartbeat)
+    sendHeartbeatResponse: () => {
+        electron_1.ipcRenderer.send(overlaySync_1.OVERLAY_SYNC_CHANNELS.HEARTBEAT_RESPONSE);
+    },
+    onHeartbeatRequest: (callback) => {
+        const handler = () => callback();
+        electron_1.ipcRenderer.on(overlaySync_1.OVERLAY_SYNC_CHANNELS.HEARTBEAT_REQUEST, handler);
+        return () => electron_1.ipcRenderer.removeListener(overlaySync_1.OVERLAY_SYNC_CHANNELS.HEARTBEAT_REQUEST, handler);
     },
 };
 electron_1.contextBridge.exposeInMainWorld('rhythmDesk', api);

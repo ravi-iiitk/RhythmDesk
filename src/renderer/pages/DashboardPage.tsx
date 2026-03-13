@@ -231,7 +231,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
             {tick.isPaused && <span className="status-badge status-paused" style={{ fontSize: '0.875rem' }}>⏸️ Paused</span>}
             {tick.isPostponed && tick.pendingBreakPhase && (
               <span className="status-badge" style={{ backgroundColor: 'rgba(251, 191, 36, 0.2)', color: '#fbbf24', fontSize: '0.875rem' }}>
-                ⏳ {PHASE_DISPLAY_NAMES[tick.pendingBreakPhase] || tick.pendingBreakPhase} in {formatDuration(tick.pendingBreakInMs)}
+                ⏳ Pending {PHASE_DISPLAY_NAMES[tick.pendingBreakPhase] || tick.pendingBreakPhase} in {formatDuration(tick.pendingBreakInMs)}
               </span>
             )}
             {tick.isStrictMode && (
@@ -370,7 +370,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
       {/* Row 2: Today's Stats - Separate blocks */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem' }}>
         <div className="card" style={{ padding: '0.75rem 1rem', marginBottom: 0, textAlign: 'center' }}>
-          <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.25rem' }}>⏱️ Worked Today</div>
+          <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.25rem' }}>⏱️ Work Time Today</div>
           <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#3b82f6' }}>{formatDurationHuman(tick.cumulativeWorkTimeMs)}</div>
         </div>
         <div className="card" style={{ padding: '0.75rem 1rem', marginBottom: 0, textAlign: 'center' }}>
@@ -419,7 +419,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
         {/* Next Phase + Controls Row */}
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ fontSize: '1.1rem', color: '#94a3b8' }}>
-            Next: <strong style={{ color: '#e2e8f0' }}>{nextPhaseName}</strong>
+            Next Activity: <strong style={{ color: '#e2e8f0' }}>{nextPhaseName}</strong>
             <span style={{ color: '#64748b', marginLeft: '0.5rem' }}>
               ({getConfiguredDurationForPhase(tick.nextPhase, tick.configuredDurations)})
             </span>
@@ -714,6 +714,82 @@ function DashboardPage({ tick }: DashboardPageProps) {
           </div>
         </div>
       </div>
+      
+      {/* Phase 1.5: Session Debug Panel (Dev Mode Only) */}
+      {process.env.NODE_ENV === 'development' && tick.debugSnapshot && (
+        <div style={{
+          backgroundColor: '#1e1b4b',
+          borderRadius: '12px',
+          padding: '1rem',
+          marginTop: '1rem',
+          border: '1px solid rgba(139, 92, 246, 0.3)',
+        }}>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '0.5rem', 
+            marginBottom: '0.75rem',
+            color: '#a78bfa',
+            fontSize: '0.85rem',
+            fontWeight: 600,
+          }}>
+            🔧 Session Debug Info
+            <span style={{
+              padding: '2px 8px',
+              borderRadius: '4px',
+              fontSize: '0.7rem',
+              fontWeight: 700,
+              backgroundColor: tick.debugSnapshot.validationStatus === 'ok' 
+                ? 'rgba(34, 197, 94, 0.2)' 
+                : tick.debugSnapshot.validationStatus === 'warning'
+                ? 'rgba(251, 191, 36, 0.2)'
+                : 'rgba(239, 68, 68, 0.2)',
+              color: tick.debugSnapshot.validationStatus === 'ok' 
+                ? '#22c55e' 
+                : tick.debugSnapshot.validationStatus === 'warning'
+                ? '#fbbf24'
+                : '#ef4444',
+            }}>
+              {tick.debugSnapshot.validationStatus.toUpperCase()}
+            </span>
+          </div>
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(3, 1fr)', 
+            gap: '0.5rem',
+            fontSize: '0.75rem',
+          }}>
+            <div style={{ padding: '0.4rem', backgroundColor: 'rgba(139, 92, 246, 0.1)', borderRadius: '6px' }}>
+              <div style={{ color: '#94a3b8', marginBottom: '2px' }}>currentPhase</div>
+              <div style={{ color: '#e0e7ff', fontFamily: 'monospace' }}>{tick.currentPhase}</div>
+            </div>
+            <div style={{ padding: '0.4rem', backgroundColor: 'rgba(139, 92, 246, 0.1)', borderRadius: '6px' }}>
+              <div style={{ color: '#94a3b8', marginBottom: '2px' }}>flowIndex</div>
+              <div style={{ color: '#e0e7ff', fontFamily: 'monospace' }}>
+                {tick.debugSnapshot.currentFlowStepIndex ?? 'N/A'} / {tick.debugSnapshot.flowStepsCount || 'N/A'}
+              </div>
+            </div>
+            <div style={{ padding: '0.4rem', backgroundColor: 'rgba(139, 92, 246, 0.1)', borderRadius: '6px' }}>
+              <div style={{ color: '#94a3b8', marginBottom: '2px' }}>nextPhase</div>
+              <div style={{ color: '#e0e7ff', fontFamily: 'monospace' }}>{tick.nextPhase}</div>
+            </div>
+            <div style={{ padding: '0.4rem', backgroundColor: 'rgba(139, 92, 246, 0.1)', borderRadius: '6px' }}>
+              <div style={{ color: '#94a3b8', marginBottom: '2px' }}>cumulativeWork</div>
+              <div style={{ color: '#e0e7ff', fontFamily: 'monospace' }}>{Math.round(tick.cumulativeWorkTimeMs / 1000)}s</div>
+            </div>
+            <div style={{ padding: '0.4rem', backgroundColor: 'rgba(139, 92, 246, 0.1)', borderRadius: '6px' }}>
+              <div style={{ color: '#94a3b8', marginBottom: '2px' }}>pendingBreak</div>
+              <div style={{ color: '#e0e7ff', fontFamily: 'monospace' }}>{tick.pendingBreakPhase || 'none'}</div>
+            </div>
+            <div style={{ padding: '0.4rem', backgroundColor: 'rgba(139, 92, 246, 0.1)', borderRadius: '6px' }}>
+              <div style={{ color: '#94a3b8', marginBottom: '2px' }}>postponeIn</div>
+              <div style={{ color: '#e0e7ff', fontFamily: 'monospace' }}>
+                {tick.pendingBreakInMs > 0 ? `${Math.round(tick.pendingBreakInMs / 1000)}s` : 'N/A'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

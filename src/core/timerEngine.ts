@@ -38,9 +38,39 @@ import { phaseToBreakType, getMaxPostponesForBreakType } from './overlayPolicy';
 import logger from './logger';
 import { 
   isFlowBasedSchedule, 
-  getNextFlowStepIndex, 
   getFlowStepDurationMs,
 } from './flowUtils';
+import {
+  TransitionType,
+  computeNextFlowPhase,
+  computeThenFlowPhase,
+  computeNextRuleBasedPhase,
+  computeThenRuleBasedPhase,
+  computeResetState,
+  isBreakPhase,
+  findFirstWorkPhaseIndex,
+  findPhaseIndex,
+  isValidFlowIndex,
+  logTransition,
+} from './transitions';
+import {
+  validateSessionState,
+  normalizeSessionState,
+  logValidationResult,
+} from './sessionValidator';
+import {
+  logSessionEvent,
+  normalizeFlowIndex,
+  validateRuntimeState,
+  attemptSafeRecovery,
+  createDebugSnapshot,
+} from './sessionDebug';
+import {
+  checkRuntimeInvariants,
+  validateTransitionPreconditions,
+  logInvariantViolations,
+  TransitionContext,
+} from './runtimeInvariants';
 
 const TIME_JUMP_THRESHOLD_MS = 5000; // 5 seconds - indicates sleep/wake or time jump
 const STATE_SAVE_DEBOUNCE_MS = 5000; // Save state every 5 seconds max
@@ -54,6 +84,85 @@ export class TimerEngine extends EventEmitter {
   private stateChanged: boolean = false;
   // Track the phase we were in before a break interrupted
   private preBreakPhase: PhaseType | null = null;
+  
+  // PHASE 1.5: Frozen flow snapshot for active runtime
+  // This prevents config edits from leaking into active session
+  // Only updated on session start or explicit reset
+  private runtimeFlowSnapshot: FlowStep[] | null = null;
+
+  /**
+   * PHASE 1.5: Get the runtime flow steps (frozen snapshot)
+   * Returns the frozen snapshot if available, otherwise falls back to config
+   * This ensures config edits don't affect active runtime until reset
+   */
+  private getRuntimeFlowSteps(): FlowStep[] | undefined {
+    // Use frozen snapshot if available
+    if (this.runtimeFlowSnapshot && this.runtimeFlowSnapshot.length > 0) {
+      return this.runtimeFlowSnapshot;
+    }
+    // Fall back to schedule config (for recovery/initial state)
+    return this.currentSchedule?.flowSteps;
+  }
+
+  /**
+   * PHASE 1.5: Freeze the current flow config as runtime snapshot
+   * Called when session starts or is explicitly reset
+   */
+  private freezeFlowSnapshot(): void {
+    if (this.currentSchedule && isFlowBasedSchedule(this.currentSchedule)) {
+      // Deep copy to prevent mutation
+      this.runtimeFlowSnapshot = JSON.parse(JSON.stringify(this.currentSchedule.flowSteps));
+      logger.info('TimerEngine', 'Flow snapshot frozen', {
+        stepCount: this.runtimeFlowSnapshot?.length,
+        hash: this.runtimeFlowSnapshot ? computeFlowConfigHash(this.runtimeFlowSnapshot) : undefined,
+      });
+    } else {
+      this.runtimeFlowSnapshot = null;
+    }
+  }
+
+  /**
+   * ARCHITECTURE HARDENING: Create transition context for invariant checks
+   */
+  private getTransitionContext(): TransitionContext {
+    return {
+      schedule: this.currentSchedule,
+      runtimeFlowSnapshot: this.runtimeFlowSnapshot,
+    };
+  }
+
+  /**
+   * ARCHITECTURE HARDENING: Validate current state against runtime invariants
+   * Called before committing state changes to prevent invalid states
+   */
+  private validateStateInvariants(label: string): boolean {
+    const context = this.getTransitionContext();
+    const result = checkRuntimeInvariants(this.state, context);
+    
+    if (!result.valid) {
+      logInvariantViolations(result.violations, label);
+      return false;
+    }
+    
+    return true;
+  }
+
+  /**
+   * ARCHITECTURE HARDENING: Validate preconditions before transition
+   */
+  private canPerformTransition(transitionType: string): { allowed: boolean; reason?: string } {
+    const context = this.getTransitionContext();
+    const result = validateTransitionPreconditions(transitionType, this.state, context);
+    
+    if (!result.valid) {
+      logger.debug('TimerEngine', `Transition ${transitionType} blocked`, {
+        failedPreconditions: result.failedPreconditions,
+      });
+      return { allowed: false, reason: result.failedPreconditions[0] };
+    }
+    
+    return { allowed: true };
+  }
 
   constructor() {
     super();
@@ -90,9 +199,26 @@ export class TimerEngine extends EventEmitter {
   /**
    * Recover state from persisted timestamps
    * Used after sleep/wake, time jumps, or app restart
+   * 
+   * RECOVERY BEHAVIOR:
+   * - Validates session state against current schedule
+   * - Normalizes any inconsistencies (flow index, postpone state, etc.)
+   * - Handles stale phases (>5 min old) by resetting to idle
+   * - Preserves postponed breaks correctly
    */
   private recoverStateFromTimestamps(): void {
     const now = Date.now();
+    
+    // Phase 1.5: Log recovery start
+    logSessionEvent({
+      event: 'restartRecovery',
+      phase: this.state.currentPhase,
+      index: this.state.currentFlowStepIndex,
+      pendingBreak: this.state.postponedPhase,
+      postponeUntil: this.state.postponedUntil,
+      cumulativeWorkMs: this.state.cumulativeWorkTimeMs,
+      scheduleId: this.state.activeScheduleId,
+    });
     
     // Skip if idle
     if (this.state.currentPhase === 'idle') return;
@@ -100,15 +226,57 @@ export class TimerEngine extends EventEmitter {
     // If paused, nothing to recover
     if (this.state.isPaused) return;
     
+    // Validate and normalize state first
+    const schedules = configService.getSchedules();
+    const activeSchedule = this.state.activeScheduleId 
+      ? schedules.find(s => s.id === this.state.activeScheduleId) 
+      : null;
+    
+    // Validate state
+    const validation = validateSessionState(this.state, activeSchedule ?? null);
+    if (!validation.valid || validation.warnings.length > 0) {
+      logValidationResult(validation, 'Recovery - before normalization');
+      
+      // Normalize state to fix inconsistencies
+      const normalized = normalizeSessionState(this.state, activeSchedule ?? null);
+      if (normalized.changed) {
+        this.state = normalized.state;
+        logger.info('TimerEngine', 'Recovery: normalized state', { changes: normalized.changes });
+      }
+    }
+    
+    // Verify flow index is valid for flow-based schedules
+    if (activeSchedule && isFlowBasedSchedule(activeSchedule)) {
+      const flowSteps = activeSchedule.flowSteps!;
+      if (!isValidFlowIndex(this.state.currentFlowStepIndex, flowSteps)) {
+        logger.warn('TimerEngine', 'Recovery: invalid flow index, resyncing');
+        const correctIndex = findPhaseIndex(flowSteps, this.state.currentPhase);
+        this.state.currentFlowStepIndex = correctIndex !== -1 ? correctIndex : findFirstWorkPhaseIndex(flowSteps);
+      }
+      
+      // PHASE 1.5: Initialize runtime flow snapshot on recovery
+      // Use the session's flowConfigHash to determine if we need fresh snapshot
+      if (!this.runtimeFlowSnapshot) {
+        this.currentSchedule = activeSchedule;
+        this.freezeFlowSnapshot();
+        logger.info('TimerEngine', 'Recovery: initialized runtime flow snapshot');
+      }
+    }
+    
     // If postponed, check if postpone has ended
     if (this.state.isPostponed && this.state.postponedUntil) {
       if (now >= this.state.postponedUntil) {
+        logTransition(TransitionType.POSTPONE_ENDED, {
+          postponedPhase: this.state.postponedPhase,
+        });
+        
         this.state.isPostponed = false;
         this.state.postponedUntil = null;
         if (this.state.postponedPhase) {
           this.startPhase(this.state.postponedPhase);
         }
         this.state.postponedPhase = null;
+        this.state.postponedBreakType = null;
         return;
       }
     }
@@ -125,7 +293,7 @@ export class TimerEngine extends EventEmitter {
         const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
         
         if (timeSincePhaseEnded > STALE_THRESHOLD_MS) {
-          logger.info('TimerEngine', 'Phase ended long ago - resetting session', {
+          logger.info('TimerEngine', 'Phase ended long ago - resetting to idle', {
             phase: this.state.currentPhase,
             phaseEndsAt: this.state.phaseEndsAt,
             timeSinceEndedMs: timeSincePhaseEnded,
@@ -134,6 +302,7 @@ export class TimerEngine extends EventEmitter {
           this.state.currentPhase = 'idle';
           this.state.phaseEndsAt = 0;
           this.state.phaseRemainingMs = 0;
+          this.state.currentFlowStepIndex = undefined;
           this.saveState();
         } else {
           // Phase ended recently - advance normally
@@ -344,11 +513,14 @@ export class TimerEngine extends EventEmitter {
         if (isFlowBasedSchedule(activeSchedule)) {
           this.state.currentFlowStepIndex = 0;
           this.state.flowConfigHash = computeFlowConfigHash(activeSchedule.flowSteps);
+          // PHASE 1.5: Freeze flow snapshot for active runtime
+          this.freezeFlowSnapshot();
           const firstStep = activeSchedule.flowSteps![0];
           this.startPhase(firstStep.type);
         } else {
           this.state.currentFlowStepIndex = undefined;
           this.state.flowConfigHash = undefined;
+          this.runtimeFlowSnapshot = null;
           this.startPhase('sit'); // Rule-based: always start with sitting
         }
       } else {
@@ -361,11 +533,18 @@ export class TimerEngine extends EventEmitter {
       
       this.emit('scheduleChange', this.currentSchedule);
     } else if (activeSchedule && this.currentSchedule) {
-      // Same schedule ID - but config might have been edited
-      // Always refresh to pick up any changes
-      this.currentSchedule = activeSchedule;
-      // Note: We don't auto-reset flow here even if flowSteps changed
-      // The dashboard will show "flow stale" notification and user can reset manually
+      // Same schedule ID - config might have been edited
+      // PHASE 1.5 FIX: Do NOT refresh runtime schedule from config
+      // Keep using the frozen snapshot until explicit reset
+      // Only update non-flow settings that are safe to change mid-session
+      // (e.g., strictMode, sound settings, but NOT flowSteps or durations)
+      // 
+      // The isFlowSessionStale() check will detect config changes
+      // and dashboard will show "flow stale" notification
+      // User must explicitly reset to apply changes
+      //
+      // NOTE: We intentionally do NOT do: this.currentSchedule = activeSchedule
+      // This prevents config edits from leaking into active runtime
     }
   }
   
@@ -433,10 +612,29 @@ export class TimerEngine extends EventEmitter {
   /**
    * Trigger a break, interrupting current phase
    * Stores current phase info to resume after break completes
+   * 
+   * PHASE 1.5 FIX: Also stores interrupted flow index for proper restoration
    */
   private triggerBreak(breakType: 'short-break' | 'long-break'): void {
     // Store current phase to resume after break
     this.preBreakPhase = this.state.currentPhase;
+    
+    // PHASE 1.5: Track interrupted flow index for flow-based schedules
+    // This ensures we can restore the correct flow position after break/postpone
+    if (isFlowBasedSchedule(this.currentSchedule)) {
+      this.state.interruptedFlowIndex = this.state.currentFlowStepIndex;
+    }
+    
+    // Phase 1.5: Log break start
+    logSessionEvent({
+      event: 'breakStart',
+      phase: breakType,
+      fromPhase: this.state.currentPhase,
+      cumulativeWorkMs: this.state.cumulativeWorkTimeMs,
+      index: this.state.currentFlowStepIndex,
+      interruptedIndex: this.state.interruptedFlowIndex,
+      scheduleId: this.currentSchedule?.id,
+    });
     
     // Increment break count
     if (breakType === 'short-break') {
@@ -455,22 +653,40 @@ export class TimerEngine extends EventEmitter {
    */
   private advancePhase(): void {
     const prevPhase = this.state.currentPhase;
+    const prevIndex = this.state.currentFlowStepIndex;
     
     // Handle flow-based mode
     if (isFlowBasedSchedule(this.currentSchedule)) {
       this.advanceFlowBasedPhase(prevPhase);
-      return;
+    } else {
+      // Rule-based mode (existing behavior)
+      this.advanceRuleBasedPhase(prevPhase);
     }
     
-    // Rule-based mode (existing behavior)
-    this.advanceRuleBasedPhase(prevPhase);
+    // Phase 1.5: Log phase transition
+    logSessionEvent({
+      event: 'phaseTransition',
+      fromPhase: prevPhase,
+      toPhase: this.state.currentPhase,
+      indexBefore: prevIndex,
+      indexAfter: this.state.currentFlowStepIndex,
+      next: this.getNextPhase(),
+      cumulativeWorkMs: this.state.cumulativeWorkTimeMs,
+      scheduleId: this.currentSchedule?.id,
+    });
   }
   
   /**
    * Advance phase in flow-based mode
+   * 
+   * Uses transition model for computing next phase to ensure consistency.
+   * INVARIANT: After this method, currentPhase MUST match flowSteps[currentFlowStepIndex].type
+   * 
+   * PHASE 1.5: Uses getRuntimeFlowSteps() to use frozen snapshot, not live config
    */
   private advanceFlowBasedPhase(prevPhase: PhaseType): void {
-    const flowSteps = this.currentSchedule?.flowSteps;
+    // PHASE 1.5: Use runtime flow snapshot instead of live config
+    const flowSteps = this.getRuntimeFlowSteps();
     if (!flowSteps || flowSteps.length === 0) {
       this.advanceRuleBasedPhase(prevPhase);
       return;
@@ -479,99 +695,100 @@ export class TimerEngine extends EventEmitter {
     // Handle long break completion (long break is still rule-based interrupt)
     if (prevPhase === 'long-break') {
       this.state.lastLongBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
-      // After long break, restart flow from first step
-      this.state.currentFlowStepIndex = 0;
-      const firstStep = flowSteps[0];
-      logger.info('TimerEngine', 'advanceFlowBasedPhase - after long break, reset to step 0', {
-        newIndex: 0,
-        newPhase: firstStep.type,
+      
+      // Phase 1.5: Log break end
+      logSessionEvent({
+        event: 'breakEnd',
+        phase: prevPhase,
+        cumulativeWorkMs: this.state.cumulativeWorkTimeMs,
+        scheduleId: this.currentSchedule?.id,
       });
-      this.startPhase(firstStep.type);
+      
+      // Use transition model: after long break, restart from first step
+      const result = computeNextFlowPhase(0, flowSteps, true /* isAfterLongBreak */);
+      this.state.currentFlowStepIndex = result.nextIndex;
+      
+      this.startPhase(result.nextPhase);
       return;
     }
     
     // Track short break completion for cumulative time tracking
     if (prevPhase === 'short-break') {
       this.state.lastShortBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
+      
+      // Phase 1.5: Log break end
+      logSessionEvent({
+        event: 'breakEnd',
+        phase: prevPhase,
+        cumulativeWorkMs: this.state.cumulativeWorkTimeMs,
+        scheduleId: this.currentSchedule?.id,
+      });
     }
     
-    // CRITICAL: Verify currentFlowStepIndex matches the current phase
-    // If there's a desync (e.g., from a rule-based break interrupt), resync first
-    const currentIndex = this.state.currentFlowStepIndex ?? 0;
-    const expectedPhaseAtIndex = flowSteps[currentIndex]?.type;
+    // Get current index, validating it's within bounds
+    let currentIndex = this.state.currentFlowStepIndex ?? 0;
     
-    // If we're coming from a phase that doesn't match the flow step,
-    // it means we were interrupted (e.g., by a break). Find the correct index.
-    // Note: long-break already returned early above, so only check short-break here
-    let syncedIndex = currentIndex;
-    const isShortBreak = prevPhase === 'short-break';
-    if (expectedPhaseAtIndex !== prevPhase && !isShortBreak) {
-      // The flow index is out of sync - find where we actually are
-      // This can happen if a break was triggered as an interrupt
-      logger.warn('TimerEngine', 'Flow index desync detected - resyncing', {
+    // Validate and resync if needed
+    if (!isValidFlowIndex(currentIndex, flowSteps)) {
+      logger.warn('TimerEngine', 'advanceFlowBasedPhase: invalid index, resyncing', {
+        currentIndex,
+        flowLength: flowSteps.length,
+      });
+      // Find correct index for current phase
+      const correctIndex = findPhaseIndex(flowSteps, prevPhase);
+      currentIndex = correctIndex !== -1 ? correctIndex : 0;
+      this.state.currentFlowStepIndex = currentIndex;
+    }
+    
+    // Check for phase-index desync (skip for short-break which is in flow)
+    const expectedPhaseAtIndex = flowSteps[currentIndex]?.type;
+    if (expectedPhaseAtIndex !== prevPhase && prevPhase !== 'short-break') {
+      logger.warn('TimerEngine', 'Flow index desync detected', {
         prevPhase,
         currentIndex,
         expectedPhaseAtIndex,
       });
-      // We'll just advance from current index anyway - the index represents
-      // where we SHOULD be, not necessarily where we were interrupted from
+      // Try to find correct index
+      const correctIndex = findPhaseIndex(flowSteps, prevPhase);
+      if (correctIndex !== -1) {
+        currentIndex = correctIndex;
+        this.state.currentFlowStepIndex = currentIndex;
+        logger.info('TimerEngine', 'Resynced to correct index', { correctIndex });
+      }
     }
     
-    // Advance to next step in flow
-    const nextIndex = getNextFlowStepIndex(syncedIndex, flowSteps);
-    this.state.currentFlowStepIndex = nextIndex;
-    
-    const nextStep = flowSteps[nextIndex];
+    // Use transition model to compute next phase
+    const result = computeNextFlowPhase(currentIndex, flowSteps, false);
+    this.state.currentFlowStepIndex = result.nextIndex;
     
     logger.info('TimerEngine', 'advanceFlowBasedPhase - advancing', {
       prevPhase,
-      fromIndex: syncedIndex,
-      toIndex: nextIndex,
-      newPhase: nextStep.type,
-      flowStepIds: flowSteps.map((s, i) => `${i}:${s.type}`).join(', '),
+      fromIndex: currentIndex,
+      toIndex: result.nextIndex,
+      newPhase: result.nextPhase,
     });
     
-    this.startPhase(nextStep.type);
+    this.startPhase(result.nextPhase);
   }
   
   /**
-   * Advance phase in rule-based mode (existing behavior)
+   * Advance phase in rule-based mode
+   * Uses transition model for computing next phase
    */
   private advanceRuleBasedPhase(prevPhase: PhaseType): void {
-    let nextPhase: PhaseType;
-
-    switch (prevPhase) {
-      case 'sit':
-        nextPhase = 'sit-to-stand-transition';
-        break;
-      case 'sit-to-stand-transition':
-        nextPhase = 'stand';
-        break;
-      case 'stand':
-        nextPhase = 'stand-to-sit-transition';
-        break;
-      case 'stand-to-sit-transition':
-        nextPhase = 'sit';
-        break;
-      case 'short-break':
-        this.state.lastShortBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
-        // Resume to pre-break phase if we interrupted a work phase
-        if (this.preBreakPhase && this.isWorkPhase(this.preBreakPhase)) {
-          nextPhase = this.preBreakPhase;
-        } else {
-          nextPhase = 'sit';
-        }
-        this.preBreakPhase = null;
-        break;
-      case 'long-break':
-        this.state.lastLongBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
-        // After long break, always start fresh with sit
-        // (Long break is a full reset point)
-        nextPhase = 'sit';
-        this.preBreakPhase = null;
-        break;
-      default:
-        nextPhase = 'sit';
+    // Track break completion for cumulative time tracking
+    if (prevPhase === 'short-break') {
+      this.state.lastShortBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
+    } else if (prevPhase === 'long-break') {
+      this.state.lastLongBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
+    }
+    
+    // Use transition model to compute next phase
+    const nextPhase = computeNextRuleBasedPhase(prevPhase, this.preBreakPhase);
+    
+    // Clear pre-break phase after breaks
+    if (isBreakPhase(prevPhase)) {
+      this.preBreakPhase = null;
     }
 
     this.startPhase(nextPhase);
@@ -707,45 +924,23 @@ export class TimerEngine extends EventEmitter {
 
   /**
    * Get the phase that comes after nextPhase (for tooltip "then" display)
+   * 
+   * INVARIANT 7: then is ALWAYS derived from session state, never stored
    */
   private getThenPhase(nextPhase: PhaseType): PhaseType {
     if (!this.currentSchedule || nextPhase === 'idle') return 'idle';
     const schedule = this.currentSchedule;
 
-    // Flow-based mode
+    // Flow-based mode: use transition model
     if (isFlowBasedSchedule(schedule)) {
       const flowSteps = schedule.flowSteps!;
       const currentIndex = this.state.currentFlowStepIndex ?? 0;
-      // Then phase is 2 steps ahead from current
-      const thenIndex = (currentIndex + 2) % flowSteps.length;
-      const thenPhase = flowSteps[thenIndex].type;
-      
-      logger.debug('TimerEngine', 'getThenPhase - flow mode', {
-        currentIndex,
-        thenIndex,
-        thenPhase,
-      });
-      
-      return thenPhase;
+      const result = computeThenFlowPhase(currentIndex, flowSteps);
+      return result.nextPhase;
     }
 
-    // Rule-based mode - predict what comes after nextPhase
-    switch (nextPhase) {
-      case 'sit':
-        return 'sit-to-stand-transition';
-      case 'sit-to-stand-transition':
-        return 'stand';
-      case 'stand':
-        return 'stand-to-sit-transition';
-      case 'stand-to-sit-transition':
-        return 'sit';
-      case 'short-break':
-      case 'long-break':
-        // After break, return to work (sit or stand based on preBreakPhase)
-        return this.preBreakPhase || 'sit';
-      default:
-        return 'idle';
-    }
+    // Rule-based mode: use transition model
+    return computeThenRuleBasedPhase(nextPhase);
   }
 
   /**
@@ -794,67 +989,35 @@ export class TimerEngine extends EventEmitter {
 
   /**
    * Get the next phase after current (for display purposes)
+   * 
+   * INVARIANT 7: next is ALWAYS derived from session state, never stored
+   * PHASE 1.5: Uses runtime flow snapshot, not live config
    */
   getNextPhase(): PhaseType {
     if (!this.currentSchedule) return 'idle';
 
-    // Flow-based mode: next phase comes from flow steps
+    // Flow-based mode: use transition model with runtime snapshot
     if (isFlowBasedSchedule(this.currentSchedule)) {
-      return this.getNextFlowBasedPhase();
+      // PHASE 1.5: Use runtime flow snapshot instead of live config
+      const flowSteps = this.getRuntimeFlowSteps();
+      if (!flowSteps || flowSteps.length === 0) {
+        return computeNextRuleBasedPhase(this.state.currentPhase, this.preBreakPhase);
+      }
+      
+      // If currently in long break (rule-based interrupt), next is first step
+      if (this.state.currentPhase === 'long-break') {
+        return flowSteps[0].type;
+      }
+      
+      const currentIndex = this.state.currentFlowStepIndex ?? 0;
+      const result = computeNextFlowPhase(currentIndex, flowSteps, false);
+      return result.nextPhase;
     }
 
-    // Rule-based mode (existing behavior)
-    switch (this.state.currentPhase) {
-      case 'sit':
-        return 'sit-to-stand-transition';
-      case 'sit-to-stand-transition':
-        return 'stand';
-      case 'stand':
-        return 'stand-to-sit-transition';
-      case 'stand-to-sit-transition':
-        return 'sit';
-      case 'short-break':
-      case 'long-break':
-        return 'sit';
-      default:
-        return 'idle';
-    }
+    // Rule-based mode: use transition model
+    return computeNextRuleBasedPhase(this.state.currentPhase, this.preBreakPhase);
   }
   
-  /**
-   * Get next phase in flow-based mode
-   */
-  private getNextFlowBasedPhase(): PhaseType {
-    const flowSteps = this.currentSchedule?.flowSteps;
-    if (!flowSteps || flowSteps.length === 0) return 'idle';
-    
-    // If currently in long break (rule-based interrupt), next is first step
-    if (this.state.currentPhase === 'long-break') {
-      return flowSteps[0].type;
-    }
-    
-    const currentIndex = this.state.currentFlowStepIndex ?? 0;
-    const nextIndex = (currentIndex + 1) % flowSteps.length;
-    const nextStep = flowSteps[nextIndex];
-    const nextPhase = nextStep?.type ?? 'idle';
-    
-    // Safety check: detect if current and next are the same unexpectedly
-    const currentStepType = flowSteps[currentIndex]?.type;
-    if (currentStepType === nextPhase && currentIndex !== nextIndex) {
-      // This is only expected if the flow has consecutive duplicate step types
-      // Log for debugging
-      logger.debug('TimerEngine', 'getNextFlowBasedPhase - same phase types', {
-        currentIndex,
-        nextIndex,
-        currentPhase: this.state.currentPhase,
-        currentStepType,
-        nextPhase,
-      });
-    }
-    
-    return nextPhase;
-  }
-
   /**
    * Pause the timer
    */
@@ -904,6 +1067,13 @@ export class TimerEngine extends EventEmitter {
   postpone(minutes: number): boolean {
     if (!this.currentSchedule) return false;
     
+    // ARCHITECTURE HARDENING: Pre-transition validation
+    const precondCheck = this.canPerformTransition('postpone');
+    if (!precondCheck.allowed) {
+      logger.debug('TimerEngine', 'Postpone blocked by precondition', { reason: precondCheck.reason });
+      return false;
+    }
+    
     const breakType = phaseToBreakType(this.state.currentPhase);
     if (!breakType) return false; // Can only postpone breaks/transitions
     
@@ -929,9 +1099,13 @@ export class TimerEngine extends EventEmitter {
     const workPhaseToRestore = this.preBreakPhase || this.state.interruptedPhase || 'sit';
     const workPhaseRemainingMs = this.state.interruptedPhaseRemainingMs || this.getPhaseDurationMs(workPhaseToRestore);
     
+    // PHASE 1.5 FIX: Also restore the flow index to match the work phase
+    const flowIndexToRestore = this.state.interruptedFlowIndex;
+    
     // Save what work phase we're restoring (for after postponed break completes)
     this.state.prePostponeWorkPhase = workPhaseToRestore;
     this.state.prePostponeWorkPhaseRemainingMs = workPhaseRemainingMs;
+    this.state.prePostponeFlowIndex = flowIndexToRestore;
     
     // Restore work phase as current phase
     this.state.currentPhase = workPhaseToRestore;
@@ -940,7 +1114,37 @@ export class TimerEngine extends EventEmitter {
     this.state.phaseStartedAt = Date.now();
     this.state.phaseEndsAt = Date.now() + workPhaseRemainingMs;
     
-    logger.info('TimerEngine', `Break postponed: ${postponedBreakPhase} for ${minutes}min, resuming ${workPhaseToRestore}`);
+    // PHASE 1.5 FIX: Restore flow index to match restored work phase
+    // This ensures currentPhase and currentFlowStepIndex are consistent
+    if (isFlowBasedSchedule(this.currentSchedule) && flowIndexToRestore !== undefined) {
+      this.state.currentFlowStepIndex = flowIndexToRestore;
+    }
+    
+    // Phase 1.5: Structured postpone logging
+    logSessionEvent({
+      event: 'postponeBreak',
+      phase: workPhaseToRestore,
+      pendingBreak: postponedBreakPhase,
+      postponeUntil: this.state.postponedUntil,
+      cumulativeWorkMs: this.state.cumulativeWorkTimeMs,
+      scheduleId: this.currentSchedule?.id,
+      restoredFlowIndex: flowIndexToRestore,
+    });
+    
+    // ARCHITECTURE HARDENING: Post-transition invariant validation
+    this.validateStateInvariants('After postpone');
+    
+    // Validate postpone state safety
+    const nextPhase = this.getNextPhase();
+    const validation = validateRuntimeState(this.state, this.currentSchedule, nextPhase);
+    if (!validation.valid) {
+      logSessionEvent({
+        event: 'validationError',
+        reason: 'Invalid state after postpone',
+        phase: this.state.currentPhase,
+        pendingBreak: this.state.postponedPhase,
+      });
+    }
     
     this.saveState();
 
@@ -974,35 +1178,75 @@ export class TimerEngine extends EventEmitter {
 
   /**
    * Skip the current phase (if allowed)
+   * 
+   * SKIP SEMANTICS:
+   * - Rule-based: advances to next phase in sit→trans→stand→trans cycle
+   * - Flow-based: advances currentFlowStepIndex and updates currentPhase to match
+   * - Breaks: advances out of break, resumes work or continues flow
+   * 
+   * SKIP SAFETY (Phase 1.5):
+   * 1. Advance flow index by exactly one step
+   * 2. Normalize index using normalizeFlowIndex
+   * 3. Update currentPhase
+   * 4. Recompute next and then
+   * 5. Emit state update
+   * 
+   * INVARIANT: After skip, currentPhase MUST match flowSteps[currentFlowStepIndex] (in flow mode)
    */
   skipPhase(): void {
     if (!this.currentSchedule) return;
-    // Only allow skipping if noSkipEnabled is false
     if (this.currentSchedule.noSkipEnabled) return;
     
-    // Debug logging for flow state before skip
-    if (isFlowBasedSchedule(this.currentSchedule)) {
-      const flowSteps = this.currentSchedule.flowSteps!;
-      logger.info('TimerEngine', 'Skip Phase - BEFORE', {
-        currentPhase: this.state.currentPhase,
-        currentFlowStepIndex: this.state.currentFlowStepIndex,
-        flowStepAtIndex: flowSteps[this.state.currentFlowStepIndex ?? 0]?.type,
-        nextFlowStep: flowSteps[((this.state.currentFlowStepIndex ?? 0) + 1) % flowSteps.length]?.type,
-        flowLength: flowSteps.length,
-      });
+    // ARCHITECTURE HARDENING: Pre-transition validation
+    const precondCheck = this.canPerformTransition('skip');
+    if (!precondCheck.allowed) {
+      logger.debug('TimerEngine', 'Skip blocked by precondition', { reason: precondCheck.reason });
+      return;
     }
     
+    const indexBefore = this.state.currentFlowStepIndex;
+    const phaseBefore = this.state.currentPhase;
+    
+    // For flow-based mode, ensure index is synced before advancing
+    if (isFlowBasedSchedule(this.currentSchedule)) {
+      // PHASE 1.5: Use runtime flow snapshot instead of live config
+      const flowSteps = this.getRuntimeFlowSteps();
+      if (flowSteps && flowSteps.length > 0) {
+        // Normalize index before skip
+        const normalizedIndex = normalizeFlowIndex(indexBefore, flowSteps.length);
+        if (normalizedIndex !== indexBefore) {
+          this.state.currentFlowStepIndex = normalizedIndex;
+        }
+      }
+    }
+    
+    // Advance phase
     this.advancePhase();
     
-    // Debug logging for flow state after skip
+    // Get new state after advance
+    const indexAfter = this.state.currentFlowStepIndex;
+    const nextPhase = this.getNextPhase();
+    
+    // Log skip event with structured format
+    logSessionEvent({
+      event: 'skipPhase',
+      phase: this.state.currentPhase,
+      fromPhase: phaseBefore,
+      indexBefore,
+      indexAfter,
+      next: nextPhase,
+      scheduleId: this.currentSchedule?.id,
+    });
+    
+    // Validate and recover if needed (flow mode)
     if (isFlowBasedSchedule(this.currentSchedule)) {
-      const flowSteps = this.currentSchedule.flowSteps!;
-      logger.info('TimerEngine', 'Skip Phase - AFTER', {
-        currentPhase: this.state.currentPhase,
-        currentFlowStepIndex: this.state.currentFlowStepIndex,
-        flowStepAtIndex: flowSteps[this.state.currentFlowStepIndex ?? 0]?.type,
-        nextFlowStep: flowSteps[((this.state.currentFlowStepIndex ?? 0) + 1) % flowSteps.length]?.type,
-      });
+      const validation = validateRuntimeState(this.state, this.currentSchedule, nextPhase);
+      if (!validation.valid) {
+        const recovery = attemptSafeRecovery(this.state, this.currentSchedule);
+        if (recovery.recovered && recovery.newIndex !== undefined) {
+          this.state.currentFlowStepIndex = recovery.newIndex;
+        }
+      }
     }
     
     // Emit tick immediately after skip to update UI
@@ -1020,14 +1264,11 @@ export class TimerEngine extends EventEmitter {
    * Reset the active session completely
    * Restarts from the beginning without changing schedule configuration
    * 
-   * Resets:
-   * - Current phase to sitting work
-   * - All phase progress
-   * - Cumulative work time
-   * - Work time toward breaks (lastShortBreakAtWorkTimeMs, lastLongBreakAtWorkTimeMs)
-   * - Postponed state
-   * - Interrupted phase state
-   * - Paused state
+   * RESET SEMANTICS (Invariant 6):
+   * - After reset: currentPhase is first work phase (sit or stand)
+   * - After reset: all postpone/pause/interrupted state is cleared
+   * - After reset: cumulative work time is 0
+   * - Reset does NOT mutate saved schedule config
    * 
    * Does NOT reset:
    * - Postpone counts today (use resetTodayCounters for that)
@@ -1039,7 +1280,18 @@ export class TimerEngine extends EventEmitter {
       return;
     }
     
-    logger.info('TimerEngine', `Resetting session for schedule: ${this.currentSchedule.name}`);
+    // ARCHITECTURE HARDENING: Pre-transition validation
+    const precondCheck = this.canPerformTransition('reset');
+    if (!precondCheck.allowed) {
+      logger.warn('TimerEngine', 'Reset blocked by precondition', { reason: precondCheck.reason });
+      return;
+    }
+    
+    logTransition(TransitionType.RESET_REQUESTED, {
+      scheduleName: this.currentSchedule.name,
+      currentPhase: this.state.currentPhase,
+      scheduleMode: this.currentSchedule.mode,
+    });
     
     // Reload schedule from config to restore original flow order
     // (shuffle/reverse may have modified the in-memory flowSteps)
@@ -1051,49 +1303,26 @@ export class TimerEngine extends EventEmitter {
     
     const now = Date.now();
     
-    // Determine starting phase and duration based on schedule mode
-    let startPhase: PhaseType;
-    let startDurationMs: number;
+    // Use transition model to compute clean reset state
+    const resetState = computeResetState(this.currentSchedule);
     
-    if (isFlowBasedSchedule(this.currentSchedule)) {
-      // Flow-based: find first WORK phase (sit or stand), not just index 0
-      // This handles reversed flows that might start with a break
-      const flowSteps = this.currentSchedule.flowSteps!;
-      let startIndex = 0;
-      
-      // Find first work phase
-      for (let i = 0; i < flowSteps.length; i++) {
-        if (flowSteps[i].type === 'sit' || flowSteps[i].type === 'stand') {
-          startIndex = i;
-          break;
-        }
-      }
-      
-      this.state.currentFlowStepIndex = startIndex;
-      this.state.flowConfigHash = computeFlowConfigHash(flowSteps);
-      const firstStep = flowSteps[startIndex];
-      startPhase = firstStep.type;
-      startDurationMs = getFlowStepDurationMs(firstStep);
-      
-      logger.info('TimerEngine', 'Reset: starting at first work phase', { 
-        startIndex, 
-        startPhase,
-        flowOrder: flowSteps.map(s => s.type).join(' -> ')
-      });
-    } else {
-      // Rule-based: start with sitting
-      this.state.currentFlowStepIndex = undefined;
-      this.state.flowConfigHash = undefined;
-      startPhase = 'sit';
-      startDurationMs = minutesToMs(this.currentSchedule.sitMinutes);
-    }
-    
-    // Reset all session state
-    this.state.currentPhase = startPhase;
+    // Apply reset state
+    this.state.currentPhase = resetState.currentPhase;
+    this.state.currentFlowStepIndex = resetState.currentFlowStepIndex;
     this.state.phaseStartedAt = now;
-    this.state.phaseEndsAt = now + startDurationMs;
-    this.state.phaseRemainingMs = startDurationMs;
-    this.state.phaseTotalMs = startDurationMs;
+    this.state.phaseEndsAt = now + resetState.phaseDurationMs;
+    this.state.phaseRemainingMs = resetState.phaseDurationMs;
+    this.state.phaseTotalMs = resetState.phaseDurationMs;
+    
+    // Update flow config hash for flow-based schedules
+    if (isFlowBasedSchedule(this.currentSchedule)) {
+      this.state.flowConfigHash = computeFlowConfigHash(this.currentSchedule.flowSteps);
+      // PHASE 1.5: Re-freeze flow snapshot from fresh config
+      this.freezeFlowSnapshot();
+    } else {
+      this.state.flowConfigHash = undefined;
+      this.runtimeFlowSnapshot = null;
+    }
     
     // Reset cumulative work time
     this.state.cumulativeWorkTimeMs = 0;
@@ -1102,19 +1331,21 @@ export class TimerEngine extends EventEmitter {
     this.state.lastShortBreakAtWorkTimeMs = 0;
     this.state.lastLongBreakAtWorkTimeMs = 0;
     
-    // Clear interrupted phase
+    // Clear interrupted phase and flow index
     this.state.interruptedPhase = null;
     this.state.interruptedPhaseRemainingMs = 0;
+    this.state.interruptedFlowIndex = undefined;
     
-    // Clear postponed state
+    // Clear postponed state (Invariant 3)
     this.state.isPostponed = false;
     this.state.postponedUntil = null;
     this.state.postponedPhase = null;
     this.state.postponedBreakType = null;
     this.state.prePostponeWorkPhase = null;
     this.state.prePostponeWorkPhaseRemainingMs = 0;
+    this.state.prePostponeFlowIndex = undefined;
     
-    // Clear paused state
+    // Clear paused state (Invariant 4)
     this.state.isPaused = false;
     this.state.pausedAt = null;
     this.state.pauseResumeAt = null;
@@ -1125,11 +1356,29 @@ export class TimerEngine extends EventEmitter {
     // Update tick time
     this.lastTickTime = now;
     
+    // ARCHITECTURE HARDENING: Post-transition invariant validation
+    this.validateStateInvariants('After reset');
+    
+    // Validate reset state
+    const validation = validateSessionState(this.state, this.currentSchedule);
+    if (!validation.valid) {
+      logValidationResult(validation, 'Reset Session - validation failed');
+    }
+    
     // Save state and emit tick
     this.saveState();
     this.emitTick();
     
-    logger.info('TimerEngine', 'Session reset complete - starting fresh in Sitting Work phase');
+    // Phase 1.5: Structured reset logging
+    logSessionEvent({
+      event: 'resetSession',
+      phase: resetState.currentPhase,
+      index: resetState.currentFlowStepIndex,
+      cumulativeWorkMs: 0,
+      pendingBreak: null,
+      postponeUntil: null,
+      scheduleId: this.currentSchedule?.id,
+    });
   }
 
   /**
@@ -1474,6 +1723,28 @@ export class TimerEngine extends EventEmitter {
       }
     }
     
+    // Phase 1.5: Runtime validation before emit
+    const runtimeValidation = validateRuntimeState(this.state, schedule, nextPhase);
+    if (!runtimeValidation.valid) {
+      // Attempt safe recovery
+      const recovery = attemptSafeRecovery(this.state, schedule);
+      if (recovery.recovered && recovery.newIndex !== undefined) {
+        this.state.currentFlowStepIndex = recovery.newIndex;
+        // Recalculate next phase after recovery
+        const recoveredNextPhase = this.getNextPhase();
+        logSessionEvent({
+          event: 'flowDesync',
+          reason: recovery.reason,
+          index: recovery.newIndex,
+          phase: this.state.currentPhase,
+          next: recoveredNextPhase,
+        });
+      }
+    }
+    
+    // Create debug snapshot for dashboard (dev mode)
+    const debugSnapshot = createDebugSnapshot(this.state, schedule, nextPhase, thenPhase);
+    
     const tick: TimerTick = {
       scheduleId: schedule?.id || null,
       scheduleName: schedule?.name || null,
@@ -1501,6 +1772,12 @@ export class TimerEngine extends EventEmitter {
       restBlock: getRestBlockService().getState(),
       breakProgress,
       configuredDurations,
+      // Phase 1.5: Include debug snapshot for dev mode dashboard
+      debugSnapshot: {
+        currentFlowStepIndex: debugSnapshot.currentFlowStepIndex,
+        validationStatus: debugSnapshot.validationStatus,
+        flowStepsCount: debugSnapshot.flowStepsCount,
+      },
     };
 
     this.emit('tick', tick);
@@ -1669,10 +1946,11 @@ export class TimerEngine extends EventEmitter {
 
   /**
    * Save state immediately (bypass debounce)
+   * Uses the immediate save method for critical state changes
    */
   private saveStateImmediately(): void {
     if (this.stateChanged || true) { // Always save for reliability
-      configService.saveSessionState(this.state);
+      configService.saveSessionStateImmediate(this.state);
       this.lastStateSaveTime = Date.now();
       this.stateChanged = false;
     }

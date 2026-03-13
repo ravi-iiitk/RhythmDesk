@@ -31,6 +31,15 @@ import { formatDuration, formatDurationHuman } from '../shared/timeUtils';
 import { showMainWindow, setQuitting } from './windowManager';
 import { getTimerEngine } from '../core/timerEngine';
 import { getOfficeFocusLockService } from '../core/officeFocusLockService';
+import { 
+  logTrayCreated, 
+  logTrayTooltipUpdated, 
+  logTrayMenuRebuilt, 
+  logTrayMenuOpen, 
+  logTrayMenuClose,
+  logTrayRefreshDeferred,
+  logTrayRefreshApplied,
+} from '../core/overlayDebug';
 
 // ============================================================================
 // STATE
@@ -92,6 +101,7 @@ export function createTray(): Tray {
     showMainWindow();
   });
 
+  logTrayCreated();
   return tray;
 }
 
@@ -109,6 +119,7 @@ export function updateTrayWithTick(tick: TimerTick): void {
   // FREEZE: Skip ALL updates while menu is open
   if (isMenuOpen) {
     hasPendingUpdate = true;
+    logTrayRefreshDeferred();
     return;
   }
   
@@ -258,6 +269,8 @@ function updateTrayTooltip(tick: TimerTick): void {
   if (!tray) return;
   // Double-check menu is not open (defensive)
   if (isMenuOpen) return;
+  
+  logTrayTooltipUpdated(tick.currentPhase, tick.phaseRemainingMs);
 
   const lines: string[] = ['RhythmDesk'];
   
@@ -336,12 +349,12 @@ function rebuildMenuWithTracking(): void {
   // Track menu open/close via menu-will-show/menu-will-close events
   // Note: These events are available in Electron's Menu
   menu.on('menu-will-show', () => {
-    console.log('[Tray] Menu opened - freezing updates');
+    logTrayMenuOpen();
     isMenuOpen = true;
   });
   
   menu.on('menu-will-close', () => {
-    console.log('[Tray] Menu closed - unfreezing updates');
+    logTrayMenuClose();
     isMenuOpen = false;
     
     // Apply pending update if any
@@ -350,7 +363,7 @@ function rebuildMenuWithTracking(): void {
       // Use setTimeout to ensure menu is fully closed
       setTimeout(() => {
         if (currentTick && !isMenuOpen) {
-          console.log('[Tray] Applying pending update after menu close');
+          logTrayRefreshApplied();
           updateTrayTooltip(currentTick);
           checkAndRebuildMenuIfNeeded(currentTick);
         }
@@ -408,7 +421,7 @@ function checkAndRebuildMenuIfNeeded(tick: TimerTick): void {
   const currentState = extractMenuState(tick);
   
   if (hasMenuStateChanged(currentState, previousMenuState)) {
-    console.log('[Tray] Menu state changed, rebuilding menu');
+    logTrayMenuRebuilt('state changed');
     rebuildMenuWithTracking();
     previousMenuState = currentState;
   }

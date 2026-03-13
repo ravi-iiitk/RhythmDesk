@@ -1,136 +1,44 @@
 /**
  * RhythmDesk Config Service
- * Handles local JSON persistence with abstraction for future SQLite migration
+ * 
+ * HYBRID STORAGE ARCHITECTURE:
+ * 
+ * 1. ConfigStore (electron-store) - Durable configuration
+ *    - schedules, generalSettings, restBlockPresets
+ *    - Persists across app restarts
+ * 
+ * 2. SessionSnapshot (electron-store) - Debounced session snapshots
+ *    - Runtime state snapshots for restart recovery
+ *    - Debounced writes (5s) to avoid excessive I/O
+ * 
+ * 3. In-Memory Session State (timerEngine)
+ *    - LIVE session state is source of truth
+ *    - Snapshots are only for recovery
+ * 
+ * This service provides a unified interface that delegates to the appropriate
+ * storage module while maintaining backward compatibility with existing code.
  */
 
-import { app } from 'electron';
-import * as fs from 'fs';
-import * as path from 'path';
 import {
   AppConfig,
   Schedule,
   SessionState,
   GeneralSettings,
-  DEFAULT_GENERAL_SETTINGS,
+  RestBlockPreset,
   INITIAL_SESSION_STATE,
-  DEFAULT_TRANSITION_CONFIG,
-  DEFAULT_SHORT_BREAK_CONFIG,
-  DEFAULT_LONG_BREAK_CONFIG,
-  PostponeCountsToday,
+  INITIAL_POSTPONE_COUNTS,
 } from '../shared/types';
-import { CONFIG_FILENAME } from '../shared/constants';
+import { configStore } from './storage/configStore';
+import { sessionSnapshot } from './storage/sessionSnapshot';
+import { initializeStorage } from './storage/migration';
+import logger from './logger';
 
-/**
- * Migrate legacy schedule format to new per-break config format
- */
-function migrateSchedule(schedule: Partial<Schedule> & { id: string; name: string; createdAt: number }): Schedule {
-  // If already migrated (has transitions object), return as-is with defaults merged
-  if (schedule.transitions && schedule.shortBreak && schedule.longBreak) {
-    return {
-      ...schedule,
-      priority: schedule.priority ?? 0,
-    } as Schedule;
-  }
+// Re-export storage modules for direct access when needed
+export { configStore } from './storage/configStore';
+export { sessionSnapshot } from './storage/sessionSnapshot';
+export { initializeStorage, getMigrationStatus } from './storage/migration';
 
-  // Migrate from legacy flat fields to new nested structure
-  const legacyStrictMode = schedule.strictModeEnabled ?? true;
-  const legacyAllowPostpone = schedule.allowPostpone ?? true;
-  const legacyPostponeOptions = schedule.postponeOptionsMinutes ?? [2, 5, 10];
-  const legacyMaxPostpones = schedule.maxPostponesPerDay ?? 4;
-
-  return {
-    id: schedule.id,
-    name: schedule.name,
-    enabled: schedule.enabled ?? true,
-    activeDays: schedule.activeDays ?? ['mon', 'tue', 'wed', 'thu', 'fri'],
-    startTime: schedule.startTime ?? '09:00',
-    endTime: schedule.endTime ?? '17:00',
-    priority: schedule.priority ?? 0,
-    sitMinutes: schedule.sitMinutes ?? 12,
-    standMinutes: schedule.standMinutes ?? 8,
-    transitions: {
-      sitToStand: {
-        durationSeconds: schedule.sitToStandTransitionSeconds ?? DEFAULT_TRANSITION_CONFIG.durationSeconds,
-        strictModeEnabled: legacyStrictMode,
-        allowPostpone: legacyAllowPostpone,
-        postponeOptionsMinutes: [...legacyPostponeOptions],
-        maxPostponesPerDay: legacyMaxPostpones,
-      },
-      standToSit: {
-        durationSeconds: schedule.standToSitTransitionSeconds ?? DEFAULT_TRANSITION_CONFIG.durationSeconds,
-        strictModeEnabled: legacyStrictMode,
-        allowPostpone: legacyAllowPostpone,
-        postponeOptionsMinutes: [...legacyPostponeOptions],
-        maxPostponesPerDay: legacyMaxPostpones,
-      },
-    },
-    shortBreak: {
-      enabled: schedule.shortBreakEnabled ?? DEFAULT_SHORT_BREAK_CONFIG.enabled,
-      everyMinutes: schedule.shortBreakEveryMinutes ?? DEFAULT_SHORT_BREAK_CONFIG.everyMinutes,
-      durationMinutes: schedule.shortBreakDurationMinutes ?? DEFAULT_SHORT_BREAK_CONFIG.durationMinutes,
-      strictModeEnabled: legacyStrictMode,
-      allowPostpone: legacyAllowPostpone,
-      postponeOptionsMinutes: [...legacyPostponeOptions],
-      maxPostponesPerDay: legacyMaxPostpones,
-    },
-    longBreak: {
-      enabled: schedule.longBreakEnabled ?? DEFAULT_LONG_BREAK_CONFIG.enabled,
-      everyMinutes: schedule.longBreakEveryMinutes ?? DEFAULT_LONG_BREAK_CONFIG.everyMinutes,
-      durationMinutes: schedule.longBreakDurationMinutes ?? DEFAULT_LONG_BREAK_CONFIG.durationMinutes,
-      strictModeEnabled: legacyStrictMode,
-      allowPostpone: legacyAllowPostpone,
-      postponeOptionsMinutes: [...legacyPostponeOptions],
-      maxPostponesPerDay: Math.max(1, Math.floor(legacyMaxPostpones / 2)), // Fewer for long breaks
-    },
-    createdAt: schedule.createdAt,
-  };
-}
-
-/**
- * Migrate legacy session state to new format
- */
-function migrateSessionState(state: Partial<SessionState>): SessionState {
-  // Convert legacy single postponeCountToday to per-break counts
-  const legacyCount = state.postponeCountToday ?? 0;
-  const postponeCountsToday: PostponeCountsToday = state.postponeCountsToday ?? {
-    sitToStandTransition: legacyCount,
-    standToSitTransition: 0,
-    shortBreak: 0,
-    longBreak: 0,
-  };
-
-  return {
-    activeScheduleId: state.activeScheduleId ?? null,
-    currentPhase: state.currentPhase ?? 'idle',
-    phaseStartedAt: state.phaseStartedAt ?? 0,
-    phaseEndsAt: state.phaseEndsAt ?? 0,
-    phaseRemainingMs: state.phaseRemainingMs ?? 0,
-    phaseTotalMs: state.phaseTotalMs ?? 0,
-    cumulativeWorkTimeMs: state.cumulativeWorkTimeMs ?? 0,
-    lastShortBreakAtWorkTimeMs: state.lastShortBreakAtWorkTimeMs ?? 0,
-    lastLongBreakAtWorkTimeMs: state.lastLongBreakAtWorkTimeMs ?? 0,
-    shortBreakCountToday: state.shortBreakCountToday ?? 0,
-    longBreakCountToday: state.longBreakCountToday ?? 0,
-    breakCountResetDate: state.breakCountResetDate ?? new Date().toISOString().split('T')[0],
-    interruptedPhase: state.interruptedPhase ?? null,
-    interruptedPhaseRemainingMs: state.interruptedPhaseRemainingMs ?? 0,
-    postponeCountsToday,
-    postponeResetDate: state.postponeResetDate ?? new Date().toISOString().split('T')[0],
-    isPaused: state.isPaused ?? false,
-    pausedAt: state.pausedAt ?? null,
-    pauseResumeAt: state.pauseResumeAt ?? null,
-    isPostponed: state.isPostponed ?? false,
-    postponedUntil: state.postponedUntil ?? null,
-    postponedPhase: state.postponedPhase ?? null,
-    postponedBreakType: state.postponedBreakType ?? null,
-    prePostponeWorkPhase: state.prePostponeWorkPhase ?? null,
-    prePostponeWorkPhaseRemainingMs: state.prePostponeWorkPhaseRemainingMs ?? 0,
-    currentFlowStepIndex: state.currentFlowStepIndex,
-    flowConfigHash: state.flowConfigHash,
-  };
-}
-
-// Storage interface for future migration to SQLite
+// Storage interface for backward compatibility
 export interface IStorageProvider {
   load(): AppConfig;
   save(config: AppConfig): void;
@@ -144,146 +52,104 @@ export interface IStorageProvider {
 }
 
 /**
- * JSON File Storage Provider
- * Stores all config in a single JSON file
+ * Hybrid Storage Provider
+ * Delegates to ConfigStore and SessionSnapshot
  */
-export class JsonStorageProvider implements IStorageProvider {
-  private configPath: string = '';
-  private config: AppConfig | null = null;
+class HybridStorageProvider implements IStorageProvider {
   private initialized: boolean = false;
 
-  private ensureInitialized(): void {
+  ensureInitialized(): void {
     if (this.initialized) return;
-    const userDataPath = app.getPath('userData');
-    this.configPath = path.join(userDataPath, CONFIG_FILENAME);
-    this.config = this.loadFromDisk();
+    
+    // Run migration if needed (from legacy config.json)
+    initializeStorage();
     this.initialized = true;
-  }
-
-  private getConfig(): AppConfig {
-    this.ensureInitialized();
-    return this.config!;
-  }
-
-  private getDefaultConfig(): AppConfig {
-    return {
-      schedules: [],
-      generalSettings: { ...DEFAULT_GENERAL_SETTINGS },
-      sessionState: { ...INITIAL_SESSION_STATE },
-    };
-  }
-
-  private loadFromDisk(): AppConfig {
-    try {
-      if (this.configPath && fs.existsSync(this.configPath)) {
-        const data = fs.readFileSync(this.configPath, 'utf-8');
-        const parsed = JSON.parse(data) as Partial<AppConfig>;
-        
-        // Migrate schedules to new format
-        const schedules = (parsed.schedules || []).map((s: any) => migrateSchedule(s));
-        
-        // Migrate session state to new format
-        const sessionState = migrateSessionState(parsed.sessionState || {});
-        
-        // Merge general settings with defaults
-        const generalSettings = { ...DEFAULT_GENERAL_SETTINGS, ...parsed.generalSettings };
-        
-        return { schedules, generalSettings, sessionState };
-      }
-    } catch (error) {
-      console.error('Failed to load config from disk:', error);
-    }
-    return this.getDefaultConfig();
-  }
-
-  private saveToDisk(): void {
-    try {
-      const dir = path.dirname(this.configPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2), 'utf-8');
-    } catch (error) {
-      console.error('Failed to save config to disk:', error);
-    }
+    
+    logger.info('ConfigService', 'Hybrid storage initialized');
   }
 
   load(): AppConfig {
-    return this.getConfig();
+    this.ensureInitialized();
+    return {
+      schedules: configStore.getSchedules(),
+      generalSettings: configStore.getGeneralSettings(),
+      sessionState: sessionSnapshot.loadSnapshot() ?? this.getInitialSessionState(),
+    };
   }
 
   save(config: AppConfig): void {
     this.ensureInitialized();
-    this.config = config;
-    this.saveToDisk();
+    // Save schedules and settings to ConfigStore
+    config.schedules.forEach(s => configStore.saveSchedule(s));
+    configStore.saveGeneralSettings(config.generalSettings);
+    // Save session state to snapshot (immediate)
+    sessionSnapshot.saveSnapshotImmediate(config.sessionState);
   }
 
   getSchedules(): Schedule[] {
-    return this.getConfig().schedules;
+    this.ensureInitialized();
+    return configStore.getSchedules();
   }
 
   saveSchedule(schedule: Schedule): void {
-    // CRITICAL: Normalize flow-based schedules to always start with a work phase
-    // This prevents invalid configurations where breaks/transitions come first
-    if (schedule.mode === 'flow-based' && schedule.flowSteps && schedule.flowSteps.length > 0) {
-      const firstStep = schedule.flowSteps[0];
-      if (firstStep.type !== 'sit' && firstStep.type !== 'stand') {
-        // Find first work phase and rotate array
-        const workIndex = schedule.flowSteps.findIndex(s => s.type === 'sit' || s.type === 'stand');
-        if (workIndex > 0) {
-          schedule.flowSteps = [
-            ...schedule.flowSteps.slice(workIndex),
-            ...schedule.flowSteps.slice(0, workIndex)
-          ];
-        }
-      }
-    }
-    
-    const cfg = this.getConfig();
-    const index = cfg.schedules.findIndex((s) => s.id === schedule.id);
-    if (index >= 0) {
-      cfg.schedules[index] = schedule;
-    } else {
-      cfg.schedules.push(schedule);
-    }
-    this.saveToDisk();
+    this.ensureInitialized();
+    configStore.saveSchedule(schedule);
   }
 
   deleteSchedule(id: string): void {
-    const cfg = this.getConfig();
-    cfg.schedules = cfg.schedules.filter((s) => s.id !== id);
-    this.saveToDisk();
+    this.ensureInitialized();
+    configStore.deleteSchedule(id);
   }
 
   getSessionState(): SessionState {
-    return this.getConfig().sessionState;
+    this.ensureInitialized();
+    return sessionSnapshot.loadSnapshot() ?? this.getInitialSessionState();
   }
 
   saveSessionState(state: SessionState): void {
-    this.getConfig().sessionState = state;
-    this.saveToDisk();
+    this.ensureInitialized();
+    // Use debounced save for normal state updates
+    sessionSnapshot.saveSnapshot(state);
+  }
+
+  /**
+   * Save session state immediately (for critical changes)
+   */
+  saveSessionStateImmediate(state: SessionState): void {
+    this.ensureInitialized();
+    sessionSnapshot.saveSnapshotImmediate(state);
   }
 
   getGeneralSettings(): GeneralSettings {
-    return this.getConfig().generalSettings;
+    this.ensureInitialized();
+    return configStore.getGeneralSettings();
   }
 
   saveGeneralSettings(settings: GeneralSettings): void {
-    this.getConfig().generalSettings = settings;
-    this.saveToDisk();
+    this.ensureInitialized();
+    configStore.saveGeneralSettings(settings);
+  }
+
+  private getInitialSessionState(): SessionState {
+    return {
+      ...INITIAL_SESSION_STATE,
+      postponeCountsToday: { ...INITIAL_POSTPONE_COUNTS },
+      breakCountResetDate: new Date().toISOString().split('T')[0],
+      postponeResetDate: new Date().toISOString().split('T')[0],
+    };
   }
 }
 
 /**
  * Config Service singleton
- * Provides high-level access to configuration with storage abstraction
+ * Provides high-level access to configuration with hybrid storage
  */
 class ConfigService {
-  private storage: IStorageProvider;
+  private storage: HybridStorageProvider;
   private static instance: ConfigService;
 
   private constructor() {
-    this.storage = new JsonStorageProvider();
+    this.storage = new HybridStorageProvider();
   }
 
   static getInstance(): ConfigService {
@@ -293,9 +159,18 @@ class ConfigService {
     return ConfigService.instance;
   }
 
+  /**
+   * Initialize storage (call on app startup)
+   */
+  initialize(): void {
+    this.storage.ensureInitialized();
+  }
+
   // Allow swapping storage provider for future SQLite migration
-  setStorageProvider(provider: IStorageProvider): void {
-    this.storage = provider;
+  setStorageProvider(_provider: IStorageProvider): void {
+    // Note: This is kept for backward compatibility but not recommended
+    // The hybrid storage provider handles all storage needs
+    logger.warn('ConfigService', 'setStorageProvider called - this is deprecated');
   }
 
   getConfig(): AppConfig {
@@ -326,8 +201,35 @@ class ConfigService {
     return this.storage.getSessionState();
   }
 
+  /**
+   * Save session state (debounced)
+   * For normal state updates during timer operation
+   */
   saveSessionState(state: SessionState): void {
     this.storage.saveSessionState(state);
+  }
+
+  /**
+   * Save session state immediately (no debounce)
+   * Use for critical state changes: phase change, pause, reset
+   */
+  saveSessionStateImmediate(state: SessionState): void {
+    this.storage.saveSessionStateImmediate(state);
+  }
+
+  /**
+   * Clear session state (e.g., on session reset)
+   */
+  clearSessionState(): void {
+    sessionSnapshot.clearSnapshot();
+  }
+
+  /**
+   * Flush any pending session snapshot
+   * Call on app shutdown
+   */
+  flushSessionSnapshot(): void {
+    sessionSnapshot.flushPending();
   }
 
   getGeneralSettings(): GeneralSettings {
@@ -336,6 +238,20 @@ class ConfigService {
 
   saveGeneralSettings(settings: GeneralSettings): void {
     this.storage.saveGeneralSettings(settings);
+  }
+
+  // ===== Rest Block Presets (new in hybrid architecture) =====
+
+  getRestBlockPresets(): RestBlockPreset[] {
+    return configStore.getRestBlockPresets();
+  }
+
+  saveRestBlockPreset(preset: RestBlockPreset): void {
+    configStore.saveRestBlockPreset(preset);
+  }
+
+  deleteRestBlockPreset(id: string): boolean {
+    return configStore.deleteRestBlockPreset(id);
   }
 }
 

@@ -71,6 +71,7 @@ exports.sendToAll = sendToAll;
 const electron_1 = require("electron");
 const path = __importStar(require("path"));
 const logger_1 = __importDefault(require("../core/logger"));
+const overlayDebug_1 = require("../core/overlayDebug");
 let mainWindow = null;
 let overlayWindow = null;
 let currentOverlayStrictMode = false;
@@ -231,6 +232,7 @@ function createOverlayWindow(strictMode = false) {
     }
     // Handle webContents crash - recover the overlay
     overlayWindow.webContents.on('crashed', () => {
+        (0, overlayDebug_1.logOverlayCrash)('webContents crashed');
         logger_1.default.error('WindowManager', 'Overlay webContents crashed - will recover');
         if (overlayWindow && !overlayWindow.isDestroyed()) {
             overlayWindow.destroy();
@@ -239,6 +241,7 @@ function createOverlayWindow(strictMode = false) {
     });
     // Handle unresponsive renderer
     overlayWindow.on('unresponsive', () => {
+        (0, overlayDebug_1.logOverlayCrash)('renderer unresponsive');
         logger_1.default.error('WindowManager', 'Overlay became unresponsive - destroying');
         if (overlayWindow && !overlayWindow.isDestroyed()) {
             overlayWindow.destroy();
@@ -266,6 +269,7 @@ function createOverlayWindow(strictMode = false) {
  * Always recreates if strict mode changed to ensure correct behavior
  */
 function showOverlay(strictMode = false) {
+    (0, overlayDebug_1.logOverlayShow)('requested', strictMode);
     if (!overlayWindow || overlayWindow.isDestroyed() || currentOverlayStrictMode !== strictMode) {
         createOverlayWindow(strictMode);
     }
@@ -293,6 +297,7 @@ function hideOverlay() {
  */
 function closeOverlay() {
     if (overlayWindow && !overlayWindow.isDestroyed()) {
+        (0, overlayDebug_1.logOverlayHide)('close requested');
         // Remove close prevention handler for strict mode
         overlayWindow.removeAllListeners('close');
         overlayWindow.destroy();
@@ -353,6 +358,7 @@ function recoverOverlayIfNeeded(strictMode) {
         return false; // No recovery needed
     }
     logger_1.default.warn('WindowManager', 'Recovering unhealthy overlay window', { strictMode });
+    (0, overlayDebug_1.logOverlayRecovered)();
     // Clean up old window if it exists
     if (overlayWindow) {
         try {

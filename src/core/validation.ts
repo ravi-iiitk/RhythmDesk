@@ -145,6 +145,53 @@ function validateBreakConfig(
 }
 
 /**
+ * Validate flow steps for flow-based schedules
+ */
+function validateFlowSteps(
+  flowSteps: Schedule['flowSteps'],
+  errors: ValidationError[]
+): void {
+  if (!flowSteps || flowSteps.length === 0) {
+    errors.push({ field: 'flowSteps', message: 'Flow mode requires at least one step' });
+    return;
+  }
+
+  // Check for at least one work step (sit or stand)
+  const hasWorkStep = flowSteps.some(s => s.type === 'sit' || s.type === 'stand');
+  if (!hasWorkStep) {
+    errors.push({ field: 'flowSteps', message: 'Flow must contain at least one work step (Sit or Stand)' });
+  }
+
+  // Validate each step's duration
+  for (let i = 0; i < flowSteps.length; i++) {
+    const step = flowSteps[i];
+    if (step.durationSeconds <= 0) {
+      errors.push({ 
+        field: `flowSteps[${i}].durationSeconds`, 
+        message: `Step ${i + 1} duration must be greater than 0` 
+      });
+    }
+    if (step.durationSeconds > 86400) { // 24 hours max
+      errors.push({ 
+        field: `flowSteps[${i}].durationSeconds`, 
+        message: `Step ${i + 1} duration must be 24 hours or less` 
+      });
+    }
+  }
+
+  // Check that flow doesn't start with a break (warning, not error)
+  // This is handled by normalization, but good to validate
+  const firstStep = flowSteps[0];
+  if (firstStep.type !== 'sit' && firstStep.type !== 'stand') {
+    // This will be auto-normalized, but log for awareness
+    errors.push({ 
+      field: 'flowSteps', 
+      message: 'Flow should start with a work step (will be auto-adjusted)' 
+    });
+  }
+}
+
+/**
  * Validate a schedule configuration
  */
 export function validateSchedule(schedule: Partial<Schedule>): ValidationResult {
@@ -191,6 +238,11 @@ export function validateSchedule(schedule: Partial<Schedule>): ValidationResult 
   // Calculate cycle duration for break validation
   const cycleMinutes = (schedule.sitMinutes || 0) + (schedule.standMinutes || 0);
 
+  // Validate flow steps for flow-based schedules
+  if (schedule.mode === 'flow-based') {
+    validateFlowSteps(schedule.flowSteps, errors);
+  }
+
   // Validate new per-break configuration
   if (schedule.transitions) {
     validateTransitionConfig(schedule.transitions.sitToStand, 'transitions.sitToStand', errors);
@@ -198,7 +250,6 @@ export function validateSchedule(schedule: Partial<Schedule>): ValidationResult 
   }
 
   if (schedule.shortBreak) {
-    const longBreakEvery = schedule.longBreak?.enabled ? schedule.longBreak.everyMinutes : null;
     validateBreakConfig(schedule.shortBreak, 'shortBreak', cycleMinutes, null, false, errors);
   }
 
