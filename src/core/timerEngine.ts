@@ -875,6 +875,22 @@ export class TimerEngine extends EventEmitter {
       }
     }
     
+    // CRITICAL FIX: When advancing TO a break phase, save the current work phase info
+    // so that postpone can properly restore to the correct flow position
+    if (isBreakPhaseType(result.nextPhase) && !isBreakPhaseType(prevPhase)) {
+      // Save the work phase we're leaving (for postpone restoration)
+      this.state.interruptedFlowIndex = currentIndex;
+      this.state.interruptedPhase = prevPhase;
+      this.state.interruptedPhaseRemainingMs = 0; // Work phase completed, no remaining time
+      this.preBreakPhase = prevPhase;
+      
+      logger.info('TimerEngine', 'Saving interrupted work phase for break', {
+        interruptedFlowIndex: currentIndex,
+        interruptedPhase: prevPhase,
+        nextBreakPhase: result.nextPhase,
+      });
+    }
+    
     this.state.currentFlowStepIndex = result.nextIndex;
     
     logger.info('TimerEngine', 'advanceFlowBasedPhase - advancing', {
@@ -1246,11 +1262,27 @@ export class TimerEngine extends EventEmitter {
     
     // CRITICAL FIX: Restore work phase - do NOT keep break as current phase
     // Use preBreakPhase (set when break was triggered) or interruptedPhase
-    const workPhaseToRestore = this.preBreakPhase || this.state.interruptedPhase || 'sit';
+    let workPhaseToRestore = this.preBreakPhase || this.state.interruptedPhase || 'sit';
+    
+    // If the "work phase" is actually a transition, find the next work phase after it
+    // This happens when break follows a transition in the flow
+    if (workPhaseToRestore === 'sit-to-stand-transition') {
+      workPhaseToRestore = 'stand';
+    } else if (workPhaseToRestore === 'stand-to-sit-transition') {
+      workPhaseToRestore = 'sit';
+    }
+    
     const workPhaseRemainingMs = this.state.interruptedPhaseRemainingMs || this.getPhaseDurationMs(workPhaseToRestore);
     
-    // PHASE 1.5 FIX: Also restore the flow index to match the work phase
-    const flowIndexToRestore = this.state.interruptedFlowIndex;
+    // CRITICAL FIX: Find the correct flow index for the work phase we're restoring to
+    // Don't rely on interruptedFlowIndex which might point to a transition
+    let flowIndexToRestore: number | undefined;
+    if (isFlowBasedSchedule(this.currentSchedule) && this.currentSchedule.flowSteps) {
+      flowIndexToRestore = findPhaseIndex(this.currentSchedule.flowSteps, workPhaseToRestore);
+      if (flowIndexToRestore === -1) {
+        flowIndexToRestore = this.state.interruptedFlowIndex; // Fallback
+      }
+    }
     
     // Save what work phase we're restoring (for after postponed break completes)
     this.state.prePostponeWorkPhase = workPhaseToRestore;
@@ -1264,9 +1296,9 @@ export class TimerEngine extends EventEmitter {
     this.state.phaseStartedAt = Date.now();
     this.state.phaseEndsAt = Date.now() + workPhaseRemainingMs;
     
-    // PHASE 1.5 FIX: Restore flow index to match restored work phase
+    // CRITICAL FIX: Always restore flow index to match restored work phase
     // This ensures currentPhase and currentFlowStepIndex are consistent
-    if (isFlowBasedSchedule(this.currentSchedule) && flowIndexToRestore !== undefined) {
+    if (isFlowBasedSchedule(this.currentSchedule) && flowIndexToRestore !== undefined && flowIndexToRestore !== -1) {
       this.state.currentFlowStepIndex = flowIndexToRestore;
     }
     

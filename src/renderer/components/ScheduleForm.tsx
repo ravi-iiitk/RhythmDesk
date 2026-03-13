@@ -213,6 +213,13 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
     setFlowSteps(newSteps);
   };
 
+  const handleFlowStepLabelChange = (index: number, label: string) => {
+    const newSteps = [...flowSteps];
+    // Store empty string as undefined to keep data clean
+    newSteps[index] = { ...newSteps[index], label: label.trim() || undefined };
+    setFlowSteps(newSteps);
+  };
+
   // Convert seconds to h:m:s components
   const secondsToHMS = (totalSeconds: number): { h: number; m: number; s: number } => {
     const h = Math.floor(totalSeconds / 3600);
@@ -442,9 +449,19 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
                 <span style={{ width: '1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                   {index + 1}.
                 </span>
-                <span style={{ flex: 1, fontWeight: 500 }}>
+                <span style={{ minWidth: '8rem', fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                   {getFlowStepDisplayName(step.type)}
                 </span>
+                <input
+                  type="text"
+                  value={step.label || ''}
+                  onChange={(e) => handleFlowStepLabelChange(index, e.target.value)}
+                  placeholder="Custom label (optional)"
+                  style={{ flex: 1, padding: '0.35rem 0.5rem', fontSize: '0.85rem', minWidth: '8rem' }}
+                  className="form-input"
+                  draggable={false}
+                  maxLength={50}
+                />
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <input
                     type="text"

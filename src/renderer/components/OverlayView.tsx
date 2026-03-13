@@ -10,10 +10,15 @@ import { TimerTick, PhaseType } from '../../shared/types';
 import { PHASE_DISPLAY_NAMES, PHASE_COLORS } from '../../shared/constants';
 import { formatDuration } from '../../shared/timeUtils';
 
-// Format current time as HH:MM
+// Format current time as 12-hour format with seconds (e.g., 10:42:18 PM)
 function formatCurrentTime(): string {
   const now = new Date();
-  return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  return now.toLocaleTimeString([], { 
+    hour: '2-digit', 
+    minute: '2-digit', 
+    second: '2-digit',
+    hour12: true 
+  });
 }
 
 interface OverlayViewProps {
@@ -111,16 +116,28 @@ function OverlayView({ tick }: OverlayViewProps) {
   const showCloseButton = !tick.isStrictMode && !isOfficeFocusLockActive;
   const showStopLockButton = isOfficeFocusLockActive && isWorkPhase && !tick.officeFocusLock.isStrictMode;
 
-  // Current time display style - subtle, top-right corner
+  // Current time display style - prominent at top, big and bold
   const currentTimeStyle: React.CSSProperties = {
-    position: 'absolute',
-    top: '1rem',
-    right: '1.5rem',
-    fontSize: '1rem',
-    color: 'rgba(255, 255, 255, 0.4)',
+    fontSize: '2.5rem',
+    fontWeight: 700,
+    color: '#60a5fa', // Blue color for time
     fontFamily: 'monospace',
-    fontWeight: 400,
     letterSpacing: '0.05em',
+    marginBottom: '0.5rem',
+    textShadow: '0 2px 10px rgba(96, 165, 250, 0.3)',
+  };
+  
+  const timeContainerStyle: React.CSSProperties = {
+    textAlign: 'center',
+    marginBottom: '1rem',
+  };
+  
+  const timeLabelStyle: React.CSSProperties = {
+    fontSize: '0.85rem',
+    color: 'rgba(255, 255, 255, 0.5)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.15em',
+    marginBottom: '0.25rem',
   };
 
   // If rest block is active, show rest block overlay
@@ -128,10 +145,12 @@ function OverlayView({ tick }: OverlayViewProps) {
     const restBlockColor = '#22c55e'; // Green color for rest
     return (
       <div className="overlay">
-        {/* Current Time - Top Right */}
-        <div style={currentTimeStyle}>{currentTime}</div>
-        
         <div className="overlay-content">
+          {/* Current Time - Prominent at Top */}
+          <div style={timeContainerStyle}>
+            <div style={timeLabelStyle}>Current Time</div>
+            <div style={currentTimeStyle}>{currentTime}</div>
+          </div>
           {/* Rest Block Title */}
           <div className="overlay-schedule-name">
             🛋️ Rest Block
@@ -188,10 +207,12 @@ function OverlayView({ tick }: OverlayViewProps) {
 
   return (
     <div className="overlay">
-      {/* Current Time - Top Right */}
-      <div style={currentTimeStyle}>{currentTime}</div>
-      
       <div className="overlay-content">
+        {/* Current Time - Prominent at Top */}
+        <div style={timeContainerStyle}>
+          <div style={timeLabelStyle}>Current Time</div>
+          <div style={currentTimeStyle}>{currentTime}</div>
+        </div>
         {/* Schedule Name */}
         <div className="overlay-schedule-name">
           {tick.scheduleName}
