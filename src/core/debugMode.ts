@@ -45,6 +45,36 @@ const DEFAULT_DEBUG_CONFIG: DebugConfig = {
   logToConsole: false,
 };
 
+// ============================================================
+// RELEASE MODE CHECKS
+// ============================================================
+
+/**
+ * Check if running in production/release mode
+ */
+export function isProductionMode(): boolean {
+  const { app } = require('electron');
+  return app.isPackaged;
+}
+
+/**
+ * Get release mode status for diagnostics
+ */
+export function getReleaseStatus(): {
+  isPackaged: boolean;
+  nodeEnv: string | undefined;
+  debugEnabled: boolean;
+  version: string;
+} {
+  const { app } = require('electron');
+  return {
+    isPackaged: app.isPackaged,
+    nodeEnv: process.env.NODE_ENV,
+    debugEnabled: currentConfig.enabled,
+    version: app.getVersion(),
+  };
+}
+
 const FULL_DEBUG_CONFIG: DebugConfig = {
   enabled: true,
   verboseLogging: true,

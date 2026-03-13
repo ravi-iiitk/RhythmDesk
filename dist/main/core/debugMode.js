@@ -22,6 +22,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.isProductionMode = isProductionMode;
+exports.getReleaseStatus = getReleaseStatus;
 exports.initDebugMode = initDebugMode;
 exports.setDebugMode = setDebugMode;
 exports.updateDebugConfig = updateDebugConfig;
@@ -46,6 +48,28 @@ const DEFAULT_DEBUG_CONFIG = {
     logToFile: true,
     logToConsole: false,
 };
+// ============================================================
+// RELEASE MODE CHECKS
+// ============================================================
+/**
+ * Check if running in production/release mode
+ */
+function isProductionMode() {
+    const { app } = require('electron');
+    return app.isPackaged;
+}
+/**
+ * Get release mode status for diagnostics
+ */
+function getReleaseStatus() {
+    const { app } = require('electron');
+    return {
+        isPackaged: app.isPackaged,
+        nodeEnv: process.env.NODE_ENV,
+        debugEnabled: currentConfig.enabled,
+        version: app.getVersion(),
+    };
+}
 const FULL_DEBUG_CONFIG = {
     enabled: true,
     verboseLogging: true,

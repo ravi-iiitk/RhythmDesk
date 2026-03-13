@@ -29,6 +29,8 @@ import { installShutdownHandlers } from '../core/shutdown';
 import { getHealthMonitor } from '../core/healthMonitor';
 import { getTimerWatchdog, getOverlayWatchdog } from '../core/watchdog';
 import { initDebugMode } from '../core/debugMode';
+// Sound service
+import { playSound } from '../core/soundService';
 
 /**
  * Get overlay policy for current state
@@ -143,6 +145,16 @@ function initialize(): void {
 
     timerEngine.on('phaseChange', (data: { prevPhase: PhaseType; newPhase: PhaseType }) => {
       sendToAll(IPC_CHANNELS.PHASE_CHANGE, data);
+      
+      // Play appropriate sound for the phase change
+      if (data.newPhase === 'short-break' || data.newPhase === 'long-break') {
+        playSound('break_start');
+      } else if (data.newPhase === 'sit-to-stand-transition' || data.newPhase === 'stand-to-sit-transition') {
+        playSound('transition_start');
+      } else if ((data.prevPhase === 'short-break' || data.prevPhase === 'long-break') && 
+                 (data.newPhase === 'sit' || data.newPhase === 'stand')) {
+        playSound('break_end');
+      }
 
       // Use centralized overlay policy for decisions
       const newPolicy = getOverlayPolicyForState(data.newPhase);
@@ -173,6 +185,7 @@ function initialize(): void {
 
     // Handle postpone - close overlay when user postpones
     timerEngine.on('postponed', () => {
+      playSound('postpone');
       // Don't close overlay if RestBlock is active
       const restBlockService = getRestBlockService();
       if (!restBlockService.isActive()) {
@@ -180,11 +193,17 @@ function initialize(): void {
         sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
       }
     });
+    
+    // Handle session reset
+    timerEngine.on('sessionReset', () => {
+      playSound('session_reset');
+    });
 
     // Initialize Office Focus Lock service and handle its events
     const officeFocusLockService = getOfficeFocusLockService();
     
     officeFocusLockService.on('started', () => {
+      playSound('focus_lock_start');
       // When Office Focus Lock starts, use centralized policy to determine overlay
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
@@ -197,6 +216,7 @@ function initialize(): void {
     });
 
     officeFocusLockService.on('stopped', () => {
+      playSound('focus_lock_end');
       // When Office Focus Lock stops, use centralized policy to determine if overlay should close
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
@@ -211,6 +231,7 @@ function initialize(): void {
     });
 
     officeFocusLockService.on('expired', () => {
+      playSound('focus_lock_end');
       // Office Focus Lock timer expired - same logic as stopped
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
@@ -227,6 +248,7 @@ function initialize(): void {
     const restBlockService = getRestBlockService();
     
     restBlockService.on('started', () => {
+      playSound('rest_block_start');
       // When Rest Block starts, pause the normal timer flow and show overlay
       logger.info('Main', 'Rest block started - pausing timer and showing overlay');
       const restState = restBlockService.getState();
@@ -258,6 +280,7 @@ function initialize(): void {
     });
 
     restBlockService.on('stopped', () => {
+      playSound('rest_block_end');
       // When Rest Block stops, resume timer and check if overlay should close
       logger.info('Main', 'Rest block stopped - resuming timer');
       logRestBlockEnd('manual', 'user stopped');
@@ -277,6 +300,7 @@ function initialize(): void {
     });
 
     restBlockService.on('expired', () => {
+      playSound('rest_block_end');
       // Rest Block timer expired - resume timer and check overlay
       logger.info('Main', 'Rest block expired - resuming timer');
       logRestBlockEnd('expired', 'timer completed');

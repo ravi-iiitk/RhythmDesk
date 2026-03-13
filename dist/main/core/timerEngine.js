@@ -1188,6 +1188,8 @@ class TimerEngine extends events_1.EventEmitter {
         // Save state and emit tick
         this.saveState();
         this.emitTick();
+        // Emit session reset event for sound and other handlers
+        this.emit('sessionReset');
         // Phase 1.5: Structured reset logging
         (0, sessionDebug_1.logSessionEvent)({
             event: 'resetSession',

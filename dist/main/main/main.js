@@ -33,6 +33,8 @@ const shutdown_1 = require("../core/shutdown");
 const healthMonitor_1 = require("../core/healthMonitor");
 const watchdog_1 = require("../core/watchdog");
 const debugMode_1 = require("../core/debugMode");
+// Sound service
+const soundService_1 = require("../core/soundService");
 /**
  * Get overlay policy for current state
  * Centralized decision engine - all overlay logic goes through here
@@ -124,6 +126,17 @@ function initialize() {
         });
         timerEngine.on('phaseChange', (data) => {
             (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.PHASE_CHANGE, data);
+            // Play appropriate sound for the phase change
+            if (data.newPhase === 'short-break' || data.newPhase === 'long-break') {
+                (0, soundService_1.playSound)('break_start');
+            }
+            else if (data.newPhase === 'sit-to-stand-transition' || data.newPhase === 'stand-to-sit-transition') {
+                (0, soundService_1.playSound)('transition_start');
+            }
+            else if ((data.prevPhase === 'short-break' || data.prevPhase === 'long-break') &&
+                (data.newPhase === 'sit' || data.newPhase === 'stand')) {
+                (0, soundService_1.playSound)('break_end');
+            }
             // Use centralized overlay policy for decisions
             const newPolicy = getOverlayPolicyForState(data.newPhase);
             const prevPolicy = getOverlayPolicyForState(data.prevPhase);
@@ -150,6 +163,7 @@ function initialize() {
         });
         // Handle postpone - close overlay when user postpones
         timerEngine.on('postponed', () => {
+            (0, soundService_1.playSound)('postpone');
             // Don't close overlay if RestBlock is active
             const restBlockService = (0, restBlockService_1.getRestBlockService)();
             if (!restBlockService.isActive()) {
@@ -157,9 +171,14 @@ function initialize() {
                 (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.HIDE_OVERLAY, {});
             }
         });
+        // Handle session reset
+        timerEngine.on('sessionReset', () => {
+            (0, soundService_1.playSound)('session_reset');
+        });
         // Initialize Office Focus Lock service and handle its events
         const officeFocusLockService = (0, officeFocusLockService_1.getOfficeFocusLockService)();
         officeFocusLockService.on('started', () => {
+            (0, soundService_1.playSound)('focus_lock_start');
             // When Office Focus Lock starts, use centralized policy to determine overlay
             const currentPhase = timerEngine.getState().currentPhase;
             const policy = getOverlayPolicyForState(currentPhase);
@@ -170,6 +189,7 @@ function initialize() {
             (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, officeFocusLockService.getState());
         });
         officeFocusLockService.on('stopped', () => {
+            (0, soundService_1.playSound)('focus_lock_end');
             // When Office Focus Lock stops, use centralized policy to determine if overlay should close
             const currentPhase = timerEngine.getState().currentPhase;
             const policy = getOverlayPolicyForState(currentPhase);
@@ -182,6 +202,7 @@ function initialize() {
             (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, officeFocusLockService.getState());
         });
         officeFocusLockService.on('expired', () => {
+            (0, soundService_1.playSound)('focus_lock_end');
             // Office Focus Lock timer expired - same logic as stopped
             const currentPhase = timerEngine.getState().currentPhase;
             const policy = getOverlayPolicyForState(currentPhase);
@@ -195,6 +216,7 @@ function initialize() {
         // Initialize Rest Block service and handle its events
         const restBlockService = (0, restBlockService_1.getRestBlockService)();
         restBlockService.on('started', () => {
+            (0, soundService_1.playSound)('rest_block_start');
             // When Rest Block starts, pause the normal timer flow and show overlay
             logger_1.default.info('Main', 'Rest block started - pausing timer and showing overlay');
             const restState = restBlockService.getState();
@@ -219,6 +241,7 @@ function initialize() {
             (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
         });
         restBlockService.on('stopped', () => {
+            (0, soundService_1.playSound)('rest_block_end');
             // When Rest Block stops, resume timer and check if overlay should close
             logger_1.default.info('Main', 'Rest block stopped - resuming timer');
             (0, overlayDebug_1.logRestBlockEnd)('manual', 'user stopped');
@@ -234,6 +257,7 @@ function initialize() {
             (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.REST_BLOCK_CHANGED, restBlockService.getState());
         });
         restBlockService.on('expired', () => {
+            (0, soundService_1.playSound)('rest_block_end');
             // Rest Block timer expired - resume timer and check overlay
             logger_1.default.info('Main', 'Rest block expired - resuming timer');
             (0, overlayDebug_1.logRestBlockEnd)('expired', 'timer completed');
