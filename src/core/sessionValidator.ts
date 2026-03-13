@@ -100,6 +100,11 @@ export function validateSessionState(
     if (!isWorkPhase(state.currentPhase) && state.currentPhase !== 'idle') {
       warnings.push(`isPostponed but currentPhase '${state.currentPhase}' is not a work phase`);
     }
+    
+    // BREAK CONFLICT INVARIANT: Active break + same-type pending break is invalid
+    if (isBreakPhase(state.currentPhase) && state.postponedPhase === state.currentPhase) {
+      errors.push(`BREAK CONFLICT: active ${state.currentPhase} and pending ${state.postponedPhase} are same type`);
+    }
   } else {
     if (state.postponedPhase) {
       errors.push('isPostponed is false but postponedPhase is set');

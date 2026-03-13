@@ -90,6 +90,10 @@ function validateSessionState(state, schedule) {
         if (!(0, transitions_1.isWorkPhase)(state.currentPhase) && state.currentPhase !== 'idle') {
             warnings.push(`isPostponed but currentPhase '${state.currentPhase}' is not a work phase`);
         }
+        // BREAK CONFLICT INVARIANT: Active break + same-type pending break is invalid
+        if ((0, transitions_1.isBreakPhase)(state.currentPhase) && state.postponedPhase === state.currentPhase) {
+            errors.push(`BREAK CONFLICT: active ${state.currentPhase} and pending ${state.postponedPhase} are same type`);
+        }
     }
     else {
         if (state.postponedPhase) {

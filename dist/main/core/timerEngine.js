@@ -29,6 +29,7 @@ const overlayPolicy_1 = require("./overlayPolicy");
 const logger_1 = __importDefault(require("./logger"));
 const flowUtils_1 = require("./flowUtils");
 const transitions_1 = require("./transitions");
+const breakConflict_1 = require("./breakConflict");
 const sessionValidator_1 = require("./sessionValidator");
 const sessionDebug_1 = require("./sessionDebug");
 const runtimeInvariants_1 = require("./runtimeInvariants");
@@ -518,12 +519,64 @@ class TimerEngine extends events_1.EventEmitter {
         }
     }
     /**
+     * Get current break state for conflict resolution
+     */
+    getBreakState() {
+        const activeBreak = (0, breakConflict_1.isBreakPhase)(this.state.currentPhase)
+            ? this.state.currentPhase
+            : null;
+        const pendingBreak = this.state.isPostponed && this.state.postponedPhase
+            ? ((0, breakConflict_1.isBreakPhase)(this.state.postponedPhase) ? this.state.postponedPhase : null)
+            : null;
+        return {
+            activeBreak,
+            pendingBreak,
+            pendingBreakDueAt: this.state.postponedUntil,
+        };
+    }
+    /**
      * Trigger a break, interrupting current phase
      * Stores current phase info to resume after break completes
+     *
+     * BREAK CONFLICT POLICY:
+     * - Check for conflicts before triggering
+     * - Long break supersedes short break
+     * - Don't stack duplicate breaks
      *
      * PHASE 1.5 FIX: Also stores interrupted flow index for proper restoration
      */
     triggerBreak(breakType) {
+        // BREAK CONFLICT RESOLUTION: Check for conflicts before triggering
+        const breakState = this.getBreakState();
+        const resolution = (0, breakConflict_1.resolveBreakConflict)(breakState, breakType);
+        logger_1.default.info('TimerEngine', 'Break conflict resolution', {
+            breakType,
+            resolution: resolution.action,
+            reason: resolution.reason,
+            activeBreak: breakState.activeBreak,
+            pendingBreak: breakState.pendingBreak,
+        });
+        // Handle resolution
+        switch (resolution.action) {
+            case 'skip':
+            case 'merge':
+                // Don't trigger the break - conflict exists
+                logger_1.default.info('TimerEngine', `Skipping ${breakType}: ${resolution.reason}`);
+                return;
+            case 'replace':
+                // Replace pending break with higher priority break
+                if (resolution.shouldClearPending) {
+                    logger_1.default.info('TimerEngine', `Replacing pending ${breakState.pendingBreak} with ${breakType}`);
+                    this.state.isPostponed = false;
+                    this.state.postponedPhase = null;
+                    this.state.postponedUntil = null;
+                    this.state.postponedBreakType = null;
+                }
+                break;
+            case 'allow':
+                // No conflict, proceed normally
+                break;
+        }
         // Store current phase to resume after break
         this.preBreakPhase = this.state.currentPhase;
         // PHASE 1.5: Track interrupted flow index for flow-based schedules
@@ -650,7 +703,47 @@ class TimerEngine extends events_1.EventEmitter {
             }
         }
         // Use transition model to compute next phase
-        const result = (0, transitions_1.computeNextFlowPhase)(currentIndex, flowSteps, false);
+        let result = (0, transitions_1.computeNextFlowPhase)(currentIndex, flowSteps, false);
+        // BREAK CONFLICT RESOLUTION: Skip break steps if a pending break exists
+        // This prevents stacking breaks when flow reaches a break step while
+        // a postponed break is pending
+        if ((0, breakConflict_1.isBreakPhase)(result.nextPhase)) {
+            const pendingBreak = this.state.isPostponed && this.state.postponedPhase
+                ? ((0, breakConflict_1.isBreakPhase)(this.state.postponedPhase) ? this.state.postponedPhase : null)
+                : null;
+            if (pendingBreak) {
+                const skipCheck = (0, breakConflict_1.shouldSkipFlowBreakStep)(pendingBreak, result.nextPhase);
+                if (skipCheck.skip) {
+                    logger_1.default.info('TimerEngine', 'Skipping flow break step due to pending break', {
+                        flowBreakStep: result.nextPhase,
+                        pendingBreak,
+                        reason: skipCheck.reason,
+                    });
+                    // Skip to the next non-break step
+                    let skipIndex = result.nextIndex;
+                    let attempts = 0;
+                    const maxAttempts = flowSteps.length;
+                    while (attempts < maxAttempts) {
+                        const nextResult = (0, transitions_1.computeNextFlowPhase)(skipIndex, flowSteps, false);
+                        skipIndex = nextResult.nextIndex;
+                        if (!(0, breakConflict_1.isBreakPhase)(nextResult.nextPhase)) {
+                            // Found a non-break step
+                            result = nextResult;
+                            logger_1.default.info('TimerEngine', 'Found next work step after skipping break', {
+                                newIndex: result.nextIndex,
+                                newPhase: result.nextPhase,
+                            });
+                            break;
+                        }
+                        attempts++;
+                    }
+                    if (attempts >= maxAttempts) {
+                        // All steps are breaks (shouldn't happen), just proceed
+                        logger_1.default.warn('TimerEngine', 'Could not find non-break step, proceeding with break');
+                    }
+                }
+            }
+        }
         this.state.currentFlowStepIndex = result.nextIndex;
         logger_1.default.info('TimerEngine', 'advanceFlowBasedPhase - advancing', {
             prevPhase,
@@ -682,11 +775,43 @@ class TimerEngine extends events_1.EventEmitter {
     }
     /**
      * Start a specific phase
+     *
+     * BREAK CONFLICT POLICY:
+     * When entering a break phase, check if pending break should be cleared
+     * to prevent conflicting break states (active + pending of same type)
      */
     startPhase(phase) {
         const prevPhase = this.state.currentPhase;
         const now = Date.now();
         const duration = this.getPhaseDurationMs(phase);
+        // BREAK CONFLICT RESOLUTION: Clear pending break when entering a break phase
+        // This prevents the "active break + same-type pending break" conflict
+        if ((0, breakConflict_1.isBreakPhase)(phase) && this.state.isPostponed && this.state.postponedPhase) {
+            const pendingBreak = (0, breakConflict_1.isBreakPhase)(this.state.postponedPhase)
+                ? this.state.postponedPhase
+                : null;
+            if (pendingBreak) {
+                const clearCheck = (0, breakConflict_1.shouldClearPendingOnBreakEntry)(pendingBreak, phase);
+                if (clearCheck.clear) {
+                    logger_1.default.info('TimerEngine', 'Clearing pending break on break entry', {
+                        enteringPhase: phase,
+                        pendingBreak,
+                        reason: clearCheck.reason,
+                    });
+                    this.state.isPostponed = false;
+                    this.state.postponedPhase = null;
+                    this.state.postponedUntil = null;
+                    this.state.postponedBreakType = null;
+                }
+                else {
+                    logger_1.default.info('TimerEngine', 'Keeping pending break on break entry', {
+                        enteringPhase: phase,
+                        pendingBreak,
+                        reason: clearCheck.reason,
+                    });
+                }
+            }
+        }
         this.state.currentPhase = phase;
         this.state.phaseStartedAt = now;
         this.state.phaseEndsAt = now + duration;
