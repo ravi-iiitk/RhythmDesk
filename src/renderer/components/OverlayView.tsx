@@ -5,10 +5,16 @@
  * Phase 2: Added heartbeat response for overlay sync watchdog
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { TimerTick, PhaseType } from '../../shared/types';
 import { PHASE_DISPLAY_NAMES, PHASE_COLORS } from '../../shared/constants';
 import { formatDuration } from '../../shared/timeUtils';
+
+// Format current time as HH:MM
+function formatCurrentTime(): string {
+  const now = new Date();
+  return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+}
 
 interface OverlayViewProps {
   tick: TimerTick | null;
@@ -39,6 +45,17 @@ const PHASE_MESSAGES: Record<PhaseType, string> = {
 };
 
 function OverlayView({ tick }: OverlayViewProps) {
+  // Current time state - updates every second
+  const [currentTime, setCurrentTime] = useState(formatCurrentTime());
+  
+  // Update current time every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(formatCurrentTime());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Phase 2: Respond to heartbeat requests from main process
   // This allows the watchdog to detect if overlay is frozen/unresponsive
   useEffect(() => {
@@ -94,11 +111,26 @@ function OverlayView({ tick }: OverlayViewProps) {
   const showCloseButton = !tick.isStrictMode && !isOfficeFocusLockActive;
   const showStopLockButton = isOfficeFocusLockActive && isWorkPhase && !tick.officeFocusLock.isStrictMode;
 
+  // Current time display style - subtle, top-right corner
+  const currentTimeStyle: React.CSSProperties = {
+    position: 'absolute',
+    top: '1rem',
+    right: '1.5rem',
+    fontSize: '1rem',
+    color: 'rgba(255, 255, 255, 0.4)',
+    fontFamily: 'monospace',
+    fontWeight: 400,
+    letterSpacing: '0.05em',
+  };
+
   // If rest block is active, show rest block overlay
   if (isRestBlockActive) {
     const restBlockColor = '#22c55e'; // Green color for rest
     return (
       <div className="overlay">
+        {/* Current Time - Top Right */}
+        <div style={currentTimeStyle}>{currentTime}</div>
+        
         <div className="overlay-content">
           {/* Rest Block Title */}
           <div className="overlay-schedule-name">
@@ -156,6 +188,9 @@ function OverlayView({ tick }: OverlayViewProps) {
 
   return (
     <div className="overlay">
+      {/* Current Time - Top Right */}
+      <div style={currentTimeStyle}>{currentTime}</div>
+      
       <div className="overlay-content">
         {/* Schedule Name */}
         <div className="overlay-schedule-name">

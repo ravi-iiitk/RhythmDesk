@@ -42,6 +42,8 @@ const api = {
     closeOverlay: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.CLOSE_OVERLAY),
     minimizeToTray: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.MINIMIZE_TO_TRAY),
     quitApp: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.QUIT_APP),
+    // Dev mode only
+    devClearAllData: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.DEV_CLEAR_ALL_DATA),
     // Event listeners with cleanup
     onTimerTick: (callback) => {
         const handler = (_event, tick) => callback(tick);

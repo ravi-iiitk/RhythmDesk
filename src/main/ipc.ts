@@ -159,4 +159,20 @@ export function registerIpcHandlers(): void {
     getOverlaySyncService().onHeartbeatResponse();
     getOverlayWatchdog().reportHeartbeat();
   });
+
+  // Dev mode: Clear all data (config + session)
+  ipcMain.handle(IPC_CHANNELS.DEV_CLEAR_ALL_DATA, () => {
+    if (process.env.NODE_ENV !== 'development') {
+      return { success: false, message: 'Only available in dev mode' };
+    }
+    
+    const { configStore, sessionSnapshot } = require('../core/configService');
+    configStore.clear();
+    sessionSnapshot.clearSnapshot();
+    
+    // Reset timer engine state
+    timerEngine.resetSession();
+    
+    return { success: true, message: 'All data cleared. Restart app for full reset.' };
+  });
 }

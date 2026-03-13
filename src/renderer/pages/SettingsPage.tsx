@@ -259,6 +259,31 @@ function SettingsPage() {
             ⚡ For testing: 1 minute = 2 seconds. Restart timer after toggling.
           </p>
         </div>
+
+        <div className="form-group" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #333' }}>
+          <label style={{ fontWeight: 500, marginBottom: '0.5rem', display: 'block' }}>
+            🗑️ Reset App Data
+          </label>
+          <button 
+            className="btn"
+            style={{ 
+              backgroundColor: '#dc2626', 
+              color: 'white',
+              padding: '0.5rem 1rem',
+            }}
+            onClick={async () => {
+              if (confirm('Clear ALL config data (schedules, settings, session state)?\n\nThis cannot be undone. App will need restart.')) {
+                const result = await window.rhythmDesk.devClearAllData();
+                alert(result.message);
+              }
+            }}
+          >
+            Clear All Data
+          </button>
+          <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+            ⚠️ Removes all schedules, settings, and session state. Use for fresh start.
+          </p>
+        </div>
       </div>
 
       <div className="mt-2">

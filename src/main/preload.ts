@@ -48,6 +48,9 @@ export interface RhythmDeskAPI {
   minimizeToTray: () => Promise<void>;
   quitApp: () => Promise<void>;
   
+  // Dev mode only
+  devClearAllData: () => Promise<{ success: boolean; message: string }>;
+  
   // Event listeners
   onTimerTick: (callback: (tick: any) => void) => () => void;
   onPhaseChange: (callback: (data: any) => void) => () => void;
@@ -101,6 +104,9 @@ const api: RhythmDeskAPI = {
   closeOverlay: () => ipcRenderer.invoke(IPC_CHANNELS.CLOSE_OVERLAY),
   minimizeToTray: () => ipcRenderer.invoke(IPC_CHANNELS.MINIMIZE_TO_TRAY),
   quitApp: () => ipcRenderer.invoke(IPC_CHANNELS.QUIT_APP),
+
+  // Dev mode only
+  devClearAllData: () => ipcRenderer.invoke(IPC_CHANNELS.DEV_CLEAR_ALL_DATA),
 
   // Event listeners with cleanup
   onTimerTick: (callback) => {

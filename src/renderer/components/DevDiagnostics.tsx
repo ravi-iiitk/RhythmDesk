@@ -100,6 +100,30 @@ export function DevDiagnostics({ tick, isVisible = true, overlayActive = false }
             <DiagRow label="scheduleId" value={tick.scheduleId?.slice(0, 8) || '-'} />
             <DiagRow label="flowStale" value={tick.isFlowStale ? 'YES' : 'no'} highlight={tick.isFlowStale} />
           </div>
+          
+          <div style={styles.section}>
+            <div style={styles.sectionTitle}>Dev Actions</div>
+            <button
+              onClick={async () => {
+                if (confirm('Clear ALL config data? App will need restart.')) {
+                  const result = await window.rhythmDesk.devClearAllData();
+                  alert(result.message);
+                }
+              }}
+              style={{
+                backgroundColor: '#dc2626',
+                color: 'white',
+                border: 'none',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                fontSize: '10px',
+                cursor: 'pointer',
+                width: '100%',
+              }}
+            >
+              🗑️ Clear All Data
+            </button>
+          </div>
         </div>
       )}
     </div>

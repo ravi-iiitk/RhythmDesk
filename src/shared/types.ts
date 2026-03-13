@@ -456,6 +456,9 @@ export const IPC_CHANNELS = {
   CLOSE_OVERLAY: 'overlay:close',
   MINIMIZE_TO_TRAY: 'window:minimizeToTray',
   QUIT_APP: 'app:quit',
+  
+  // Dev mode only
+  DEV_CLEAR_ALL_DATA: 'dev:clearAllData',
 } as const;
 
 // Default transition config
