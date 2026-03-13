@@ -215,8 +215,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
 
   const handleFlowStepLabelChange = (index: number, label: string) => {
     const newSteps = [...flowSteps];
-    // Store empty string as undefined to keep data clean
-    newSteps[index] = { ...newSteps[index], label: label.trim() || undefined };
+    // Store raw value while typing - trim only on save
+    newSteps[index] = { ...newSteps[index], label: label || undefined };
     setFlowSteps(newSteps);
   };
 
@@ -262,8 +262,13 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
       ...formData,
       // Schedule mode
       mode: scheduleMode,
-      // Flow steps (only used in flow-based mode)
-      flowSteps: scheduleMode === 'flow-based' ? flowSteps : undefined,
+      // Flow steps (only used in flow-based mode) - trim labels on save
+      flowSteps: scheduleMode === 'flow-based' 
+        ? flowSteps.map(step => ({
+            ...step,
+            label: step.label?.trim() || undefined,
+          }))
+        : undefined,
       // Sync to nested transition configs
       transitions: {
         sitToStand: {
