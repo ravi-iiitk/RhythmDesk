@@ -1434,79 +1434,114 @@ export class TimerEngine extends EventEmitter {
   }
 
   /**
-   * Shuffle flow steps - swap sit/stand positions to start with standing work
-   * Pattern: 1,2,3,4,5 -> 3,4,1,2,5 (Stand, Stand→Sit, Sit, Sit→Stand, Break)
-   * If shuffled again, reverts to original order
+   * Shuffle flow steps - toggle between Sit-first and Stand-first order.
+   * Break always stays at the end.
+   * 
+   * Normal order: Sit → sit-to-stand trans → Stand → stand-to-sit trans → Break
+   * Shuffled:     Stand → stand-to-sit trans → Sit → sit-to-stand trans → Break
+   * 
+   * If flow is messed up (e.g., break first), restores to normal Sit-first order.
    * 
    * Saves to config file - user must click "Reset Now" to apply
    */
-  shuffleFlow(): void {
+  shuffleFlow(): { success: boolean; message: string } {
     if (!this.currentSchedule || !isFlowBasedSchedule(this.currentSchedule)) {
       logger.warn('TimerEngine', 'Cannot shuffle - no flow-based schedule active');
-      return;
+      return { success: false, message: 'No flow-based schedule active' };
     }
 
     const flowSteps = this.currentSchedule.flowSteps!;
     if (flowSteps.length < 4) {
       logger.warn('TimerEngine', 'Cannot shuffle - need at least 4 flow steps');
-      return;
+      return { success: false, message: 'Need at least 4 flow steps to shuffle' };
     }
 
-    logger.info('TimerEngine', 'Shuffling flow steps (swap sit/stand) - saving to config');
+    // Find work phases and breaks
+    const sitStep = flowSteps.find(s => s.type === 'sit');
+    const standStep = flowSteps.find(s => s.type === 'stand');
+    const sitToStandTrans = flowSteps.find(s => s.type === 'sit-to-stand-transition');
+    const standToSitTrans = flowSteps.find(s => s.type === 'stand-to-sit-transition');
+    const breaks = flowSteps.filter(s => s.type === 'short-break');
 
-    // Swap positions: move items 2,3 (index 2,3) to front, items 0,1 after
-    // [0,1,2,3,4...] -> [2,3,0,1,4...]
-    const newSteps = [
-      flowSteps[2], // Stand
-      flowSteps[3], // Stand→Sit Transition
-      flowSteps[0], // Sit
-      flowSteps[1], // Sit→Stand Transition
-      ...flowSteps.slice(4) // Rest (Short Break, etc.)
-    ];
+    if (!sitStep || !standStep || !sitToStandTrans || !standToSitTrans) {
+      logger.warn('TimerEngine', 'Cannot shuffle - missing required work phases');
+      return { success: false, message: 'Missing required work phases (sit, stand, transitions)' };
+    }
+
+    const firstStep = flowSteps[0];
+    let newSteps: FlowStep[];
+    let message: string;
+
+    if (firstStep.type === 'sit') {
+      // Currently Sit-first → change to Stand-first
+      newSteps = [standStep, standToSitTrans, sitStep, sitToStandTrans, ...breaks];
+      message = 'Flow shuffled to Stand-first! Click Reset Now to apply.';
+      logger.info('TimerEngine', 'Shuffling: Sit-first → Stand-first');
+    } else if (firstStep.type === 'stand') {
+      // Currently Stand-first → change to Sit-first
+      newSteps = [sitStep, sitToStandTrans, standStep, standToSitTrans, ...breaks];
+      message = 'Flow shuffled to Sit-first! Click Reset Now to apply.';
+      logger.info('TimerEngine', 'Shuffling: Stand-first → Sit-first');
+    } else {
+      // Flow is messed up (break or transition first) → restore to normal Sit-first
+      newSteps = [sitStep, sitToStandTrans, standStep, standToSitTrans, ...breaks];
+      message = 'Flow restored to normal (Sit-first)! Click Reset Now to apply.';
+      logger.info('TimerEngine', 'Shuffling: Restoring to normal Sit-first order');
+    }
 
     // Save to config file - this will trigger flow stale detection
     const updatedSchedule = { ...this.currentSchedule, flowSteps: newSteps };
     configService.saveSchedule(updatedSchedule);
     
+    // Update in-memory schedule reference so tick shows updated state
+    this.currentSchedule = updatedSchedule;
+    
+    // Emit schedule change event so UI updates
+    this.emit('scheduleChange', updatedSchedule);
+    
     // Emit tick so UI updates and shows "Flow Updated" banner
     this.emitTick();
     
-    logger.info('TimerEngine', 'Flow shuffled in config - user should click Reset Now to apply');
+    logger.info('TimerEngine', 'Flow shuffled in config', {
+      newOrder: newSteps.map(s => s.type).join(' → ')
+    });
+    return { success: true, message };
   }
 
   /**
-   * Reverse flow steps - reverse the work phase order
-   * The flow is rotated so that a WORK phase (sit/stand) is always first.
+   * Reverse flow steps - true reversal, last step becomes first.
    * 
    * Example: sit → trans → stand → trans → break
-   * After reverse: stand → trans → sit → trans → break
+   * After reverse: break → trans → stand → trans → sit
    * 
    * Saves to config file - user must click "Reset Now" to apply
    */
-  reverseFlow(): void {
+  reverseFlow(): { success: boolean; message: string } {
     if (!this.currentSchedule || !isFlowBasedSchedule(this.currentSchedule)) {
       logger.warn('TimerEngine', 'Cannot reverse - no flow-based schedule active');
-      return;
+      return { success: false, message: 'No flow-based schedule active' };
     }
 
     const flowSteps = this.currentSchedule.flowSteps!;
     if (flowSteps.length < 2) {
       logger.warn('TimerEngine', 'Cannot reverse - need at least 2 flow steps');
-      return;
+      return { success: false, message: 'Need at least 2 flow steps to reverse' };
     }
 
     logger.info('TimerEngine', 'Reversing flow steps - saving to config');
 
-    // Reverse the array
-    let newSteps = [...flowSteps].reverse();
-    
-    // CRITICAL: Rotate array so first WORK phase is at index 0
-    // This ensures the flow never starts with a break
-    newSteps = this.normalizeFlowToStartWithWork(newSteps);
+    // True reversal - last becomes first, even if it's a break
+    const newSteps = [...flowSteps].reverse();
 
     // Save to config file - this will trigger flow stale detection
     const updatedSchedule = { ...this.currentSchedule, flowSteps: newSteps };
     configService.saveSchedule(updatedSchedule);
+    
+    // Update in-memory schedule reference so tick shows updated state
+    this.currentSchedule = updatedSchedule;
+    
+    // Emit schedule change event so UI updates
+    this.emit('scheduleChange', updatedSchedule);
     
     // Emit tick so UI updates and shows "Flow Updated" banner
     this.emitTick();
@@ -1514,33 +1549,31 @@ export class TimerEngine extends EventEmitter {
     logger.info('TimerEngine', 'Flow reversed in config - user should click Reset Now to apply', {
       newOrder: newSteps.map(s => s.type).join(' → ')
     });
+    return { success: true, message: 'Flow reversed! Click Reset Now to apply.' };
   }
   
   /**
-   * Normalize flow array to ensure it starts with a work phase (sit or stand).
-   * Rotates the array if necessary so breaks/transitions are not first.
+   * Called when a schedule is updated externally (e.g., via settings UI).
+   * Updates the in-memory schedule reference if it's the active schedule,
+   * which allows isFlowSessionStale() to detect changes.
    */
-  private normalizeFlowToStartWithWork(steps: FlowStep[]): FlowStep[] {
-    if (steps.length === 0) return steps;
+  onScheduleUpdated(schedule: Schedule): void {
+    if (!this.currentSchedule) return;
     
-    // Find index of first work phase
-    const firstWorkIndex = steps.findIndex(s => s.type === 'sit' || s.type === 'stand');
+    // Only update if this is the active schedule
+    if (this.currentSchedule.id !== schedule.id) return;
     
-    if (firstWorkIndex <= 0) {
-      // Already starts with work phase or no work phase found
-      return steps;
-    }
-    
-    // Rotate array: move elements before firstWorkIndex to the end
-    const rotated = [...steps.slice(firstWorkIndex), ...steps.slice(0, firstWorkIndex)];
-    
-    logger.info('TimerEngine', 'Normalized flow to start with work phase', {
-      originalFirst: steps[0].type,
-      newFirst: rotated[0].type,
-      rotatedBy: firstWorkIndex
+    logger.info('TimerEngine', 'Active schedule updated externally', {
+      scheduleId: schedule.id,
+      scheduleName: schedule.name,
     });
     
-    return rotated;
+    // Update the in-memory reference
+    this.currentSchedule = schedule;
+    
+    // Emit events so UI updates
+    this.emit('scheduleChange', schedule);
+    this.emitTick();
   }
 
   /**

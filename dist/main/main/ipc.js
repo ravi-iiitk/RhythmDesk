@@ -17,6 +17,7 @@ const restBlockService_1 = require("../core/restBlockService");
 const windowManager_1 = require("./windowManager");
 const electron_2 = require("electron");
 const overlaySync_1 = require("../core/overlaySync");
+const watchdog_1 = require("../core/watchdog");
 /**
  * Register all IPC handlers
  */
@@ -34,6 +35,8 @@ function registerIpcHandlers() {
     });
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.SAVE_SCHEDULE, (_event, schedule) => {
         configService_1.default.saveSchedule(schedule);
+        // Notify timer engine if this is the active schedule
+        timerEngine.onScheduleUpdated(schedule);
     });
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.DELETE_SCHEDULE, (_event, id) => {
         configService_1.default.deleteSchedule(id);
@@ -67,10 +70,10 @@ function registerIpcHandlers() {
         timerEngine.resetTodayCounters();
     });
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.SHUFFLE_FLOW, () => {
-        timerEngine.shuffleFlow();
+        return timerEngine.shuffleFlow();
     });
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.REVERSE_FLOW, () => {
-        timerEngine.reverseFlow();
+        return timerEngine.reverseFlow();
     });
     // Window control handlers
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.OPEN_SETTINGS, () => {
@@ -123,8 +126,10 @@ function registerIpcHandlers() {
         return { deleted, presets: restBlockService.getPresets() };
     });
     // Phase 2: Overlay sync heartbeat handler
+    // Report to BOTH watchdog systems to keep them in sync
     electron_1.ipcMain.on(overlaySync_1.OVERLAY_SYNC_CHANNELS.HEARTBEAT_RESPONSE, () => {
         (0, overlaySync_1.getOverlaySyncService)().onHeartbeatResponse();
+        (0, watchdog_1.getOverlayWatchdog)().reportHeartbeat();
     });
 }
 //# sourceMappingURL=ipc.js.map

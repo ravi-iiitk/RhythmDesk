@@ -110,10 +110,11 @@ function initialize() {
         // PHASE 5: Start watchdogs and health monitor
         // ========================================
         const timerWatchdog = (0, watchdog_1.getTimerWatchdog)();
-        const overlayWatchdog = (0, watchdog_1.getOverlayWatchdog)();
         const healthMonitor = (0, healthMonitor_1.getHealthMonitor)();
         timerWatchdog.start();
         healthMonitor.start();
+        // NOTE: OverlayWatchdog is NOT started here - it was causing infinite reload
+        // loops. The OverlaySyncService handles rest block overlay monitoring instead.
         logger_1.default.info('Main', 'Watchdogs and health monitor started');
         // Handle timer events
         timerEngine.on('tick', (tick) => {
@@ -146,16 +147,15 @@ function initialize() {
             if (newPolicy.showOverlay) {
                 (0, windowManager_1.showOverlay)(newPolicy.strictMode);
                 (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.SHOW_OVERLAY, { phase: data.newPhase });
-                // Start overlay watchdog when overlay shows
-                overlayWatchdog.startMonitoring();
+                // NOTE: OverlayWatchdog disabled for regular overlays - it was causing
+                // infinite reload loops because it expects heartbeats but doesn't send
+                // heartbeat requests. The OverlaySyncService handles rest block monitoring.
             }
             else if (prevPolicy.showOverlay && !isRestBlockActive) {
                 // Close overlay when leaving a phase that required it
                 // BUT only if no RestBlock is active (RestBlock takes priority)
                 (0, windowManager_1.closeOverlay)();
                 (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.HIDE_OVERLAY, {});
-                // Stop overlay watchdog when overlay hides
-                overlayWatchdog.stopMonitoring();
             }
         });
         timerEngine.on('scheduleChange', (_schedule) => {

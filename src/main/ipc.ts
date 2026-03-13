@@ -12,6 +12,7 @@ import { getRestBlockService } from '../core/restBlockService';
 import { showMainWindow, closeOverlay, hideMainWindow } from './windowManager';
 import { app } from 'electron';
 import { getOverlaySyncService, OVERLAY_SYNC_CHANNELS } from '../core/overlaySync';
+import { getOverlayWatchdog } from '../core/watchdog';
 
 /**
  * Register all IPC handlers
@@ -34,6 +35,8 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.SAVE_SCHEDULE, (_event, schedule) => {
     configService.saveSchedule(schedule);
+    // Notify timer engine if this is the active schedule
+    timerEngine.onScheduleUpdated(schedule);
   });
 
   ipcMain.handle(IPC_CHANNELS.DELETE_SCHEDULE, (_event, id) => {
@@ -78,11 +81,11 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.SHUFFLE_FLOW, () => {
-    timerEngine.shuffleFlow();
+    return timerEngine.shuffleFlow();
   });
 
   ipcMain.handle(IPC_CHANNELS.REVERSE_FLOW, () => {
-    timerEngine.reverseFlow();
+    return timerEngine.reverseFlow();
   });
 
   // Window control handlers
@@ -151,7 +154,9 @@ export function registerIpcHandlers(): void {
   });
 
   // Phase 2: Overlay sync heartbeat handler
+  // Report to BOTH watchdog systems to keep them in sync
   ipcMain.on(OVERLAY_SYNC_CHANNELS.HEARTBEAT_RESPONSE, () => {
     getOverlaySyncService().onHeartbeatResponse();
+    getOverlayWatchdog().reportHeartbeat();
   });
 }

@@ -4,16 +4,40 @@ A strict work posture and break scheduler for Linux desktop. Designed for users 
 
 ## Features
 
+### Core Features
 - **Sit/Stand Cycles**: Configurable sitting and standing work periods with transition breaks
 - **Break Management**: Short and long breaks based on cumulative active work time
 - **Strict Mode**: Fullscreen overlays that block normal interaction during breaks
 - **Postpone System**: Limited postpones per day for when you're in the middle of work
-- **Office Focus Lock**: Manual mode to enforce fullscreen blocking during work phases for paid work
 - **System Tray**: Quick access to timer state and controls with detailed tooltip
 - **Multiple Schedules**: Create named schedules for different work contexts (e.g., "EPAM Day", "Resy Night")
 - **Sleep/Wake Recovery**: Timer survives system sleep and recovers state from timestamps
 - **Auto-Reopen Overlay**: Break overlays automatically reopen if accidentally closed
 - **Local Storage**: All data stored locally in JSON, no cloud sync
+
+### Schedule Modes
+- **Rule-Based**: Traditional mode with sit/stand durations and break intervals
+- **Flow-Based**: Define exact sequence of steps (sit → transition → stand → break → ...)
+
+### Flow Controls (Flow-Based Schedules)
+- **🔀 Shuffle**: Swap sit/stand positions (start with standing instead of sitting)
+- **↩️ Reverse**: True reversal - last step becomes first (even breaks can come first)
+- **Flow Updated Banner**: Dashboard shows when flow config changed, click "Reset Now" to apply
+
+### Office Focus Lock
+- **Manual Activation**: Select work label and duration (30-120 min)
+- **Fullscreen Enforcement**: Forces overlay during sit/stand work phases
+- **Strict Mode Option**: Extra blocking during focus lock
+
+### Custom Rest Blocks
+- **On-Demand Breaks**: Start custom rest periods anytime
+- **Presets**: Save favorite rest block configurations
+- **Strict Mode**: Optional full blocking during rest
+
+### Sound Notifications
+- **Event Sounds**: Different sounds for breaks, transitions, focus lock, etc.
+- **Per-Event Control**: Enable/disable sounds for specific events
+- **Volume Control**: Adjustable sound volume
 
 ## Technical Stack
 
@@ -90,31 +114,28 @@ Priority order:
 3. Transition break
 4. Sit/Stand phase
 
-## Default Schedules
+## Schedule Modes
 
-Two sample schedules are created on first run:
+### Rule-Based (Default)
+Traditional mode where you set:
+- Sit duration (minutes)
+- Stand duration (minutes)
+- Short break interval and duration
+- Long break interval and duration
 
-### EPAM Day
-- Days: Mon-Fri, 08:00-16:00
-- Sit: 12 min / Stand: 8 min
-- Short break: every 60 min for 5 min
-- Long break: every 150 min for 15 min
+The timer automatically cycles through phases based on these rules.
 
-### Resy Night
-- Days: Mon-Sat, 20:00-00:00
-- Sit: 10 min / Stand: 10 min
-- Short break: every 50 min for 5 min
-- Long break: every 120 min for 12 min
+### Flow-Based
+Define an exact sequence of steps that repeat in order:
+```
+Example: Sit (12m) → Transition (1m) → Stand (8m) → Transition (1m) → Short Break (5m)
+```
 
-## Office Focus Lock
+Flow-based schedules give you precise control over the exact order and duration of each step.
 
-A manual mode for enforcing fullscreen overlay during work phases when doing paid office work:
-
-- **Manual Activation**: User selects a work label (EPAM, Resy, or custom) and duration
-- **Duration Options**: 30, 60, 90, 120 minutes or custom
-- **Overlay Behavior**: Forces fullscreen takeover during sit/stand phases
-- **No Persistence**: Resets on app restart
-- **Does NOT affect**: Schedule timing, work time calculations, or break thresholds
+**Flow Controls:**
+- **Shuffle**: Swaps sit/stand blocks (e.g., start with standing)
+- **Reverse**: Completely reverses the flow order (last becomes first)
 
 ## Overlay Logic
 
@@ -128,11 +149,19 @@ A manual mode for enforcing fullscreen overlay during work phases when doing pai
 
 ## Configuration Storage
 
-Data is stored in `~/.config/rhythmdesk/config.json`:
+Data is stored in `~/.config/rhythmdesk/`:
 
-- **Schedules**: All schedule configurations
-- **Session State**: Current phase, timestamps, postpone counts
-- **General Settings**: Sound, dark mode, notifications
+- **config.json**: Schedules, general settings, rest block presets
+- **session-snapshot.json**: Current phase, timestamps, postpone counts
+- **logs/app.log**: Application logs (with rotation)
+
+### Sound Files
+
+Custom sounds can be placed in:
+- `~/.config/rhythmdesk/sounds/` (user custom)
+- `resources/sounds/` (bundled with app)
+
+Supported formats: WAV, MP3, OGG
 
 ## Building & Distribution
 

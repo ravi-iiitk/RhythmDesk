@@ -143,10 +143,22 @@ class HealthMonitor extends events_1.EventEmitter {
     }
     /**
      * Check overlay health
+     * NOTE: OverlayWatchdog is currently disabled for regular overlays due to
+     * infinite reload loops. The OverlaySyncService handles rest block monitoring.
+     * This check now only reports issues when the watchdog is actively monitoring.
      */
     checkOverlayHealth() {
         const overlayWatchdog = (0, watchdog_1.getOverlayWatchdog)();
         const state = overlayWatchdog.getState();
+        // Only check if watchdog is actively monitoring (i.e., isMonitoring is true)
+        // If not monitoring, always report healthy
+        if (!state.isMonitoring) {
+            return {
+                name: 'overlay',
+                status: 'healthy',
+                lastCheck: Date.now(),
+            };
+        }
         let status = 'healthy';
         let message;
         if (state.isOverlayActive && state.missedHeartbeats > 0) {

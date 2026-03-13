@@ -27,7 +27,7 @@ import { getOverlaySyncService, OVERLAY_SYNC_CHANNELS } from '../core/overlaySyn
 import { setupMainProcessErrorHandlers } from '../core/errorHandler';
 import { installShutdownHandlers } from '../core/shutdown';
 import { getHealthMonitor } from '../core/healthMonitor';
-import { getTimerWatchdog, getOverlayWatchdog } from '../core/watchdog';
+import { getTimerWatchdog } from '../core/watchdog';
 import { initDebugMode } from '../core/debugMode';
 // Sound service
 import { playSound } from '../core/soundService';
@@ -124,11 +124,13 @@ function initialize(): void {
     // PHASE 5: Start watchdogs and health monitor
     // ========================================
     const timerWatchdog = getTimerWatchdog();
-    const overlayWatchdog = getOverlayWatchdog();
     const healthMonitor = getHealthMonitor();
     
     timerWatchdog.start();
     healthMonitor.start();
+    
+    // NOTE: OverlayWatchdog is NOT started here - it was causing infinite reload
+    // loops. The OverlaySyncService handles rest block overlay monitoring instead.
     
     logger.info('Main', 'Watchdogs and health monitor started');
     
@@ -167,15 +169,14 @@ function initialize(): void {
       if (newPolicy.showOverlay) {
         showOverlay(newPolicy.strictMode);
         sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: data.newPhase });
-        // Start overlay watchdog when overlay shows
-        overlayWatchdog.startMonitoring();
+        // NOTE: OverlayWatchdog disabled for regular overlays - it was causing
+        // infinite reload loops because it expects heartbeats but doesn't send
+        // heartbeat requests. The OverlaySyncService handles rest block monitoring.
       } else if (prevPolicy.showOverlay && !isRestBlockActive) {
         // Close overlay when leaving a phase that required it
         // BUT only if no RestBlock is active (RestBlock takes priority)
         closeOverlay();
         sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
-        // Stop overlay watchdog when overlay hides
-        overlayWatchdog.stopMonitoring();
       }
     });
 
