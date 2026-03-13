@@ -80,9 +80,10 @@ function OverlayView({ tick }: OverlayViewProps) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
 
-  const phaseColor = PHASE_COLORS[tick.currentPhase] || PHASE_COLORS['idle'];
-  const phaseName = PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
-  const nextPhaseName = PHASE_DISPLAY_NAMES[tick.nextPhase] || tick.nextPhase;
+  const phaseColor = PHASE_COLORS[tick.currentPhase] || '#6b7280';
+  // Use custom labels from tick (includes user-defined flow step labels)
+  const phaseName = tick.currentPhaseLabel || PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
+  const nextPhaseName = tick.nextPhaseLabel || PHASE_DISPLAY_NAMES[tick.nextPhase] || tick.nextPhase;
   const message = PHASE_MESSAGES[tick.currentPhase] || '';
 
   const handleComplete = () => window.rhythmDesk.completePhase();

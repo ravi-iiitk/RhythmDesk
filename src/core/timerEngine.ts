@@ -80,6 +80,7 @@ import {
   TransitionContext,
 } from './runtimeInvariants';
 import { trace } from './traceLogger';
+import { getPhaseDisplayLabel } from './displayLabels';
 
 const TIME_JUMP_THRESHOLD_MS = 5000; // 5 seconds - indicates sleep/wake or time jump
 const STATE_SAVE_DEBOUNCE_MS = 5000; // Save state every 5 seconds max
@@ -1972,11 +1973,23 @@ export class TimerEngine extends EventEmitter {
     // Create debug snapshot for dashboard (dev mode)
     const debugSnapshot = createDebugSnapshot(this.state, schedule, nextPhase, thenPhase);
     
+    // Get custom display labels for phases
+    const currentIndex = this.state.currentFlowStepIndex;
+    const nextIndex = schedule && isFlowBasedSchedule(schedule) && schedule.flowSteps
+      ? ((currentIndex ?? 0) + 1) % schedule.flowSteps.length
+      : undefined;
+    const thenIndex = schedule && isFlowBasedSchedule(schedule) && schedule.flowSteps && nextIndex !== undefined
+      ? (nextIndex + 1) % schedule.flowSteps.length
+      : undefined;
+    
     const tick: TimerTick = {
       scheduleId: schedule?.id || null,
       scheduleName: schedule?.name || null,
       scheduleMode: schedule?.mode || null,
       currentPhase: this.state.currentPhase,
+      currentPhaseLabel: getPhaseDisplayLabel(this.state.currentPhase, schedule, currentIndex),
+      nextPhaseLabel: getPhaseDisplayLabel(nextPhase, schedule, nextIndex),
+      thenPhaseLabel: getPhaseDisplayLabel(thenPhase, schedule, thenIndex),
       phaseRemainingMs: this.state.phaseRemainingMs,
       phaseTotalMs: this.state.phaseTotalMs,
       nextPhase,

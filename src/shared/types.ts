@@ -369,6 +369,10 @@ export interface TimerTick {
   scheduleName: string | null;
   scheduleMode: ScheduleMode | null;
   currentPhase: PhaseType;
+  // Custom display labels for phases (uses custom label if defined, else default)
+  currentPhaseLabel: string;
+  nextPhaseLabel: string;
+  thenPhaseLabel: string;
   phaseRemainingMs: number;
   phaseTotalMs: number;
   nextPhase: PhaseType;

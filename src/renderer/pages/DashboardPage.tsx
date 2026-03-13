@@ -315,8 +315,9 @@ function DashboardPage({ tick }: DashboardPageProps) {
   }
 
   const phaseColor = PHASE_COLORS[tick.currentPhase] || PHASE_COLORS['idle'];
-  const phaseName = PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
-  const nextPhaseName = PHASE_DISPLAY_NAMES[tick.nextPhase] || tick.nextPhase;
+  // Use custom labels from tick (includes user-defined flow step labels)
+  const phaseName = tick.currentPhaseLabel || PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
+  const nextPhaseName = tick.nextPhaseLabel || PHASE_DISPLAY_NAMES[tick.nextPhase] || tick.nextPhase;
 
   return (
     <div className="page" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', height: '100%' }}>
@@ -328,7 +329,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
             {tick.isPaused && <span className="status-badge status-paused" style={{ fontSize: '0.875rem' }}>⏸️ Paused</span>}
             {tick.isPostponed && tick.pendingBreakPhase && (
               <span className="status-badge" style={{ backgroundColor: 'rgba(251, 191, 36, 0.2)', color: '#fbbf24', fontSize: '0.875rem' }}>
-                ⏳ Pending {PHASE_DISPLAY_NAMES[tick.pendingBreakPhase] || tick.pendingBreakPhase} in {formatDuration(tick.pendingBreakInMs)}
+                ⏳ Pending {PHASE_DISPLAY_NAMES[tick.pendingBreakPhase]} in {formatDuration(tick.pendingBreakInMs)}
               </span>
             )}
             {tick.isStrictMode && (

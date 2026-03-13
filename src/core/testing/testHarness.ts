@@ -994,6 +994,128 @@ export const TEST_SCENARIOS: TestScenario[] = [
       };
     },
   },
+  
+  // ============================================================
+  // BREAK CONFLICT SCENARIOS (Scenarios 11-14)
+  // ============================================================
+  
+  {
+    name: 'Scenario 11: Pending Short Break - New Short Break Ignored',
+    description: 'When short break is pending, new short break should be ignored/merged',
+    run: async (harness: TestHarness) => {
+      const startTime = Date.now();
+      
+      // Trigger and postpone a short break
+      harness.triggerBreak('short-break');
+      harness.postponeBreak(5);
+      
+      harness.assert(harness.getState().isPostponed, 'Should have pending break');
+      harness.assert(harness.getState().postponedPhase === 'short-break', 'Pending should be short-break');
+      
+      // Try to trigger another short break - should be ignored
+      harness.triggerBreak('short-break');
+      
+      // Should still have same pending break (no duplicate)
+      harness.assert(harness.getState().isPostponed, 'Should still be postponed');
+      harness.assert(harness.getState().postponedPhase === 'short-break', 'Should still be short-break');
+      
+      return {
+        name: 'Scenario 11: Pending Short Break - New Short Break Ignored',
+        passed: harness.getSteps().every(s => s.passed),
+        duration: Date.now() - startTime,
+        steps: harness.getSteps(),
+      };
+    },
+  },
+  
+  {
+    name: 'Scenario 12: Pending Short Break - Long Break Supersedes',
+    description: 'When short break is pending, long break should replace it',
+    run: async (harness: TestHarness) => {
+      const startTime = Date.now();
+      
+      // Trigger and postpone a short break
+      harness.triggerBreak('short-break');
+      harness.postponeBreak(5);
+      
+      harness.assert(harness.getState().postponedPhase === 'short-break', 'Pending should be short-break');
+      
+      // Trigger long break - should supersede
+      harness.triggerBreak('long-break');
+      
+      // Long break should now be active (not pending short break)
+      const state = harness.getState();
+      harness.assert(
+        state.currentPhase === 'long-break' || state.postponedPhase === 'long-break',
+        'Long break should be active or pending'
+      );
+      
+      return {
+        name: 'Scenario 12: Pending Short Break - Long Break Supersedes',
+        passed: harness.getSteps().every(s => s.passed),
+        duration: Date.now() - startTime,
+        steps: harness.getSteps(),
+      };
+    },
+  },
+  
+  {
+    name: 'Scenario 13: Pending Long Break - Short Break Ignored',
+    description: 'When long break is pending, short break should be ignored',
+    run: async (harness: TestHarness) => {
+      const startTime = Date.now();
+      
+      // Trigger and postpone a long break
+      harness.triggerBreak('long-break');
+      harness.postponeBreak(5);
+      
+      harness.assert(harness.getState().postponedPhase === 'long-break', 'Pending should be long-break');
+      
+      // Try to trigger short break - should be ignored
+      harness.triggerBreak('short-break');
+      
+      // Should still have long break pending
+      harness.assert(harness.getState().isPostponed, 'Should still be postponed');
+      harness.assert(harness.getState().postponedPhase === 'long-break', 'Should still be long-break');
+      
+      return {
+        name: 'Scenario 13: Pending Long Break - Short Break Ignored',
+        passed: harness.getSteps().every(s => s.passed),
+        duration: Date.now() - startTime,
+        steps: harness.getSteps(),
+      };
+    },
+  },
+  
+  {
+    name: 'Scenario 14: Reset Clears Pending Break',
+    description: 'Reset should clear any pending break state',
+    run: async (harness: TestHarness) => {
+      const startTime = Date.now();
+      
+      // Trigger and postpone a break
+      harness.triggerBreak('short-break');
+      harness.postponeBreak(5);
+      
+      harness.assert(harness.getState().isPostponed, 'Should have pending break');
+      
+      // Reset session
+      harness.resetSession();
+      
+      // Should have no pending break
+      const state = harness.getState();
+      harness.assert(!state.isPostponed, 'Should not be postponed after reset');
+      harness.assert(state.postponedPhase === null, 'Postponed phase should be null');
+      harness.assert(state.postponedUntil === null, 'Postponed until should be null');
+      
+      return {
+        name: 'Scenario 14: Reset Clears Pending Break',
+        passed: harness.getSteps().every(s => s.passed),
+        duration: Date.now() - startTime,
+        steps: harness.getSteps(),
+      };
+    },
+  },
 ];
 
 // ============================================================

@@ -34,6 +34,7 @@ const sessionValidator_1 = require("./sessionValidator");
 const sessionDebug_1 = require("./sessionDebug");
 const runtimeInvariants_1 = require("./runtimeInvariants");
 const traceLogger_1 = require("./traceLogger");
+const displayLabels_1 = require("./displayLabels");
 const TIME_JUMP_THRESHOLD_MS = 5000; // 5 seconds - indicates sleep/wake or time jump
 const STATE_SAVE_DEBOUNCE_MS = 5000; // Save state every 5 seconds max
 class TimerEngine extends events_1.EventEmitter {
@@ -1697,11 +1698,22 @@ class TimerEngine extends events_1.EventEmitter {
         }
         // Create debug snapshot for dashboard (dev mode)
         const debugSnapshot = (0, sessionDebug_1.createDebugSnapshot)(this.state, schedule, nextPhase, thenPhase);
+        // Get custom display labels for phases
+        const currentIndex = this.state.currentFlowStepIndex;
+        const nextIndex = schedule && (0, flowUtils_1.isFlowBasedSchedule)(schedule) && schedule.flowSteps
+            ? ((currentIndex ?? 0) + 1) % schedule.flowSteps.length
+            : undefined;
+        const thenIndex = schedule && (0, flowUtils_1.isFlowBasedSchedule)(schedule) && schedule.flowSteps && nextIndex !== undefined
+            ? (nextIndex + 1) % schedule.flowSteps.length
+            : undefined;
         const tick = {
             scheduleId: schedule?.id || null,
             scheduleName: schedule?.name || null,
             scheduleMode: schedule?.mode || null,
             currentPhase: this.state.currentPhase,
+            currentPhaseLabel: (0, displayLabels_1.getPhaseDisplayLabel)(this.state.currentPhase, schedule, currentIndex),
+            nextPhaseLabel: (0, displayLabels_1.getPhaseDisplayLabel)(nextPhase, schedule, nextIndex),
+            thenPhaseLabel: (0, displayLabels_1.getPhaseDisplayLabel)(thenPhase, schedule, thenIndex),
             phaseRemainingMs: this.state.phaseRemainingMs,
             phaseTotalMs: this.state.phaseTotalMs,
             nextPhase,

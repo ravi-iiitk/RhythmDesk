@@ -290,8 +290,8 @@ function updateTrayTooltip(tick: TimerTick): void {
       lines.push(`🔒 Focus: ${tick.officeFocusLock.label} (${lockRemaining})`);
     }
     
-    // Current phase and remaining time
-    const phaseName = PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
+    // Current phase and remaining time (use custom label if available)
+    const phaseName = tick.currentPhaseLabel || PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
     const remaining = formatDuration(tick.phaseRemainingMs);
     lines.push(`Current: ${phaseName}`);
     lines.push(`Remaining: ${remaining}`);
@@ -303,16 +303,16 @@ function updateTrayTooltip(tick: TimerTick): void {
       lines.push('⏳ POSTPONED');
     }
     
-    // Next phase
+    // Next phase (use custom label if available)
     if (tick.nextPhase && tick.nextPhase !== 'idle') {
-      const nextPhaseName = PHASE_DISPLAY_NAMES[tick.nextPhase] || tick.nextPhase;
+      const nextPhaseName = tick.nextPhaseLabel || PHASE_DISPLAY_NAMES[tick.nextPhase] || tick.nextPhase;
       const nextDuration = tick.nextPhaseDurationMs ? formatDurationHuman(tick.nextPhaseDurationMs) : '';
       lines.push(`Next: ${nextPhaseName}${nextDuration ? ` (${nextDuration})` : ''}`);
     }
     
-    // Then phase (if available)
+    // Then phase (use custom label if available)
     if (tick.thenPhase && tick.thenPhase !== 'idle') {
-      const thenPhaseName = PHASE_DISPLAY_NAMES[tick.thenPhase] || tick.thenPhase;
+      const thenPhaseName = tick.thenPhaseLabel || PHASE_DISPLAY_NAMES[tick.thenPhase] || tick.thenPhase;
       const thenDuration = tick.thenPhaseDurationMs ? formatDurationHuman(tick.thenPhaseDurationMs) : '';
       lines.push(`Then: ${thenPhaseName}${thenDuration ? ` (${thenDuration})` : ''}`);
     }
