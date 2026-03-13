@@ -31,6 +31,8 @@ const flowUtils_1 = require("./flowUtils");
 const transitions_1 = require("./transitions");
 const sessionValidator_1 = require("./sessionValidator");
 const sessionDebug_1 = require("./sessionDebug");
+const runtimeInvariants_1 = require("./runtimeInvariants");
+const traceLogger_1 = require("./traceLogger");
 const TIME_JUMP_THRESHOLD_MS = 5000; // 5 seconds - indicates sleep/wake or time jump
 const STATE_SAVE_DEBOUNCE_MS = 5000; // Save state every 5 seconds max
 class TimerEngine extends events_1.EventEmitter {
@@ -63,6 +65,42 @@ class TimerEngine extends events_1.EventEmitter {
         else {
             this.runtimeFlowSnapshot = null;
         }
+    }
+    /**
+     * ARCHITECTURE HARDENING: Create transition context for invariant checks
+     */
+    getTransitionContext() {
+        return {
+            schedule: this.currentSchedule,
+            runtimeFlowSnapshot: this.runtimeFlowSnapshot,
+        };
+    }
+    /**
+     * ARCHITECTURE HARDENING: Validate current state against runtime invariants
+     * Called before committing state changes to prevent invalid states
+     */
+    validateStateInvariants(label) {
+        const context = this.getTransitionContext();
+        const result = (0, runtimeInvariants_1.checkRuntimeInvariants)(this.state, context);
+        if (!result.valid) {
+            (0, runtimeInvariants_1.logInvariantViolations)(result.violations, label);
+            return false;
+        }
+        return true;
+    }
+    /**
+     * ARCHITECTURE HARDENING: Validate preconditions before transition
+     */
+    canPerformTransition(transitionType) {
+        const context = this.getTransitionContext();
+        const result = (0, runtimeInvariants_1.validateTransitionPreconditions)(transitionType, this.state, context);
+        if (!result.valid) {
+            logger_1.default.debug('TimerEngine', `Transition ${transitionType} blocked`, {
+                failedPreconditions: result.failedPreconditions,
+            });
+            return { allowed: false, reason: result.failedPreconditions[0] };
+        }
+        return { allowed: true };
     }
     constructor() {
         super();
@@ -881,6 +919,12 @@ class TimerEngine extends events_1.EventEmitter {
     postpone(minutes) {
         if (!this.currentSchedule)
             return false;
+        // ARCHITECTURE HARDENING: Pre-transition validation
+        const precondCheck = this.canPerformTransition('postpone');
+        if (!precondCheck.allowed) {
+            logger_1.default.debug('TimerEngine', 'Postpone blocked by precondition', { reason: precondCheck.reason });
+            return false;
+        }
         const breakType = (0, overlayPolicy_1.phaseToBreakType)(this.state.currentPhase);
         if (!breakType)
             return false; // Can only postpone breaks/transitions
@@ -931,6 +975,10 @@ class TimerEngine extends events_1.EventEmitter {
             scheduleId: this.currentSchedule?.id,
             restoredFlowIndex: flowIndexToRestore,
         });
+        // Phase 5: Trace logging
+        traceLogger_1.trace.postpone(postponedBreakPhase, minutes);
+        // ARCHITECTURE HARDENING: Post-transition invariant validation
+        this.validateStateInvariants('After postpone');
         // Validate postpone state safety
         const nextPhase = this.getNextPhase();
         const validation = (0, sessionDebug_1.validateRuntimeState)(this.state, this.currentSchedule, nextPhase);
@@ -990,6 +1038,12 @@ class TimerEngine extends events_1.EventEmitter {
             return;
         if (this.currentSchedule.noSkipEnabled)
             return;
+        // ARCHITECTURE HARDENING: Pre-transition validation
+        const precondCheck = this.canPerformTransition('skip');
+        if (!precondCheck.allowed) {
+            logger_1.default.debug('TimerEngine', 'Skip blocked by precondition', { reason: precondCheck.reason });
+            return;
+        }
         const indexBefore = this.state.currentFlowStepIndex;
         const phaseBefore = this.state.currentPhase;
         // For flow-based mode, ensure index is synced before advancing
@@ -1019,6 +1073,8 @@ class TimerEngine extends events_1.EventEmitter {
             next: nextPhase,
             scheduleId: this.currentSchedule?.id,
         });
+        // Phase 5: Trace logging
+        traceLogger_1.trace.skip(phaseBefore, this.state.currentPhase);
         // Validate and recover if needed (flow mode)
         if ((0, flowUtils_1.isFlowBasedSchedule)(this.currentSchedule)) {
             const validation = (0, sessionDebug_1.validateRuntimeState)(this.state, this.currentSchedule, nextPhase);
@@ -1057,11 +1113,19 @@ class TimerEngine extends events_1.EventEmitter {
             logger_1.default.warn('TimerEngine', 'Cannot reset session - no active schedule');
             return;
         }
+        // ARCHITECTURE HARDENING: Pre-transition validation
+        const precondCheck = this.canPerformTransition('reset');
+        if (!precondCheck.allowed) {
+            logger_1.default.warn('TimerEngine', 'Reset blocked by precondition', { reason: precondCheck.reason });
+            return;
+        }
         (0, transitions_1.logTransition)(transitions_1.TransitionType.RESET_REQUESTED, {
             scheduleName: this.currentSchedule.name,
             currentPhase: this.state.currentPhase,
             scheduleMode: this.currentSchedule.mode,
         });
+        // Phase 5: Trace logging
+        traceLogger_1.trace.reset(`session reset: ${this.currentSchedule.name}`);
         // Reload schedule from config to restore original flow order
         // (shuffle/reverse may have modified the in-memory flowSteps)
         const schedules = configService_1.default.getSchedules();
@@ -1114,6 +1178,8 @@ class TimerEngine extends events_1.EventEmitter {
         this.preBreakPhase = null;
         // Update tick time
         this.lastTickTime = now;
+        // ARCHITECTURE HARDENING: Post-transition invariant validation
+        this.validateStateInvariants('After reset');
         // Validate reset state
         const validation = (0, sessionValidator_1.validateSessionState)(this.state, this.currentSchedule);
         if (!validation.valid) {

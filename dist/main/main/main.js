@@ -27,6 +27,12 @@ const defaultSchedules_1 = require("./defaultSchedules");
 const overlayPolicy_1 = require("../core/overlayPolicy");
 const overlayDebug_1 = require("../core/overlayDebug");
 const overlaySync_1 = require("../core/overlaySync");
+// Phase 5: Production hardening imports
+const errorHandler_1 = require("../core/errorHandler");
+const shutdown_1 = require("../core/shutdown");
+const healthMonitor_1 = require("../core/healthMonitor");
+const watchdog_1 = require("../core/watchdog");
+const debugMode_1 = require("../core/debugMode");
 /**
  * Get overlay policy for current state
  * Centralized decision engine - all overlay logic goes through here
@@ -47,6 +53,16 @@ function getOverlayPolicyForState(phase) {
     return (0, overlayPolicy_1.getOverlayPolicy)(input);
 }
 function initialize() {
+    // ========================================
+    // PHASE 5: Early initialization (before app ready)
+    // ========================================
+    // Setup global error handlers FIRST
+    (0, errorHandler_1.setupMainProcessErrorHandlers)();
+    // Initialize debug mode from environment
+    (0, debugMode_1.initDebugMode)();
+    // Install shutdown handlers for graceful exit
+    (0, shutdown_1.installShutdownHandlers)();
+    logger_1.default.info('Main', 'Phase 5 production hardening initialized');
     // Prevent multiple instances
     const gotTheLock = electron_1.app.requestSingleInstanceLock();
     if (!gotTheLock) {
@@ -88,8 +104,19 @@ function initialize() {
         (0, windowManager_1.createMainWindow)();
         // Initialize and start timer engine
         const timerEngine = (0, timerEngine_1.getTimerEngine)();
+        // ========================================
+        // PHASE 5: Start watchdogs and health monitor
+        // ========================================
+        const timerWatchdog = (0, watchdog_1.getTimerWatchdog)();
+        const overlayWatchdog = (0, watchdog_1.getOverlayWatchdog)();
+        const healthMonitor = (0, healthMonitor_1.getHealthMonitor)();
+        timerWatchdog.start();
+        healthMonitor.start();
+        logger_1.default.info('Main', 'Watchdogs and health monitor started');
         // Handle timer events
         timerEngine.on('tick', (tick) => {
+            // Report tick to watchdog for stall detection
+            timerWatchdog.reportTick(tick.phaseRemainingMs);
             // Send tick to all renderer windows
             (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.TIMER_TICK, tick);
             // Update tray
@@ -106,12 +133,16 @@ function initialize() {
             if (newPolicy.showOverlay) {
                 (0, windowManager_1.showOverlay)(newPolicy.strictMode);
                 (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.SHOW_OVERLAY, { phase: data.newPhase });
+                // Start overlay watchdog when overlay shows
+                overlayWatchdog.startMonitoring();
             }
             else if (prevPolicy.showOverlay && !isRestBlockActive) {
                 // Close overlay when leaving a phase that required it
                 // BUT only if no RestBlock is active (RestBlock takes priority)
                 (0, windowManager_1.closeOverlay)();
                 (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.HIDE_OVERLAY, {});
+                // Stop overlay watchdog when overlay hides
+                overlayWatchdog.stopMonitoring();
             }
         });
         timerEngine.on('scheduleChange', (_schedule) => {
@@ -246,15 +277,8 @@ function initialize() {
         });
     });
 }
-// Handle uncaught exceptions
-process.on('uncaughtException', (error) => {
-    logger_1.default.error('Main', 'Uncaught exception', { message: error.message, stack: error.stack });
-    console.error('Uncaught exception:', error);
-});
-process.on('unhandledRejection', (reason, promise) => {
-    logger_1.default.error('Main', 'Unhandled rejection', { reason });
-    console.error('Unhandled rejection at:', promise, 'reason:', reason);
-});
+// Note: Uncaught exception handlers are now in errorHandler.ts
+// setupMainProcessErrorHandlers() installs them with proper failsafe integration
 /**
  * Ensure overlay is shown when required
  * Called periodically to auto-reopen accidentally closed overlays
