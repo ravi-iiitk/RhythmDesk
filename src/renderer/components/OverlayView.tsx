@@ -117,28 +117,21 @@ function OverlayView({ tick }: OverlayViewProps) {
   const showCloseButton = !tick.isStrictMode && !isOfficeFocusLockActive;
   const showStopLockButton = isOfficeFocusLockActive && isWorkPhase && !tick.officeFocusLock.isStrictMode;
 
-  // Current time display style - prominent at top, big and bold
+  // Current time display style - readable from distance, ~65% of main countdown (8rem)
+  // Clean typography, no label, softer than main timer
   const currentTimeStyle: React.CSSProperties = {
-    fontSize: '2.5rem',
-    fontWeight: 700,
-    color: '#60a5fa', // Blue color for time
-    fontFamily: 'monospace',
-    letterSpacing: '0.05em',
-    marginBottom: '0.5rem',
-    textShadow: '0 2px 10px rgba(96, 165, 250, 0.3)',
+    fontSize: '5rem',
+    fontWeight: 600,
+    color: 'rgba(148, 163, 184, 0.9)', // Softer slate color
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+    fontVariantNumeric: 'tabular-nums',
+    letterSpacing: '0.02em',
+    textShadow: '0 2px 20px rgba(148, 163, 184, 0.15)',
   };
   
   const timeContainerStyle: React.CSSProperties = {
     textAlign: 'center',
-    marginBottom: '1rem',
-  };
-  
-  const timeLabelStyle: React.CSSProperties = {
-    fontSize: '0.85rem',
-    color: 'rgba(255, 255, 255, 0.5)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.15em',
-    marginBottom: '0.25rem',
+    marginBottom: '0.5rem',
   };
 
   // If rest block is active, show rest block overlay
@@ -147,9 +140,8 @@ function OverlayView({ tick }: OverlayViewProps) {
     return (
       <div className="overlay">
         <div className="overlay-content">
-          {/* Current Time - Prominent at Top */}
+          {/* Current Time - Clean, no label */}
           <div style={timeContainerStyle}>
-            <div style={timeLabelStyle}>Current Time</div>
             <div style={currentTimeStyle}>{currentTime}</div>
           </div>
           {/* Rest Block Title */}
@@ -209,9 +201,8 @@ function OverlayView({ tick }: OverlayViewProps) {
   return (
     <div className="overlay">
       <div className="overlay-content">
-        {/* Current Time - Prominent at Top */}
+        {/* Current Time - Clean, no label */}
         <div style={timeContainerStyle}>
-          <div style={timeLabelStyle}>Current Time</div>
           <div style={currentTimeStyle}>{currentTime}</div>
         </div>
         {/* Schedule Name */}
