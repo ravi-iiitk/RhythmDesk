@@ -4,7 +4,7 @@
  * All data model interfaces used across main and renderer processes
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.OFFICE_FOCUS_LOCK_DURATIONS = exports.INITIAL_OFFICE_FOCUS_LOCK_STATE = exports.DEFAULT_GENERAL_SETTINGS = exports.INITIAL_SESSION_STATE = exports.INITIAL_POSTPONE_COUNTS = exports.DEFAULT_SCHEDULE = exports.DEFAULT_LONG_BREAK_CONFIG = exports.DEFAULT_SHORT_BREAK_CONFIG = exports.DEFAULT_TRANSITION_CONFIG = exports.IPC_CHANNELS = exports.DEFAULT_REST_BLOCK_PRESETS = exports.INITIAL_REST_BLOCK_STATE = exports.OFFICE_FOCUS_LABELS = exports.TimerEvent = void 0;
+exports.OFFICE_FOCUS_LOCK_DURATIONS = exports.INITIAL_OFFICE_FOCUS_LOCK_STATE = exports.DEFAULT_GENERAL_SETTINGS = exports.INITIAL_SESSION_STATE = exports.INITIAL_BREAK_SKIP_COUNTS = exports.INITIAL_POSTPONE_COUNTS = exports.DEFAULT_SCHEDULE = exports.DEFAULT_LONG_BREAK_CONFIG = exports.DEFAULT_SHORT_BREAK_CONFIG = exports.DEFAULT_TRANSITION_CONFIG = exports.IPC_CHANNELS = exports.DEFAULT_REST_BLOCK_PRESETS = exports.INITIAL_REST_BLOCK_STATE = exports.OFFICE_FOCUS_LABELS = exports.TimerEvent = void 0;
 exports.computeFlowConfigHash = computeFlowConfigHash;
 /**
  * Compute a hash of flowSteps to detect when flow config changed.
@@ -116,6 +116,7 @@ exports.DEFAULT_SHORT_BREAK_CONFIG = {
     allowPostpone: true,
     postponeOptionsMinutes: [2, 5, 10],
     maxPostponesPerDay: 4,
+    maxSkipsPerDay: 2,
 };
 exports.DEFAULT_LONG_BREAK_CONFIG = {
     enabled: true,
@@ -125,6 +126,7 @@ exports.DEFAULT_LONG_BREAK_CONFIG = {
     allowPostpone: true,
     postponeOptionsMinutes: [2, 5, 10],
     maxPostponesPerDay: 2,
+    maxSkipsPerDay: 1,
 };
 // Default values for new schedules
 exports.DEFAULT_SCHEDULE = {
@@ -163,6 +165,10 @@ exports.INITIAL_POSTPONE_COUNTS = {
     shortBreak: 0,
     longBreak: 0,
 };
+exports.INITIAL_BREAK_SKIP_COUNTS = {
+    shortBreak: 0,
+    longBreak: 0,
+};
 // Initial session state
 exports.INITIAL_SESSION_STATE = {
     activeScheduleId: null,
@@ -182,6 +188,7 @@ exports.INITIAL_SESSION_STATE = {
     interruptedFlowIndex: undefined,
     postponeCountsToday: { ...exports.INITIAL_POSTPONE_COUNTS },
     postponeResetDate: new Date().toISOString().split('T')[0],
+    breakSkipCountsToday: { ...exports.INITIAL_BREAK_SKIP_COUNTS },
     isPaused: false,
     pausedAt: null,
     pauseResumeAt: null,

@@ -78,6 +78,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         allowPostpone: rest.allowPostpone ?? true,
         postponeOptionsMinutes: rest.postponeOptionsMinutes ?? [2, 5, 10],
         maxPostponesPerDay: rest.maxPostponesPerDay ?? 3,
+        maxSkipsPerDay: rest.maxSkipsPerDay ?? rest.shortBreak?.maxSkipsPerDay ?? 2,
         // Cumulative work time settings
         transitionsCountAsCumulativeWork: rest.transitionsCountAsCumulativeWork ?? true,
         shortBreaksCountAsCumulativeWork: rest.shortBreaksCountAsCumulativeWork ?? true,
@@ -295,6 +296,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         allowPostpone: formData.allowPostpone ?? true,
         postponeOptionsMinutes: formData.postponeOptionsMinutes ?? [2, 5, 10],
         maxPostponesPerDay: formData.maxPostponesPerDay ?? 3,
+        maxSkipsPerDay: formData.maxSkipsPerDay ?? 2,
       },
       longBreak: {
         enabled: formData.longBreakEnabled ?? true,
@@ -304,7 +306,10 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         allowPostpone: formData.allowPostpone ?? true,
         postponeOptionsMinutes: formData.postponeOptionsMinutes ?? [2, 5, 10],
         maxPostponesPerDay: formData.maxPostponesPerDay ?? 3,
+        maxSkipsPerDay: formData.maxSkipsPerDay ?? 1,
       },
+      // Legacy compatibility
+      maxSkipsPerDay: formData.maxSkipsPerDay ?? 2,
     };
     
     onSave(savedSchedule);
@@ -769,6 +774,17 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
               value={formData.maxPostponesPerDay ?? 3}
               onChange={(e) => handleChange('maxPostponesPerDay', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
               onBlur={(e) => !e.target.value && handleChange('maxPostponesPerDay', 0)}
+              min="0"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Max Break Skips Per Day</label>
+            <input
+              type="number"
+              className="form-input"
+              value={formData.maxSkipsPerDay ?? 2}
+              onChange={(e) => handleChange('maxSkipsPerDay', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+              onBlur={(e) => !e.target.value && handleChange('maxSkipsPerDay', 0)}
               min="0"
             />
           </div>

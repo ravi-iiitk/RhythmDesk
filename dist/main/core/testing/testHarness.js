@@ -391,6 +391,41 @@ class TestHarness {
         return true;
     }
     /**
+     * Reset today's counters (simulation of timerEngine.resetTodayCounters)
+     */
+    resetTodayCounters() {
+        const before = this.captureState();
+        this.state.cumulativeWorkTimeMs = 0;
+        this.state.lastShortBreakAtWorkTimeMs = 0;
+        this.state.lastLongBreakAtWorkTimeMs = 0;
+        this.state.postponeCountsToday = {
+            sitToStandTransition: 0,
+            standToSitTransition: 0,
+            shortBreak: 0,
+            longBreak: 0,
+        };
+        this.state.shortBreakCountToday = 0;
+        this.state.longBreakCountToday = 0;
+        this.state.breakSkipCountsToday = { shortBreak: 0, longBreak: 0 };
+        const after = this.captureState();
+        this.steps.push({
+            action: 'resetTodayCounters',
+            before,
+            after,
+            passed: this.validateState(),
+        });
+    }
+    /**
+     * Test helper to simulate skip guards
+     */
+    setSkipGuards(paused, noSkipEnabled) {
+        this.state.isPaused = paused;
+        this.schedule = {
+            ...this.schedule,
+            noSkipEnabled,
+        };
+    }
+    /**
      * Resume postponed break
      */
     resumePostponedBreak() {
@@ -433,6 +468,85 @@ class TestHarness {
             after,
             passed: this.validateState(),
         });
+    }
+    /**
+     * Skip a pending postponed break without advancing current phase
+     */
+    skipPendingBreak() {
+        const before = this.captureState();
+        if (!this.state.isPostponed || !this.state.postponedPhase) {
+            this.steps.push({
+                action: 'skipPendingBreak',
+                before,
+                after: before,
+                passed: false,
+                assertion: 'No pending break to skip',
+            });
+            return;
+        }
+        this.state.isPostponed = false;
+        this.state.postponedUntil = null;
+        this.state.postponedPhase = null;
+        this.state.postponedBreakType = null;
+        this.state.prePostponeWorkPhase = null;
+        this.state.prePostponeWorkPhaseRemainingMs = 0;
+        this.state.prePostponeFlowIndex = undefined;
+        const after = this.captureState();
+        this.steps.push({
+            action: 'skipPendingBreak',
+            before,
+            after,
+            passed: this.validateState(),
+        });
+    }
+    /**
+     * Skip active break with a configurable daily limit
+     * (test harness simulation of timerEngine break-skip limit behavior)
+     */
+    skipActiveBreakWithLimit(maxSkipsPerDay) {
+        const before = this.captureState();
+        if (!(0, transitions_1.isBreakPhase)(this.state.currentPhase)) {
+            this.steps.push({
+                action: 'skipActiveBreakWithLimit',
+                before,
+                after: before,
+                passed: false,
+                assertion: 'Can only skip active break phases',
+            });
+            return false;
+        }
+        if (!this.state.breakSkipCountsToday) {
+            this.state.breakSkipCountsToday = { shortBreak: 0, longBreak: 0 };
+        }
+        const isShort = this.state.currentPhase === 'short-break';
+        const currentCount = isShort
+            ? this.state.breakSkipCountsToday.shortBreak
+            : this.state.breakSkipCountsToday.longBreak;
+        if (currentCount >= maxSkipsPerDay) {
+            this.steps.push({
+                action: 'skipActiveBreakWithLimit',
+                before,
+                after: before,
+                passed: true,
+                assertion: 'Skip correctly blocked at configured limit',
+            });
+            return false;
+        }
+        if (isShort) {
+            this.state.breakSkipCountsToday.shortBreak++;
+        }
+        else {
+            this.state.breakSkipCountsToday.longBreak++;
+        }
+        this.advancePhase();
+        const after = this.captureState();
+        this.steps[this.steps.length - 1] = {
+            action: 'skipActiveBreakWithLimit',
+            before,
+            after,
+            passed: this.validateState(),
+        };
+        return true;
     }
     /**
      * Reset session
@@ -924,6 +1038,120 @@ exports.TEST_SCENARIOS = [
             harness.assert(state.postponedUntil === null, 'Postponed until should be null');
             return {
                 name: 'Scenario 14: Reset Clears Pending Break',
+                passed: harness.getSteps().every(s => s.passed),
+                duration: Date.now() - startTime,
+                steps: harness.getSteps(),
+            };
+        },
+    },
+    {
+        name: 'Scenario 15: Skip Pending Break Keeps Current Phase',
+        description: 'Skipping pending break clears pending state without advancing current phase',
+        run: async (harness) => {
+            const startTime = Date.now();
+            // Create a pending break first
+            harness.triggerBreak('short-break');
+            harness.postponeBreak(5);
+            const beforeSkip = harness.getState();
+            harness.assert(beforeSkip.isPostponed, 'Should have pending break before skip');
+            // Skip pending break
+            harness.skipPendingBreak();
+            const state = harness.getState();
+            harness.assert(!state.isPostponed, 'Pending break should be cleared');
+            harness.assert(state.postponedPhase === null, 'postponedPhase should be null after skip');
+            harness.assert(state.currentPhase === beforeSkip.currentPhase, 'Current phase should remain unchanged');
+            return {
+                name: 'Scenario 15: Skip Pending Break Keeps Current Phase',
+                passed: harness.getSteps().every(s => s.passed),
+                duration: Date.now() - startTime,
+                steps: harness.getSteps(),
+            };
+        },
+    },
+    {
+        name: 'Scenario 16: Active Break Skip Limit Enforced',
+        description: 'Active break skips are blocked after reaching configured daily limit',
+        run: async (harness) => {
+            const startTime = Date.now();
+            // Enter short break
+            harness.triggerBreak('short-break');
+            // First skip allowed (limit = 1)
+            const firstSkip = harness.skipActiveBreakWithLimit(1);
+            harness.assert(firstSkip, 'First break skip should be allowed');
+            // Enter short break again
+            harness.triggerBreak('short-break');
+            // Second skip blocked
+            const secondSkip = harness.skipActiveBreakWithLimit(1);
+            harness.assert(!secondSkip, 'Second break skip should be blocked by limit');
+            harness.assert(harness.getState().currentPhase === 'short-break', 'Phase should remain short-break when skip is blocked');
+            return {
+                name: 'Scenario 16: Active Break Skip Limit Enforced',
+                passed: harness.getSteps().every(s => s.passed),
+                duration: Date.now() - startTime,
+                steps: harness.getSteps(),
+            };
+        },
+    },
+    {
+        name: 'Scenario 17: Long Break Skip Limit Enforced',
+        description: 'Long-break skips are blocked after reaching configured daily limit',
+        run: async (harness) => {
+            const startTime = Date.now();
+            harness.triggerBreak('long-break');
+            const firstSkip = harness.skipActiveBreakWithLimit(1);
+            harness.assert(firstSkip, 'First long-break skip should be allowed');
+            harness.triggerBreak('long-break');
+            const secondSkip = harness.skipActiveBreakWithLimit(1);
+            harness.assert(!secondSkip, 'Second long-break skip should be blocked by limit');
+            harness.assert(harness.getState().currentPhase === 'long-break', 'Phase should remain long-break when skip is blocked');
+            return {
+                name: 'Scenario 17: Long Break Skip Limit Enforced',
+                passed: harness.getSteps().every(s => s.passed),
+                duration: Date.now() - startTime,
+                steps: harness.getSteps(),
+            };
+        },
+    },
+    {
+        name: 'Scenario 18: Reset Today Counters Clears Break Skip Counts',
+        description: 'resetTodayCounters should reset active break skip counters to zero',
+        run: async (harness) => {
+            const startTime = Date.now();
+            harness.triggerBreak('short-break');
+            harness.skipActiveBreakWithLimit(5);
+            harness.triggerBreak('long-break');
+            harness.skipActiveBreakWithLimit(5);
+            let state = harness.getState();
+            harness.assert((state.breakSkipCountsToday?.shortBreak ?? 0) > 0, 'Short-break skip count should be > 0 before reset');
+            harness.assert((state.breakSkipCountsToday?.longBreak ?? 0) > 0, 'Long-break skip count should be > 0 before reset');
+            harness.resetTodayCounters();
+            state = harness.getState();
+            harness.assert((state.breakSkipCountsToday?.shortBreak ?? 0) === 0, 'Short-break skip count should reset to 0');
+            harness.assert((state.breakSkipCountsToday?.longBreak ?? 0) === 0, 'Long-break skip count should reset to 0');
+            return {
+                name: 'Scenario 18: Reset Today Counters Clears Break Skip Counts',
+                passed: harness.getSteps().every(s => s.passed),
+                duration: Date.now() - startTime,
+                steps: harness.getSteps(),
+            };
+        },
+    },
+    {
+        name: 'Scenario 19: Pending Break Skip Ignores Pause and No-Skip Guards',
+        description: 'Pending-break skip remains available even when paused or noSkip is enabled',
+        run: async (harness) => {
+            const startTime = Date.now();
+            harness.triggerBreak('short-break');
+            harness.postponeBreak(5);
+            harness.setSkipGuards(true, true);
+            const before = harness.getState();
+            harness.assert(before.isPostponed, 'Should have pending break before guarded skip');
+            harness.skipPendingBreak();
+            const state = harness.getState();
+            harness.assert(!state.isPostponed, 'Pending break should still be skippable under guards');
+            harness.assert(state.postponedPhase === null, 'Pending break phase should be cleared');
+            return {
+                name: 'Scenario 19: Pending Break Skip Ignores Pause and No-Skip Guards',
                 passed: harness.getSteps().every(s => s.passed),
                 duration: Date.now() - startTime,
                 steps: harness.getSteps(),

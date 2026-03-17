@@ -21,6 +21,7 @@ import {
   BreakProgress,
   ConfiguredDurations,
   FlowStep,
+  INITIAL_BREAK_SKIP_COUNTS,
   INITIAL_POSTPONE_COUNTS,
   computeFlowConfigHash,
 } from '../shared/types';
@@ -335,6 +336,12 @@ export class TimerEngine extends EventEmitter {
   private validateAndResetDailyCounters(): void {
     const today = getTodayDateString();
     let changed = false;
+
+    // Ensure skip counters exist (migration safety)
+    if (!this.state.breakSkipCountsToday) {
+      this.state.breakSkipCountsToday = { ...INITIAL_BREAK_SKIP_COUNTS };
+      changed = true;
+    }
     
     // Reset postpone counts
     if (this.state.postponeResetDate !== today) {
@@ -347,6 +354,7 @@ export class TimerEngine extends EventEmitter {
     if ((this.state.breakCountResetDate ?? '') !== today) {
       this.state.shortBreakCountToday = 0;
       this.state.longBreakCountToday = 0;
+      this.state.breakSkipCountsToday = { ...INITIAL_BREAK_SKIP_COUNTS };
       this.state.breakCountResetDate = today;
       changed = true;
     }
@@ -1363,6 +1371,57 @@ export class TimerEngine extends EventEmitter {
   }
 
   /**
+   * Get max allowed skips for a specific break phase
+   */
+  private getMaxSkipsForBreakPhase(phase: PhaseType): number {
+    if (!this.currentSchedule) return 0;
+
+    if (phase === 'short-break') {
+      return this.currentSchedule.shortBreak.maxSkipsPerDay
+        ?? this.currentSchedule.maxSkipsPerDay
+        ?? 2;
+    }
+
+    if (phase === 'long-break') {
+      return this.currentSchedule.longBreak.maxSkipsPerDay
+        ?? this.currentSchedule.maxSkipsPerDay
+        ?? 1;
+    }
+
+    return 0;
+  }
+
+  /**
+   * Get current skip count for active break phase
+   */
+  private getCurrentBreakSkipCount(): number {
+    if (!this.state.breakSkipCountsToday) return 0;
+
+    if (this.state.currentPhase === 'short-break') {
+      return this.state.breakSkipCountsToday.shortBreak;
+    }
+
+    if (this.state.currentPhase === 'long-break') {
+      return this.state.breakSkipCountsToday.longBreak;
+    }
+
+    return 0;
+  }
+
+  /**
+   * Check whether current active break can be skipped based on configured limit
+   */
+  private canSkipCurrentBreak(): boolean {
+    if (this.state.currentPhase !== 'short-break' && this.state.currentPhase !== 'long-break') {
+      return true;
+    }
+
+    const maxSkips = this.getMaxSkipsForBreakPhase(this.state.currentPhase);
+    const currentCount = this.getCurrentBreakSkipCount();
+    return currentCount < maxSkips;
+  }
+
+  /**
    * Skip the current phase (if allowed)
    * 
    * SKIP SEMANTICS:
@@ -1378,9 +1437,39 @@ export class TimerEngine extends EventEmitter {
    * 5. Emit state update
    * 
    * INVARIANT: After skip, currentPhase MUST match flowSteps[currentFlowStepIndex] (in flow mode)
-   */
+  */
   skipPhase(): void {
     if (!this.currentSchedule) return;
+
+    // If a postponed break is pending, skip that pending break instead of
+    // skipping the current phase. This enables "Skip waiting break" from
+    // dashboard/overlay while user continues work or transitions.
+    if (this.state.isPostponed && this.state.postponedPhase) {
+      const pendingBreak = this.state.postponedPhase;
+
+      this.state.isPostponed = false;
+      this.state.postponedPhase = null;
+      this.state.postponedUntil = null;
+      this.state.postponedBreakType = null;
+      this.state.prePostponeWorkPhase = null;
+      this.state.prePostponeWorkPhaseRemainingMs = 0;
+      this.state.prePostponeFlowIndex = undefined;
+
+      logSessionEvent({
+        event: 'skipPhase',
+        phase: this.state.currentPhase,
+        fromPhase: this.state.currentPhase,
+        pendingBreak,
+        next: this.getNextPhase(),
+        scheduleId: this.currentSchedule?.id,
+        reason: 'Skipped pending postponed break',
+      });
+
+      this.saveState();
+      this.emitTick();
+      return;
+    }
+
     if (this.currentSchedule.noSkipEnabled) return;
     
     // ARCHITECTURE HARDENING: Pre-transition validation
@@ -1392,6 +1481,40 @@ export class TimerEngine extends EventEmitter {
     
     const indexBefore = this.state.currentFlowStepIndex;
     const phaseBefore = this.state.currentPhase;
+
+    // Enforce strict-mode skip policy for transitions at engine level.
+    // Active break skip remains allowed (subject to per-break daily limits).
+    const isTransitionPhase = phaseBefore === 'sit-to-stand-transition' || phaseBefore === 'stand-to-sit-transition';
+    if (isTransitionPhase && this.getStrictModeForCurrentPhase()) {
+      logger.info('TimerEngine', 'Skip blocked: strict mode transition', {
+        phase: phaseBefore,
+        scheduleId: this.currentSchedule?.id,
+      });
+      return;
+    }
+
+    // Active break skip limit (short/long break only)
+    if (phaseBefore === 'short-break' || phaseBefore === 'long-break') {
+      if (!this.canSkipCurrentBreak()) {
+        logger.info('TimerEngine', 'Skip blocked: reached break skip limit', {
+          phase: phaseBefore,
+          currentCount: this.getCurrentBreakSkipCount(),
+          maxAllowed: this.getMaxSkipsForBreakPhase(phaseBefore),
+          scheduleId: this.currentSchedule?.id,
+        });
+        return;
+      }
+
+      // Count this active break skip
+      if (!this.state.breakSkipCountsToday) {
+        this.state.breakSkipCountsToday = { ...INITIAL_BREAK_SKIP_COUNTS };
+      }
+      if (phaseBefore === 'short-break') {
+        this.state.breakSkipCountsToday.shortBreak++;
+      } else {
+        this.state.breakSkipCountsToday.longBreak++;
+      }
+    }
     
     // For flow-based mode, ensure index is synced before advancing
     if (isFlowBasedSchedule(this.currentSchedule)) {
@@ -1606,6 +1729,7 @@ export class TimerEngine extends EventEmitter {
     // Reset break counts
     this.state.shortBreakCountToday = 0;
     this.state.longBreakCountToday = 0;
+    this.state.breakSkipCountsToday = { ...INITIAL_BREAK_SKIP_COUNTS };
     this.state.breakCountResetDate = today;
     
     // Save state and emit tick
@@ -1891,6 +2015,12 @@ export class TimerEngine extends EventEmitter {
     
     // Get no skip setting from schedule
     const noSkipEnabled = schedule?.noSkipEnabled ?? false;
+
+    // Active break skip limit info (only applies to short/long break phases)
+    const isActiveBreakPhase = this.state.currentPhase === 'short-break' || this.state.currentPhase === 'long-break';
+    const breakSkipCountToday = isActiveBreakPhase ? this.getCurrentBreakSkipCount() : 0;
+    const maxBreakSkipsPerDay = isActiveBreakPhase ? this.getMaxSkipsForBreakPhase(this.state.currentPhase) : 0;
+    const canSkipCurrentBreak = isActiveBreakPhase ? this.canSkipCurrentBreak() : true;
     
     // Calculate break progress
     const breakProgress = this.calculateBreakProgress();
@@ -2008,6 +2138,9 @@ export class TimerEngine extends EventEmitter {
       postponeOptions,
       isStrictMode,
       noSkipEnabled,
+      breakSkipCountToday,
+      maxBreakSkipsPerDay,
+      canSkipCurrentBreak,
       officeFocusLock: officeFocusLockService.getState(),
       restBlock: getRestBlockService().getState(),
       breakProgress,

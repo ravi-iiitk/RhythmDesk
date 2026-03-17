@@ -36,6 +36,7 @@ function migrateSchedule(schedule) {
     const legacyAllowPostpone = schedule.allowPostpone ?? true;
     const legacyPostponeOptions = schedule.postponeOptionsMinutes ?? [2, 5, 10];
     const legacyMaxPostpones = schedule.maxPostponesPerDay ?? 4;
+    const legacyMaxSkips = schedule.maxSkipsPerDay ?? 2;
     return {
         id: schedule.id,
         name: schedule.name,
@@ -70,6 +71,7 @@ function migrateSchedule(schedule) {
             allowPostpone: legacyAllowPostpone,
             postponeOptionsMinutes: [...legacyPostponeOptions],
             maxPostponesPerDay: legacyMaxPostpones,
+            maxSkipsPerDay: legacyMaxSkips,
         },
         longBreak: {
             enabled: schedule.longBreakEnabled ?? types_1.DEFAULT_LONG_BREAK_CONFIG.enabled,
@@ -79,6 +81,7 @@ function migrateSchedule(schedule) {
             allowPostpone: legacyAllowPostpone,
             postponeOptionsMinutes: [...legacyPostponeOptions],
             maxPostponesPerDay: Math.max(1, Math.floor(legacyMaxPostpones / 2)),
+            maxSkipsPerDay: Math.max(0, Math.floor(legacyMaxSkips / 2)),
         },
         createdAt: schedule.createdAt,
     };

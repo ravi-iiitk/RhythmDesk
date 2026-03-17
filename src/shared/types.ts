@@ -81,6 +81,7 @@ export interface BreakConfig {
   allowPostpone: boolean;
   postponeOptionsMinutes: number[];
   maxPostponesPerDay: number;
+  maxSkipsPerDay?: number;
 }
 
 // Schedule configuration
@@ -144,6 +145,8 @@ export interface Schedule {
   postponeOptionsMinutes?: number[];
   // @deprecated Use per-break maxPostponesPerDay
   maxPostponesPerDay?: number;
+  // @deprecated Use shortBreak/longBreak maxSkipsPerDay
+  maxSkipsPerDay?: number;
   // @deprecated
   lockOverlayInStrictMode?: boolean;
   
@@ -155,6 +158,12 @@ export interface Schedule {
 export interface PostponeCountsToday {
   sitToStandTransition: number;
   standToSitTransition: number;
+  shortBreak: number;
+  longBreak: number;
+}
+
+// Per-break-type skip counters (active breaks only)
+export interface BreakSkipCountsToday {
   shortBreak: number;
   longBreak: number;
 }
@@ -228,6 +237,9 @@ export interface SessionState {
   // Per-break-type postpone tracking
   postponeCountsToday: PostponeCountsToday;
   postponeResetDate: string; // YYYY-MM-DD format
+
+  // Per-break-type skip tracking (for active break skip limits)
+  breakSkipCountsToday?: BreakSkipCountsToday;
   
   // Legacy single counter (for migration)
   // @deprecated Use postponeCountsToday
@@ -395,6 +407,10 @@ export interface TimerTick {
   isStrictMode: boolean;
   // No skip mode - prevents skipping to next activity
   noSkipEnabled: boolean;
+  // Break skip tracking (active short/long breaks)
+  breakSkipCountToday?: number;
+  maxBreakSkipsPerDay?: number;
+  canSkipCurrentBreak?: boolean;
   // Office Focus Lock state
   officeFocusLock: OfficeFocusLockState;
   // Rest Block state
@@ -483,6 +499,7 @@ export const DEFAULT_SHORT_BREAK_CONFIG: BreakConfig = {
   allowPostpone: true,
   postponeOptionsMinutes: [2, 5, 10],
   maxPostponesPerDay: 4,
+  maxSkipsPerDay: 2,
 };
 
 export const DEFAULT_LONG_BREAK_CONFIG: BreakConfig = {
@@ -493,6 +510,7 @@ export const DEFAULT_LONG_BREAK_CONFIG: BreakConfig = {
   allowPostpone: true,
   postponeOptionsMinutes: [2, 5, 10],
   maxPostponesPerDay: 2,
+  maxSkipsPerDay: 1,
 };
 
 // Default values for new schedules
@@ -534,6 +552,11 @@ export const INITIAL_POSTPONE_COUNTS: PostponeCountsToday = {
   longBreak: 0,
 };
 
+export const INITIAL_BREAK_SKIP_COUNTS: BreakSkipCountsToday = {
+  shortBreak: 0,
+  longBreak: 0,
+};
+
 // Initial session state
 export const INITIAL_SESSION_STATE: SessionState = {
   activeScheduleId: null,
@@ -553,6 +576,7 @@ export const INITIAL_SESSION_STATE: SessionState = {
   interruptedFlowIndex: undefined,
   postponeCountsToday: { ...INITIAL_POSTPONE_COUNTS },
   postponeResetDate: new Date().toISOString().split('T')[0],
+  breakSkipCountsToday: { ...INITIAL_BREAK_SKIP_COUNTS },
   isPaused: false,
   pausedAt: null,
   pauseResumeAt: null,

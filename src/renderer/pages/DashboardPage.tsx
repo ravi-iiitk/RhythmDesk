@@ -318,6 +318,13 @@ function DashboardPage({ tick }: DashboardPageProps) {
   // Use custom labels from tick (includes user-defined flow step labels)
   const phaseName = tick.currentPhaseLabel || PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
   const nextPhaseName = tick.nextPhaseLabel || PHASE_DISPLAY_NAMES[tick.nextPhase] || tick.nextPhase;
+  const isActiveBreakPhase = tick.currentPhase === 'short-break' || tick.currentPhase === 'long-break';
+  const skipDisabled = tick.noSkipEnabled || (isActiveBreakPhase && tick.canSkipCurrentBreak === false);
+  const skipTitle = tick.noSkipEnabled
+    ? 'Skip disabled for this schedule'
+    : (isActiveBreakPhase && tick.canSkipCurrentBreak === false)
+      ? `Break skip limit reached (${tick.breakSkipCountToday ?? 0}/${tick.maxBreakSkipsPerDay ?? 0})`
+      : 'Skip to next activity';
 
   return (
     <div className="page" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', height: '100%' }}>
@@ -530,12 +537,21 @@ function DashboardPage({ tick }: DashboardPageProps) {
             ) : (
               <button className="btn btn-secondary" onClick={handlePause}>⏸️ Pause</button>
             )}
+            {tick.isPostponed && tick.pendingBreakPhase && (
+              <button
+                className="btn btn-secondary"
+                onClick={handleSkip}
+                title="Skip the pending break and continue with current flow"
+              >
+                ⏭️ Skip Pending Break
+              </button>
+            )}
             <button 
               className="btn btn-secondary" 
               onClick={handleSkip}
-              disabled={tick.noSkipEnabled}
-              title={tick.noSkipEnabled ? "Skip disabled for this schedule" : "Skip to next activity"}
-              style={tick.noSkipEnabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+              disabled={skipDisabled}
+              title={skipTitle}
+              style={skipDisabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
             >
               ⏭️ Skip
             </button>

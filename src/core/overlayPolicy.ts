@@ -112,11 +112,12 @@ const DEFAULT_POLICY: OverlayPolicy = {
  * 1. Work phases (sit/stand): overlay only if Focus Lock is active
  * 2. Break/transition phases: always show overlay
  * 3. Strict mode comes from per-break config (or Focus Lock overrides to strict)
- * 4. Paused/postponed: no overlay
+ * 4. Paused: no overlay
+ *    NOTE: postponed breaks should NOT suppress transition overlays
  * 5. Idle: no overlay
  */
 export function getOverlayPolicy(input: OverlayPolicyInput): OverlayPolicy {
-  const { phase, schedule, focusLockActive, isPaused, isPostponed } = input;
+  const { phase, schedule, focusLockActive, isPaused } = input;
 
   // No schedule = no overlay
   if (!schedule) {
@@ -128,8 +129,8 @@ export function getOverlayPolicy(input: OverlayPolicyInput): OverlayPolicy {
     return { ...DEFAULT_POLICY };
   }
 
-  // Paused or postponed = no overlay
-  if (isPaused || isPostponed) {
+  // Paused = no overlay
+  if (isPaused) {
     return { ...DEFAULT_POLICY };
   }
 

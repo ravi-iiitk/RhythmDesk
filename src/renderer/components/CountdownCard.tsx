@@ -3,7 +3,6 @@
  * Displays the main countdown timer with progress bar
  */
 
-import React from 'react';
 import { formatDuration } from '../../shared/timeUtils';
 
 interface CountdownCardProps {

@@ -108,6 +108,15 @@ function validateBreakConfig(config, fieldPrefix, cycleMinutes, otherBreakEveryM
     else if (config.maxPostponesPerDay > 20) {
         errors.push({ field: `${fieldPrefix}.maxPostponesPerDay`, message: 'Max postpones must be 20 or less' });
     }
+    // Max skips validation (optional, defaults handled elsewhere)
+    if (config.maxSkipsPerDay !== undefined) {
+        if (config.maxSkipsPerDay < 0) {
+            errors.push({ field: `${fieldPrefix}.maxSkipsPerDay`, message: 'Max skips cannot be negative' });
+        }
+        else if (config.maxSkipsPerDay > 20) {
+            errors.push({ field: `${fieldPrefix}.maxSkipsPerDay`, message: 'Max skips must be 20 or less' });
+        }
+    }
     // Postpone options validation (only if postpone is allowed)
     if (config.allowPostpone) {
         validatePostponeOptions(config.postponeOptionsMinutes, fieldPrefix, errors);

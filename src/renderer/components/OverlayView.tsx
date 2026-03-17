@@ -105,13 +105,20 @@ function OverlayView({ tick }: OverlayViewProps) {
   ].includes(tick.currentPhase);
   
   const isWorkPhase = tick.currentPhase === 'sit' || tick.currentPhase === 'stand';
+  const isActiveBreakPhase = tick.currentPhase === 'short-break' || tick.currentPhase === 'long-break';
   const isOfficeFocusLockActive = tick.officeFocusLock.isActive;
 
   // Determine which actions to show based on phase and settings
   // Hide Done button in strict mode - user must wait for timer to complete
   const showDoneButton = isTransitionOrBreak && !tick.isStrictMode;
   const showPostponeButtons = tick.canPostpone && isTransitionOrBreak;
-  const showSkipButton = !tick.isStrictMode && isTransitionOrBreak;
+  const showSkipButton = isTransitionOrBreak && (
+    // Active break skip is allowed (with configured daily limits), even in strict mode
+    (isActiveBreakPhase && tick.canSkipCurrentBreak !== false)
+    // Transition skip remains disabled in strict mode
+    || (!isActiveBreakPhase && !tick.isStrictMode)
+  );
+  const showSkipPendingBreakButton = tick.isPostponed && !!tick.pendingBreakPhase;
   // In Office Focus Lock during work phase, show stop button instead of close
   // But hide stop button if Focus Mode strict mode is enabled
   const showCloseButton = !tick.isStrictMode && !isOfficeFocusLockActive;
@@ -242,6 +249,12 @@ function OverlayView({ tick }: OverlayViewProps) {
 
         {/* Actions */}
         <div className="overlay-actions">
+          {showSkipPendingBreakButton && (
+            <button className="btn btn-secondary" onClick={handleSkip}>
+              ⏭️ Skip Pending Break
+            </button>
+          )}
+
           {showDoneButton && (
             <button className="btn btn-success" onClick={handleComplete}>
               ✓ Done
@@ -266,6 +279,12 @@ function OverlayView({ tick }: OverlayViewProps) {
             </button>
           )}
         </div>
+
+        {isActiveBreakPhase && tick.canSkipCurrentBreak === false && (
+          <div className="overlay-postpone-info" style={{ marginTop: '0.75rem' }}>
+            Break skip limit reached for today ({tick.breakSkipCountToday ?? 0}/{tick.maxBreakSkipsPerDay ?? 0})
+          </div>
+        )}
 
         {/* Postpone Options */}
         {showPostponeButtons && tick.postponeOptions.length > 0 && (
@@ -298,7 +317,7 @@ function OverlayView({ tick }: OverlayViewProps) {
         )}
         {tick.isPostponed && (
           <div className="status-badge status-paused" style={{ marginTop: '1rem' }}>
-            ⏳ Postponed
+            ⏳ Pending {tick.pendingBreakPhase ? (PHASE_DISPLAY_NAMES[tick.pendingBreakPhase] || tick.pendingBreakPhase) : 'break'} in {formatDuration(tick.pendingBreakInMs)}
           </div>
         )}
       </div>
