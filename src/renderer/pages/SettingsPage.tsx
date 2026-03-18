@@ -49,12 +49,19 @@ const DEFAULT_SOUND_CONFIG: SoundConfig = {
 function SettingsPage() {
   const [settings, setSettings] = useState<GeneralSettings>(DEFAULT_GENERAL_SETTINGS);
   const [soundConfig, setSoundConfig] = useState<SoundConfig>(DEFAULT_SOUND_CONFIG);
-  const [saved, setSaved] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showSoundDetails, setShowSoundDetails] = useState(false);
 
   useEffect(() => {
     loadSettings();
   }, []);
+
+  // Auto-hide save message
+  useEffect(() => {
+    if (!saveMessage) return;
+    const timer = setTimeout(() => setSaveMessage(null), 3000);
+    return () => clearTimeout(timer);
+  }, [saveMessage]);
 
   const loadSettings = async () => {
     const config = await window.rhythmDesk.getConfig();
@@ -75,25 +82,29 @@ function SettingsPage() {
         [eventKey]: { ...prev.sounds[eventKey], enabled },
       },
     }));
-    setSaved(false);
+    setSaveMessage(null);
   };
 
   const handleChange = (field: keyof GeneralSettings, value: any) => {
     setSettings((prev) => ({ ...prev, [field]: value }));
-    setSaved(false);
+    setSaveMessage(null);
   };
 
   const handleSave = async () => {
-    const config = await window.rhythmDesk.getConfig();
-    await window.rhythmDesk.saveConfig({
-      ...config,
-      generalSettings: {
-        ...settings,
-        soundConfig, // Include sound config in settings
-      },
-    });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      const config = await window.rhythmDesk.getConfig();
+      await window.rhythmDesk.saveConfig({
+        ...config,
+        generalSettings: {
+          ...settings,
+          soundConfig, // Include sound config in settings
+        },
+      });
+      setSaveMessage({ type: 'success', text: '✓ Settings saved. Dashboard uses updated settings automatically.' });
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+      setSaveMessage({ type: 'error', text: '✗ Failed to save settings. Please try again.' });
+    }
   };
 
   return (
@@ -102,6 +113,20 @@ function SettingsPage() {
         <h2>Settings</h2>
         <p>Configure general app behavior</p>
       </div>
+
+      {saveMessage && (
+        <div style={{
+          padding: '0.75rem 1rem',
+          marginBottom: '1rem',
+          borderRadius: '6px',
+          backgroundColor: saveMessage.type === 'success' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+          color: saveMessage.type === 'success' ? '#22c55e' : '#ef4444',
+          border: `1px solid ${saveMessage.type === 'success' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+          fontWeight: 500,
+        }}>
+          {saveMessage.text}
+        </div>
+      )}
 
       <div className="card">
         <div className="card-header">
@@ -290,11 +315,6 @@ function SettingsPage() {
         <button className="btn btn-primary" onClick={handleSave}>
           Save Settings
         </button>
-        {saved && (
-          <span className="text-muted" style={{ marginLeft: '1rem' }}>
-            ✓ Settings saved
-          </span>
-        )}
       </div>
 
       <div className="card mt-2">

@@ -63,6 +63,12 @@ export interface RhythmDeskAPI {
   // Phase 2: Overlay sync (heartbeat)
   sendHeartbeatResponse: () => void;
   onHeartbeatRequest: (callback: () => void) => () => void;
+  requestOverlayResync: () => void;
+  onOverlayResyncData: (callback: (data: any) => void) => () => void;
+  
+  // Main window health check
+  onHealthCheck: (callback: () => void) => () => void;
+  sendHealthCheckResponse: () => void;
 }
 
 const api: RhythmDeskAPI = {
@@ -160,6 +166,27 @@ const api: RhythmDeskAPI = {
     const handler = () => callback();
     ipcRenderer.on(OVERLAY_SYNC_CHANNELS.HEARTBEAT_REQUEST, handler);
     return () => ipcRenderer.removeListener(OVERLAY_SYNC_CHANNELS.HEARTBEAT_REQUEST, handler);
+  },
+
+  requestOverlayResync: () => {
+    ipcRenderer.send(OVERLAY_SYNC_CHANNELS.RESYNC_REQUEST);
+  },
+
+  onOverlayResyncData: (callback) => {
+    const handler = (_event: any, data: any) => callback(data);
+    ipcRenderer.on(OVERLAY_SYNC_CHANNELS.RESYNC_DATA, handler);
+    return () => ipcRenderer.removeListener(OVERLAY_SYNC_CHANNELS.RESYNC_DATA, handler);
+  },
+
+  // Main window health check
+  onHealthCheck: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('main-window:health-check', handler);
+    return () => ipcRenderer.removeListener('main-window:health-check', handler);
+  },
+
+  sendHealthCheckResponse: () => {
+    ipcRenderer.send('main-window:health-check-response');
   },
 };
 

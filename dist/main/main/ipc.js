@@ -18,6 +18,7 @@ const windowManager_1 = require("./windowManager");
 const electron_2 = require("electron");
 const overlaySync_1 = require("../core/overlaySync");
 const watchdog_1 = require("../core/watchdog");
+const logger_1 = __importDefault(require("../core/logger"));
 /**
  * Register all IPC handlers
  */
@@ -128,8 +129,35 @@ function registerIpcHandlers() {
     // Phase 2: Overlay sync heartbeat handler
     // Report to BOTH watchdog systems to keep them in sync
     electron_1.ipcMain.on(overlaySync_1.OVERLAY_SYNC_CHANNELS.HEARTBEAT_RESPONSE, () => {
+        logger_1.default.debug('IPC', '[OVERLAY_SYNC] heartbeat response received');
         (0, overlaySync_1.getOverlaySyncService)().onHeartbeatResponse();
         (0, watchdog_1.getOverlayWatchdog)().reportHeartbeat();
+    });
+    electron_1.ipcMain.on(overlaySync_1.OVERLAY_SYNC_CHANNELS.RESYNC_REQUEST, (event) => {
+        logger_1.default.warn('IPC', '[OVERLAY_SYNC] resync requested by overlay renderer');
+        (0, overlaySync_1.getOverlaySyncService)().requestResync();
+        const latestTick = timerEngine.getLastEmittedTick();
+        const restBlock = restBlockService.getState();
+        const tick = latestTick
+            ? { ...latestTick, restBlock }
+            : null;
+        event.sender.send(overlaySync_1.OVERLAY_SYNC_CHANNELS.RESYNC_DATA, {
+            requestedAt: Date.now(),
+            tick,
+            restBlock,
+            overlayStateVersion: restBlock.startedAt ?? Date.now(),
+        });
+        logger_1.default.info('IPC', '[OVERLAY_SYNC] resync data sent to overlay', {
+            hasTick: !!tick,
+            restBlockActive: restBlock.isActive,
+            currentPhase: tick?.currentPhase,
+            remainingMs: restBlock.remainingMs,
+        });
+        (0, overlaySync_1.getOverlaySyncService)().confirmResync();
+    });
+    // Main window health check response handler
+    electron_1.ipcMain.on('main-window:health-check-response', () => {
+        (0, windowManager_1.onMainWindowHealthCheckResponse)();
     });
     // Dev mode: Clear all data (config + session)
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.DEV_CLEAR_ALL_DATA, () => {

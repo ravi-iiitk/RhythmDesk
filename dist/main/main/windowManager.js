@@ -54,6 +54,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.setQuitting = setQuitting;
 exports.createMainWindow = createMainWindow;
+exports.startMainWindowHealthCheck = startMainWindowHealthCheck;
+exports.onMainWindowHealthCheckResponse = onMainWindowHealthCheckResponse;
 exports.createOverlayWindow = createOverlayWindow;
 exports.showOverlay = showOverlay;
 exports.hideOverlay = hideOverlay;
@@ -125,6 +127,37 @@ function createMainWindow() {
         show: false,
         backgroundColor: '#1a1a2e',
     });
+    logger_1.default.info('WindowManager', 'Main window created');
+    // Store reference to webContents for crash handling
+    const mainWebContents = mainWindow.webContents;
+    mainWebContents.on('did-finish-load', () => {
+        logger_1.default.info('WindowManager', 'Main window renderer loaded');
+    });
+    // CRITICAL: Handle renderer process crash - reload the window
+    mainWebContents.on('crashed', (_event, killed) => {
+        logger_1.default.error('WindowManager', 'Main window renderer crashed', { killed });
+        reloadMainWindow('crashed');
+    });
+    // Handle render process gone (more detailed than crashed)
+    mainWebContents.on('render-process-gone', (_event, details) => {
+        logger_1.default.error('WindowManager', 'Main window render process gone', {
+            reason: details.reason,
+            exitCode: details.exitCode,
+        });
+        // Only reload if not killed intentionally
+        if (details.reason !== 'killed' && details.reason !== 'clean-exit') {
+            reloadMainWindow(`render-process-gone:${details.reason}`);
+        }
+    });
+    // Handle unresponsive renderer - common after system resume
+    mainWindow.on('unresponsive', () => {
+        logger_1.default.warn('WindowManager', 'Main window became unresponsive - will reload');
+        reloadMainWindow('unresponsive');
+    });
+    // Handle when window becomes responsive again
+    mainWindow.on('responsive', () => {
+        logger_1.default.info('WindowManager', 'Main window became responsive again');
+    });
     mainWindow.on('ready-to-show', () => {
         mainWindow?.show();
     });
@@ -147,6 +180,107 @@ function createMainWindow() {
         mainWindow.loadFile(path.join(__dirname, '../../renderer/index.html'));
     }
     return mainWindow;
+}
+/**
+ * Reload the main window after crash or unresponsive state
+ * This preserves the window but reloads the renderer content
+ */
+function reloadMainWindow(reason) {
+    logger_1.default.warn('WindowManager', 'Reloading main window', { reason });
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        logger_1.default.info('WindowManager', 'Main window destroyed, recreating');
+        createMainWindow();
+        return;
+    }
+    try {
+        // Try to reload the existing window
+        if (isDev()) {
+            mainWindow.loadURL('http://localhost:5173');
+        }
+        else {
+            mainWindow.loadFile(path.join(__dirname, '../../renderer/index.html'));
+        }
+        logger_1.default.info('WindowManager', 'Main window reloaded successfully', { reason });
+    }
+    catch (err) {
+        logger_1.default.error('WindowManager', 'Failed to reload main window, recreating', {
+            reason,
+            error: String(err)
+        });
+        // If reload fails, destroy and recreate
+        mainWindow.destroy();
+        mainWindow = null;
+        createMainWindow();
+    }
+}
+// Main window health check state
+let mainWindowHealthCheckPending = false;
+let mainWindowHealthCheckTimeout = null;
+let mainWindowMissedHealthChecks = 0;
+const MAIN_WINDOW_HEALTH_CHECK_TIMEOUT_MS = 5000; // 5 seconds to respond
+const MAIN_WINDOW_MAX_MISSED_HEALTH_CHECKS = 2; // Reload after 2 missed checks
+/**
+ * Start periodic health checks for the main window
+ * Detects zombie states where renderer is alive but not functional
+ */
+function startMainWindowHealthCheck() {
+    // Check every 30 seconds when window is visible
+    setInterval(() => {
+        if (!mainWindow || mainWindow.isDestroyed())
+            return;
+        if (!mainWindow.isVisible())
+            return; // Only check visible windows
+        // Don't send another check if one is already pending
+        if (mainWindowHealthCheckPending) {
+            mainWindowMissedHealthChecks++;
+            logger_1.default.warn('WindowManager', 'Main window health check still pending', {
+                missedChecks: mainWindowMissedHealthChecks,
+            });
+            if (mainWindowMissedHealthChecks >= MAIN_WINDOW_MAX_MISSED_HEALTH_CHECKS) {
+                logger_1.default.error('WindowManager', 'Main window failed health checks - reloading');
+                mainWindowHealthCheckPending = false;
+                mainWindowMissedHealthChecks = 0;
+                if (mainWindowHealthCheckTimeout) {
+                    clearTimeout(mainWindowHealthCheckTimeout);
+                    mainWindowHealthCheckTimeout = null;
+                }
+                reloadMainWindow('health-check-failed');
+            }
+            return;
+        }
+        // Send health check request
+        mainWindowHealthCheckPending = true;
+        mainWindow.webContents.send('main-window:health-check');
+        // Set timeout for response
+        mainWindowHealthCheckTimeout = setTimeout(() => {
+            if (mainWindowHealthCheckPending) {
+                mainWindowMissedHealthChecks++;
+                logger_1.default.warn('WindowManager', 'Main window health check timeout', {
+                    missedChecks: mainWindowMissedHealthChecks,
+                });
+                mainWindowHealthCheckPending = false;
+                if (mainWindowMissedHealthChecks >= MAIN_WINDOW_MAX_MISSED_HEALTH_CHECKS) {
+                    logger_1.default.error('WindowManager', 'Main window failed health checks - reloading');
+                    mainWindowMissedHealthChecks = 0;
+                    reloadMainWindow('health-check-timeout');
+                }
+            }
+        }, MAIN_WINDOW_HEALTH_CHECK_TIMEOUT_MS);
+    }, 30000); // Check every 30 seconds
+}
+/**
+ * Handle health check response from main window renderer
+ */
+function onMainWindowHealthCheckResponse() {
+    if (mainWindowHealthCheckPending) {
+        mainWindowHealthCheckPending = false;
+        mainWindowMissedHealthChecks = 0;
+        if (mainWindowHealthCheckTimeout) {
+            clearTimeout(mainWindowHealthCheckTimeout);
+            mainWindowHealthCheckTimeout = null;
+        }
+        logger_1.default.debug('WindowManager', 'Main window health check OK');
+    }
 }
 /**
  * Create fullscreen overlay window
@@ -202,6 +336,23 @@ function createOverlayWindow(strictMode = false) {
         },
         backgroundColor: '#1a1a2e',
     });
+    logger_1.default.info('WindowManager', 'Overlay window created', { strictMode, width, height });
+    (0, overlayDebug_1.logOverlayEvent)({ event: 'overlay-resync', reason: 'window-created', strictMode });
+    const overlayWebContents = overlayWindow.webContents;
+    overlayWebContents.on('did-finish-load', () => {
+        logger_1.default.info('WindowManager', 'Overlay renderer loaded');
+    });
+    overlayWebContents.on('render-process-gone', (_event, details) => {
+        (0, overlayDebug_1.logOverlayCrash)(`render-process-gone:${details.reason}`);
+        logger_1.default.error('WindowManager', 'Overlay render process gone', {
+            reason: details.reason,
+            exitCode: details.exitCode,
+        });
+        if (overlayWindow && !overlayWindow.isDestroyed()) {
+            overlayWindow.destroy();
+            overlayWindow = null;
+        }
+    });
     // Linux-specific: strongest always-on-top level
     overlayWindow.setAlwaysOnTop(true, 'screen-saver');
     overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -231,7 +382,7 @@ function createOverlayWindow(strictMode = false) {
         });
     }
     // Handle webContents crash - recover the overlay
-    overlayWindow.webContents.on('crashed', () => {
+    overlayWebContents.on('crashed', () => {
         (0, overlayDebug_1.logOverlayCrash)('webContents crashed');
         logger_1.default.error('WindowManager', 'Overlay webContents crashed - will recover');
         if (overlayWindow && !overlayWindow.isDestroyed()) {
@@ -241,6 +392,7 @@ function createOverlayWindow(strictMode = false) {
     });
     // Handle unresponsive renderer
     overlayWindow.on('unresponsive', () => {
+        (0, overlayDebug_1.logOverlayEvent)({ event: 'overlay-unresponsive', reason: 'BrowserWindow unresponsive event' });
         (0, overlayDebug_1.logOverlayCrash)('renderer unresponsive');
         logger_1.default.error('WindowManager', 'Overlay became unresponsive - destroying');
         if (overlayWindow && !overlayWindow.isDestroyed()) {
@@ -281,6 +433,7 @@ function showOverlay(strictMode = false) {
         }
         overlayWindow.show();
         overlayWindow.focus();
+        logger_1.default.info('WindowManager', 'Overlay window shown', { strictMode });
     }
 }
 /**
@@ -288,6 +441,7 @@ function showOverlay(strictMode = false) {
  */
 function hideOverlay() {
     if (overlayWindow && !overlayWindow.isDestroyed()) {
+        logger_1.default.info('WindowManager', 'Overlay window hidden');
         overlayWindow.hide();
     }
 }
@@ -353,11 +507,12 @@ function isOverlayHealthy() {
  * Recover overlay window if it's unhealthy
  * Used by watchdog to ensure overlay stays alive during long rest blocks
  */
-function recoverOverlayIfNeeded(strictMode) {
-    if (isOverlayHealthy()) {
+function recoverOverlayIfNeeded(strictMode, forceRecreate = false) {
+    if (!forceRecreate && isOverlayHealthy()) {
         return false; // No recovery needed
     }
-    logger_1.default.warn('WindowManager', 'Recovering unhealthy overlay window', { strictMode });
+    logger_1.default.warn('WindowManager', 'Recovering overlay window', { strictMode, forceRecreate, wasHealthy: isOverlayHealthy() });
+    (0, overlayDebug_1.logOverlayEvent)({ event: 'overlay-reload', reason: forceRecreate ? 'forced-recreate' : 'unhealthy-window' });
     (0, overlayDebug_1.logOverlayRecovered)();
     // Clean up old window if it exists
     if (overlayWindow) {

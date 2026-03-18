@@ -9,10 +9,11 @@ import configService from '../core/configService';
 import { getTimerEngine } from '../core/timerEngine';
 import { getOfficeFocusLockService } from '../core/officeFocusLockService';
 import { getRestBlockService } from '../core/restBlockService';
-import { showMainWindow, closeOverlay, hideMainWindow } from './windowManager';
+import { showMainWindow, closeOverlay, hideMainWindow, onMainWindowHealthCheckResponse } from './windowManager';
 import { app } from 'electron';
 import { getOverlaySyncService, OVERLAY_SYNC_CHANNELS } from '../core/overlaySync';
 import { getOverlayWatchdog } from '../core/watchdog';
+import logger from '../core/logger';
 
 /**
  * Register all IPC handlers
@@ -156,8 +157,42 @@ export function registerIpcHandlers(): void {
   // Phase 2: Overlay sync heartbeat handler
   // Report to BOTH watchdog systems to keep them in sync
   ipcMain.on(OVERLAY_SYNC_CHANNELS.HEARTBEAT_RESPONSE, () => {
+    logger.debug('IPC', '[OVERLAY_SYNC] heartbeat response received');
     getOverlaySyncService().onHeartbeatResponse();
     getOverlayWatchdog().reportHeartbeat();
+  });
+
+  ipcMain.on(OVERLAY_SYNC_CHANNELS.RESYNC_REQUEST, (event) => {
+    logger.warn('IPC', '[OVERLAY_SYNC] resync requested by overlay renderer');
+    getOverlaySyncService().requestResync();
+
+    const latestTick = timerEngine.getLastEmittedTick();
+    const restBlock = restBlockService.getState();
+
+    const tick = latestTick
+      ? { ...latestTick, restBlock }
+      : null;
+
+    event.sender.send(OVERLAY_SYNC_CHANNELS.RESYNC_DATA, {
+      requestedAt: Date.now(),
+      tick,
+      restBlock,
+      overlayStateVersion: restBlock.startedAt ?? Date.now(),
+    });
+
+    logger.info('IPC', '[OVERLAY_SYNC] resync data sent to overlay', {
+      hasTick: !!tick,
+      restBlockActive: restBlock.isActive,
+      currentPhase: tick?.currentPhase,
+      remainingMs: restBlock.remainingMs,
+    });
+
+    getOverlaySyncService().confirmResync();
+  });
+
+  // Main window health check response handler
+  ipcMain.on('main-window:health-check-response', () => {
+    onMainWindowHealthCheckResponse();
   });
 
   // Dev mode: Clear all data (config + session)

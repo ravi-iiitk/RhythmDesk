@@ -107,6 +107,7 @@ class TimerEngine extends events_1.EventEmitter {
     constructor() {
         super();
         this.currentSchedule = null;
+        this.lastEmittedTick = null;
         this.tickInterval = null;
         this.lastTickTime = 0;
         this.lastStateSaveTime = 0;
@@ -1858,6 +1859,7 @@ class TimerEngine extends events_1.EventEmitter {
                 flowStepsCount: debugSnapshot.flowStepsCount,
             },
         };
+        this.lastEmittedTick = tick;
         this.emit('tick', tick);
     }
     /**
@@ -1996,6 +1998,19 @@ class TimerEngine extends events_1.EventEmitter {
      */
     getCurrentSchedule() {
         return this.currentSchedule;
+    }
+    /**
+     * Get last emitted timer snapshot for renderer resync/recovery.
+     * Main process remains source of truth; renderer can request this after reload.
+     */
+    getLastEmittedTick() {
+        if (!this.lastEmittedTick)
+            return null;
+        return {
+            ...this.lastEmittedTick,
+            officeFocusLock: (0, officeFocusLockService_1.getOfficeFocusLockService)().getState(),
+            restBlock: (0, restBlockService_1.getRestBlockService)().getState(),
+        };
     }
     /**
      * Save state to persistence (debounced)

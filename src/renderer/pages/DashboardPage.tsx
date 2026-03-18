@@ -319,6 +319,9 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const phaseName = tick.currentPhaseLabel || PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
   const nextPhaseName = tick.nextPhaseLabel || PHASE_DISPLAY_NAMES[tick.nextPhase] || tick.nextPhase;
   const isActiveBreakPhase = tick.currentPhase === 'short-break' || tick.currentPhase === 'long-break';
+  const breakSkipCountToday = tick.breakSkipCountToday ?? 0;
+  const maxBreakSkipsPerDay = tick.maxBreakSkipsPerDay ?? 0;
+  const breakSkipsLeftToday = Math.max(0, maxBreakSkipsPerDay - breakSkipCountToday);
   const skipDisabled = tick.noSkipEnabled || (isActiveBreakPhase && tick.canSkipCurrentBreak === false);
   const skipTitle = tick.noSkipEnabled
     ? 'Skip disabled for this schedule'
@@ -436,6 +439,14 @@ function DashboardPage({ tick }: DashboardPageProps) {
             )}
           </div>
         </div>
+
+        {isActiveBreakPhase && (
+          <div style={{ marginTop: '0.75rem', fontSize: '0.9rem', color: '#94a3b8' }}>
+            {tick.canSkipCurrentBreak === false
+              ? `Break skip limit reached for today (${breakSkipCountToday}/${maxBreakSkipsPerDay})`
+              : `Break skips left today: ${breakSkipsLeftToday} (${breakSkipCountToday}/${maxBreakSkipsPerDay} used)`}
+          </div>
+        )}
       </div>
 
       {/* Flow Stale Warning Banner */}

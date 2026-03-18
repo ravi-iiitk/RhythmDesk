@@ -89,6 +89,23 @@ const api = {
         electron_1.ipcRenderer.on(overlaySync_1.OVERLAY_SYNC_CHANNELS.HEARTBEAT_REQUEST, handler);
         return () => electron_1.ipcRenderer.removeListener(overlaySync_1.OVERLAY_SYNC_CHANNELS.HEARTBEAT_REQUEST, handler);
     },
+    requestOverlayResync: () => {
+        electron_1.ipcRenderer.send(overlaySync_1.OVERLAY_SYNC_CHANNELS.RESYNC_REQUEST);
+    },
+    onOverlayResyncData: (callback) => {
+        const handler = (_event, data) => callback(data);
+        electron_1.ipcRenderer.on(overlaySync_1.OVERLAY_SYNC_CHANNELS.RESYNC_DATA, handler);
+        return () => electron_1.ipcRenderer.removeListener(overlaySync_1.OVERLAY_SYNC_CHANNELS.RESYNC_DATA, handler);
+    },
+    // Main window health check
+    onHealthCheck: (callback) => {
+        const handler = () => callback();
+        electron_1.ipcRenderer.on('main-window:health-check', handler);
+        return () => electron_1.ipcRenderer.removeListener('main-window:health-check', handler);
+    },
+    sendHealthCheckResponse: () => {
+        electron_1.ipcRenderer.send('main-window:health-check-response');
+    },
 };
 electron_1.contextBridge.exposeInMainWorld('rhythmDesk', api);
 //# sourceMappingURL=preload.js.map

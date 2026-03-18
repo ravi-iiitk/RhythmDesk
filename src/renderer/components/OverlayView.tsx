@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import { TimerTick, PhaseType } from '../../shared/types';
 import { PHASE_DISPLAY_NAMES, PHASE_COLORS } from '../../shared/constants';
-import { formatDuration } from '../../shared/timeUtils';
+import { formatDuration, formatDurationHuman } from '../../shared/timeUtils';
 
 // Format current time as 12-hour format with seconds (e.g., 10:42:18 PM)
 function formatCurrentTime(): string {
@@ -27,7 +27,7 @@ interface OverlayViewProps {
 
 // Format minutes into human-readable format (e.g., "1h 15m" or "30m")
 function formatPostponeMinutes(minutes: number): string {
-  if (minutes < 60) {
+  if (minutes <= 60) {
     return `${minutes}m`;
   }
   const hours = Math.floor(minutes / 60);
@@ -106,6 +106,9 @@ function OverlayView({ tick }: OverlayViewProps) {
   
   const isWorkPhase = tick.currentPhase === 'sit' || tick.currentPhase === 'stand';
   const isActiveBreakPhase = tick.currentPhase === 'short-break' || tick.currentPhase === 'long-break';
+  const breakSkipCountToday = tick.breakSkipCountToday ?? 0;
+  const maxBreakSkipsPerDay = tick.maxBreakSkipsPerDay ?? 0;
+  const breakSkipsLeftToday = Math.max(0, maxBreakSkipsPerDay - breakSkipCountToday);
   const isOfficeFocusLockActive = tick.officeFocusLock.isActive;
 
   // Determine which actions to show based on phase and settings
@@ -247,6 +250,14 @@ function OverlayView({ tick }: OverlayViewProps) {
           </div>
         )}
 
+        {isActiveBreakPhase && (
+          <div className="overlay-postpone-info" style={{ marginTop: '0.75rem' }}>
+            {tick.canSkipCurrentBreak === false
+              ? `Break skip limit reached for today (${breakSkipCountToday}/${maxBreakSkipsPerDay})`
+              : `Break skips left today: ${breakSkipsLeftToday} (${breakSkipCountToday}/${maxBreakSkipsPerDay} used)`}
+          </div>
+        )}
+
         {/* Actions */}
         <div className="overlay-actions">
           {showSkipPendingBreakButton && (
@@ -280,12 +291,6 @@ function OverlayView({ tick }: OverlayViewProps) {
           )}
         </div>
 
-        {isActiveBreakPhase && tick.canSkipCurrentBreak === false && (
-          <div className="overlay-postpone-info" style={{ marginTop: '0.75rem' }}>
-            Break skip limit reached for today ({tick.breakSkipCountToday ?? 0}/{tick.maxBreakSkipsPerDay ?? 0})
-          </div>
-        )}
-
         {/* Postpone Options */}
         {showPostponeButtons && tick.postponeOptions.length > 0 && (
           <div className="overlay-postpone-info">
@@ -317,7 +322,7 @@ function OverlayView({ tick }: OverlayViewProps) {
         )}
         {tick.isPostponed && (
           <div className="status-badge status-paused" style={{ marginTop: '1rem' }}>
-            ⏳ Pending {tick.pendingBreakPhase ? (PHASE_DISPLAY_NAMES[tick.pendingBreakPhase] || tick.pendingBreakPhase) : 'break'} in {formatDuration(tick.pendingBreakInMs)}
+            ⏳ Pending {tick.pendingBreakPhase ? (PHASE_DISPLAY_NAMES[tick.pendingBreakPhase] || tick.pendingBreakPhase) : 'break'} in {tick.pendingBreakInMs > 60 * 60 * 1000 ? formatDurationHuman(tick.pendingBreakInMs) : formatDuration(tick.pendingBreakInMs)}
           </div>
         )}
       </div>

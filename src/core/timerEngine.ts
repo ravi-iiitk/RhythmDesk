@@ -89,6 +89,7 @@ const STATE_SAVE_DEBOUNCE_MS = 5000; // Save state every 5 seconds max
 export class TimerEngine extends EventEmitter {
   private state: SessionState;
   private currentSchedule: Schedule | null = null;
+  private lastEmittedTick: TimerTick | null = null;
   private tickInterval: NodeJS.Timeout | null = null;
   private lastTickTime: number = 0;
   private lastStateSaveTime: number = 0;
@@ -2153,6 +2154,8 @@ export class TimerEngine extends EventEmitter {
       },
     };
 
+    this.lastEmittedTick = tick;
+
     this.emit('tick', tick);
   }
   
@@ -2302,6 +2305,20 @@ export class TimerEngine extends EventEmitter {
    */
   getCurrentSchedule(): Schedule | null {
     return this.currentSchedule;
+  }
+
+  /**
+   * Get last emitted timer snapshot for renderer resync/recovery.
+   * Main process remains source of truth; renderer can request this after reload.
+   */
+  getLastEmittedTick(): TimerTick | null {
+    if (!this.lastEmittedTick) return null;
+
+    return {
+      ...this.lastEmittedTick,
+      officeFocusLock: getOfficeFocusLockService().getState(),
+      restBlock: getRestBlockService().getState(),
+    };
   }
 
   /**

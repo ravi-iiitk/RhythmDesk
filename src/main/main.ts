@@ -10,7 +10,7 @@
  */
 
 import { app, BrowserWindow } from 'electron';
-import { createMainWindow, showOverlay, closeOverlay, sendToAll, sendToOverlay, getMainWindow, getOverlayWindow, recoverOverlayIfNeeded } from './windowManager';
+import { createMainWindow, showOverlay, closeOverlay, sendToAll, sendToOverlay, getMainWindow, getOverlayWindow, recoverOverlayIfNeeded, startMainWindowHealthCheck } from './windowManager';
 import logger from '../core/logger';
 import { createTray, updateTrayWithTick } from './tray';
 import { registerIpcHandlers } from './ipc';
@@ -116,9 +116,36 @@ function initialize(): void {
 
     // Create main window
     createMainWindow();
+    
+    // Start main window health check watchdog
+    // This detects zombie states after system suspend/resume
+    startMainWindowHealthCheck();
+    logger.info('Main', 'Main window health check watchdog started');
 
     // Initialize and start timer engine
     const timerEngine = getTimerEngine();
+    let lastTimerTick: TimerTick | null = null;
+    let lastOverlayUpdateSentAt = 0;
+
+    const sendOverlayResyncSnapshot = (reason: string): void => {
+      const restState = getRestBlockService().getState();
+      const tick = timerEngine.getLastEmittedTick() || lastTimerTick;
+
+      sendToOverlay(OVERLAY_SYNC_CHANNELS.RESYNC_DATA, {
+        requestedAt: Date.now(),
+        tick,
+        restBlock: restState,
+        overlayStateVersion: restState.startedAt ?? Date.now(),
+        reason,
+      });
+
+      logger.info('Main', 'Overlay state resent', {
+        reason,
+        hasTick: !!tick,
+        restBlockActive: restState.isActive,
+        restRemainingMs: restState.remainingMs,
+      });
+    };
 
     // ========================================
     // PHASE 5: Start watchdogs and health monitor
@@ -136,6 +163,7 @@ function initialize(): void {
     
     // Handle timer events
     timerEngine.on('tick', (tick: TimerTick) => {
+      lastTimerTick = tick;
       // Report tick to watchdog for stall detection
       timerWatchdog.reportTick(tick.phaseRemainingMs);
       
@@ -143,6 +171,11 @@ function initialize(): void {
       sendToAll(IPC_CHANNELS.TIMER_TICK, tick);
       // Update tray
       updateTrayWithTick(tick);
+
+      logger.debug('Main', 'Authoritative timer tick broadcast', {
+        phase: tick.currentPhase,
+        phaseRemainingMs: tick.phaseRemainingMs,
+      });
     });
 
     timerEngine.on('phaseChange', (data: { prevPhase: PhaseType; newPhase: PhaseType }) => {
@@ -247,6 +280,23 @@ function initialize(): void {
 
     // Initialize Rest Block service and handle its events
     const restBlockService = getRestBlockService();
+    const overlaySyncService = getOverlaySyncService();
+
+    overlaySyncService.on('heartbeat-missed', (missedCount: number) => {
+      logger.warn('Main', 'Overlay heartbeat missed during rest block', {
+        missedCount,
+        restBlockActive: restBlockService.isActive(),
+      });
+    });
+
+    overlaySyncService.on('overlay-stale', () => {
+      logger.error('Main', 'Overlay marked stale by heartbeat watchdog');
+    });
+
+    overlaySyncService.on('overlay-recovered', () => {
+      logger.info('Main', 'Overlay recovered after stale detection');
+      sendOverlayResyncSnapshot('overlay-recovered');
+    });
     
     restBlockService.on('started', () => {
       playSound('rest_block_start');
@@ -259,12 +309,25 @@ function initialize(): void {
       showOverlay(restState.isStrictMode);
       sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: 'rest-block', restBlock: restState });
       sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
+      sendOverlayResyncSnapshot('rest-block-start');
+      lastOverlayUpdateSentAt = Date.now();
       
       // Start overlay sync watchdog for rest blocks
-      const overlaySyncService = getOverlaySyncService();
       overlaySyncService.start(
         () => sendToOverlay(OVERLAY_SYNC_CHANNELS.HEARTBEAT_REQUEST, {}),
-        () => recoverOverlayIfNeeded(restState.isStrictMode)
+        () => {
+          const recovered = recoverOverlayIfNeeded(restState.isStrictMode, true);
+          if (recovered) {
+            const currentRestState = restBlockService.getState();
+            sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: 'rest-block', restBlock: currentRestState });
+            sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, currentRestState);
+            sendOverlayResyncSnapshot('heartbeat-recovery');
+            logger.warn('Main', 'Overlay recovered after missed heartbeats', {
+              restBlockName: currentRestState.name,
+              remainingMs: currentRestState.remainingMs,
+            });
+          }
+        }
       );
     });
     
@@ -278,6 +341,12 @@ function initialize(): void {
       // Send rest block state to overlay on every tick
       // This ensures the overlay countdown stays in sync for long durations
       sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
+      lastOverlayUpdateSentAt = Date.now();
+
+      logger.debug('Main', 'Rest block overlay update sent', {
+        remainingMs: restState.remainingMs,
+        lastOverlayUpdateSentAt,
+      });
     });
 
     restBlockService.on('stopped', () => {
@@ -334,11 +403,12 @@ function initialize(): void {
         // If rest block is active but overlay is not healthy, recover it
         if (!overlayWindow || overlayWindow.isDestroyed()) {
           logger.warn('Main', 'Watchdog: Rest block active but overlay missing - recovering');
-          const recovered = recoverOverlayIfNeeded(restState.isStrictMode);
+          const recovered = recoverOverlayIfNeeded(restState.isStrictMode, true);
           if (recovered) {
             // Send current state to the new overlay
             sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
             sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: 'rest-block', restBlock: restState });
+            sendOverlayResyncSnapshot('overlay-window-missing-watchdog');
           }
         }
       }

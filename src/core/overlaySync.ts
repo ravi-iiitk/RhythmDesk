@@ -79,6 +79,7 @@ class OverlaySyncService extends EventEmitter {
     this.sendHeartbeatFn = sendHeartbeat;
     this.recoverOverlayFn = recoverOverlay;
     this.state.isOverlayActive = true;
+    this.state.lastHeartbeatReceived = Date.now();
     this.state.missedHeartbeats = 0;
     this.state.isStale = false;
     
@@ -177,7 +178,7 @@ class OverlaySyncService extends EventEmitter {
     // Check if we missed a heartbeat
     if (this.state.lastHeartbeatSent > 0 && timeSinceLastResponse > HEARTBEAT_TIMEOUT_MS) {
       this.state.missedHeartbeats++;
-      this.logEvent('heartbeat-missed', `Missed heartbeat #${this.state.missedHeartbeats}`);
+      this.logEvent('heartbeat-missed', `Missed heartbeat #${this.state.missedHeartbeats} (lastResponseMs=${timeSinceLastResponse})`);
       this.emit('heartbeat-missed', this.state.missedHeartbeats);
       
       // Check if overlay is stale
@@ -207,7 +208,7 @@ class OverlaySyncService extends EventEmitter {
     if (this.state.isStale) return; // Already handling
     
     this.state.isStale = true;
-    this.logEvent('overlay-stale', 'Overlay is stale - attempting recovery');
+    this.logEvent('overlay-stale', `Overlay is stale - attempting recovery (missed=${this.state.missedHeartbeats})`);
     this.emit('overlay-stale');
     
     // Attempt recovery
