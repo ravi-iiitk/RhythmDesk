@@ -89,6 +89,10 @@ export function registerIpcHandlers(): void {
     return timerEngine.reverseFlow();
   });
 
+  ipcMain.handle(IPC_CHANNELS.TRIGGER_PENDING_BREAK_NOW, () => {
+    return timerEngine.triggerPendingBreakNow();
+  });
+
   // Window control handlers
   ipcMain.handle(IPC_CHANNELS.OPEN_SETTINGS, () => {
     showMainWindow();

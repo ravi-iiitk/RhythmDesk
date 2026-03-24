@@ -1221,6 +1221,57 @@ export class TimerEngine extends EventEmitter {
   }
 
   /**
+   * Immediately trigger the pending postponed break without waiting for the
+   * postpone timer to expire.
+   * 
+   * This allows the user to take their pending break early (e.g. when a meeting
+   * ends sooner than expected).
+   * 
+   * Returns true if a pending break was triggered, false if nothing to trigger.
+   */
+  triggerPendingBreakNow(): boolean {
+    if (!this.state.isPostponed || !this.state.postponedPhase) {
+      logger.debug('TimerEngine', 'triggerPendingBreakNow: no pending break to trigger');
+      return false;
+    }
+
+    const pendingBreak = this.state.postponedPhase;
+
+    logger.info('TimerEngine', 'triggerPendingBreakNow: triggering pending break immediately', {
+      pendingBreak,
+      originalPostponedUntil: this.state.postponedUntil,
+    });
+
+    // Clear postpone state BEFORE starting the break (same pattern as normal expiry)
+    this.state.isPostponed = false;
+    this.state.postponedUntil = null;
+    this.state.postponedPhase = null;
+    this.state.postponedBreakType = null;
+
+    // Store current work phase so we can resume after break (if not already set)
+    if (this.isWorkPhase(this.state.currentPhase)) {
+      this.state.interruptedPhase = this.state.currentPhase;
+      this.state.interruptedPhaseRemainingMs = this.state.phaseRemainingMs;
+      this.preBreakPhase = this.state.currentPhase;
+    }
+
+    // Start the break immediately - this emits phaseChange which shows the overlay
+    this.startPhase(pendingBreak);
+    this.emitTick();
+    this.saveState();
+
+    logSessionEvent({
+      event: 'breakStart',
+      phase: pendingBreak,
+      fromPhase: this.state.currentPhase,
+      cumulativeWorkMs: this.state.cumulativeWorkTimeMs,
+      scheduleId: this.currentSchedule?.id,
+    });
+
+    return true;
+  }
+
+  /**
    * Resume from pause
    */
   resume(): void {

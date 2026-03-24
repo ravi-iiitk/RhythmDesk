@@ -81,6 +81,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const handleResetTodayCounters = () => window.rhythmDesk.resetTodayCounters();
   const handleShuffleFlow = () => window.rhythmDesk.shuffleFlow();
   const handleReverseFlow = () => window.rhythmDesk.reverseFlow();
+  const handleTriggerPendingBreakNow = () => window.rhythmDesk.triggerPendingBreakNow();
   
   const handleStartOfficeFocusLock = (minutes: number) => {
     window.rhythmDesk.startOfficeFocusLock(selectedLabel, minutes, focusStrictMode);
@@ -549,13 +550,23 @@ function DashboardPage({ tick }: DashboardPageProps) {
               <button className="btn btn-secondary" onClick={handlePause}>⏸️ Pause</button>
             )}
             {tick.isPostponed && tick.pendingBreakPhase && (
-              <button
-                className="btn btn-secondary"
-                onClick={handleSkip}
-                title="Skip the pending break and continue with current flow"
-              >
-                ⏭️ Skip Pending Break
-              </button>
+              <>
+                <button
+                  className="btn btn-success"
+                  onClick={handleTriggerPendingBreakNow}
+                  title="Take the pending break right now without waiting"
+                  style={{ fontWeight: 600 }}
+                >
+                  ☕ Take Break Now
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleSkip}
+                  title="Skip the pending break and continue with current flow"
+                >
+                  ⏭️ Skip Pending Break
+                </button>
+              </>
             )}
             <button 
               className="btn btn-secondary" 

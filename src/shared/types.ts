@@ -456,6 +456,7 @@ export const IPC_CHANNELS = {
   RESET_TODAY_COUNTERS: 'timer:resetTodayCounters',
   SHUFFLE_FLOW: 'timer:shuffleFlow',
   REVERSE_FLOW: 'timer:reverseFlow',
+  TRIGGER_PENDING_BREAK_NOW: 'timer:triggerPendingBreakNow',
   
   // Office Focus Lock controls
   START_OFFICE_FOCUS_LOCK: 'officeFocusLock:start',

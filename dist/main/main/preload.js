@@ -26,6 +26,7 @@ const api = {
     resetTodayCounters: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.RESET_TODAY_COUNTERS),
     shuffleFlow: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.SHUFFLE_FLOW),
     reverseFlow: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.REVERSE_FLOW),
+    triggerPendingBreakNow: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.TRIGGER_PENDING_BREAK_NOW),
     // Office Focus Lock controls
     startOfficeFocusLock: (label, durationMinutes, isStrictMode = false) => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes, isStrictMode),
     stopOfficeFocusLock: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.STOP_OFFICE_FOCUS_LOCK),
