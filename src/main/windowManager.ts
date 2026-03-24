@@ -371,13 +371,49 @@ export function createOverlayWindow(strictMode: boolean = false): BrowserWindow 
   });
   
   // Handle unresponsive renderer
+  // NOTE: Do NOT destroy on unresponsive - the screensaver/screen-lock causes
+  // Chromium's renderer to be temporarily throttled, triggering this event.
+  // Destroying here leaves the user with no overlay after the screensaver ends.
+  // Instead, wait for 'responsive' to come back and reload the content.
+  // Only force-destroy if the window stays unresponsive for an extended period.
+  let overlayUnresponsiveTimeout: NodeJS.Timeout | null = null;
   overlayWindow.on('unresponsive', () => {
     logOverlayEvent({ event: 'overlay-unresponsive', reason: 'BrowserWindow unresponsive event' });
-    logOverlayCrash('renderer unresponsive');
-    logger.error('WindowManager', 'Overlay became unresponsive - destroying');
+    logger.warn('WindowManager', 'Overlay became unresponsive - waiting for recovery (may be screensaver)');
+
+    // Give it 30 seconds to recover on its own (e.g., screensaver ends)
+    overlayUnresponsiveTimeout = setTimeout(() => {
+      if (overlayWindow && !overlayWindow.isDestroyed()) {
+        logger.error('WindowManager', 'Overlay still unresponsive after 30s - reloading content');
+        logOverlayCrash('renderer unresponsive timeout');
+        try {
+          if (isDev()) {
+            overlayWindow.loadURL('http://localhost:5173/#/overlay');
+          } else {
+            overlayWindow.loadFile(path.join(__dirname, '../../renderer/index.html'), { hash: '/overlay' });
+          }
+        } catch (e) {
+          logger.error('WindowManager', 'Failed to reload unresponsive overlay - destroying', { error: String(e) });
+          overlayWindow.destroy();
+          overlayWindow = null;
+        }
+      }
+      overlayUnresponsiveTimeout = null;
+    }, 30000);
+  });
+
+  overlayWindow.on('responsive', () => {
+    logger.info('WindowManager', 'Overlay became responsive again - cancelling destroy timer');
+    if (overlayUnresponsiveTimeout) {
+      clearTimeout(overlayUnresponsiveTimeout);
+      overlayUnresponsiveTimeout = null;
+    }
+    // Re-assert always-on-top and fullscreen in case screensaver disrupted it
     if (overlayWindow && !overlayWindow.isDestroyed()) {
-      overlayWindow.destroy();
-      overlayWindow = null;
+      overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+      overlayWindow.setFullScreen(true);
+      overlayWindow.show();
+      overlayWindow.focus();
     }
   });
 

@@ -445,8 +445,22 @@ export class TimerEngine extends EventEmitter {
       return;
     }
 
+    // CRITICAL: Handle paused state FIRST - before any other logic
+    // This prevents postponed breaks from triggering during Rest Blocks
+    // which caused flow state desync and renderer crashes
+    if (this.state.isPaused) {
+      if (this.state.pauseResumeAt && now >= this.state.pauseResumeAt) {
+        this.resume();
+      } else {
+        // Timer is paused - emit tick for UI updates but don't process any timers
+        this.emitTick();
+        return;
+      }
+    }
+
     // Handle postponed break - WORK CONTINUES during postpone!
     // Check if postponed break should now trigger
+    // NOTE: This MUST come after pause check to prevent breaks during Rest Blocks
     if (this.state.isPostponed && this.state.postponedUntil) {
       if (now >= this.state.postponedUntil) {
         // Postpone period ended - trigger the pending break with overlay
@@ -475,16 +489,6 @@ export class TimerEngine extends EventEmitter {
         }
       }
       // If still in postpone period, work continues normally (fall through to normal tick logic)
-    }
-
-    // Handle paused state
-    if (this.state.isPaused) {
-      if (this.state.pauseResumeAt && now >= this.state.pauseResumeAt) {
-        this.resume();
-      } else {
-        this.emitTick();
-        return;
-      }
     }
 
     // Update phase remaining time
@@ -1221,9 +1225,23 @@ export class TimerEngine extends EventEmitter {
    */
   resume(): void {
     if (!this.state.isPaused) return;
+    const now = Date.now();
+    const pausedDurationMs = this.state.pausedAt ? now - this.state.pausedAt : 0;
+
     this.state.isPaused = false;
     this.state.pausedAt = null;
     this.state.pauseResumeAt = null;
+
+    // Extend postponedUntil by the paused duration so paused time doesn't
+    // count against the pending break countdown
+    if (this.state.isPostponed && this.state.postponedUntil && pausedDurationMs > 0) {
+      this.state.postponedUntil += pausedDurationMs;
+      logger.debug('TimerEngine', 'Resume: extended postponedUntil by paused duration', {
+        pausedDurationMs,
+        newPostponedUntil: this.state.postponedUntil,
+      });
+    }
+
     this.saveState();
   }
 
@@ -2131,7 +2149,9 @@ export class TimerEngine extends EventEmitter {
       isPaused: this.state.isPaused,
       isPostponed: this.state.isPostponed,
       pendingBreakPhase: this.state.postponedPhase,
-      pendingBreakInMs: this.state.postponedUntil ? Math.max(0, this.state.postponedUntil - Date.now()) : 0,
+      pendingBreakInMs: this.state.postponedUntil
+        ? Math.max(0, this.state.postponedUntil - (this.state.isPaused && this.state.pausedAt ? this.state.pausedAt : Date.now()))
+        : 0,
       isFlowStale: this.isFlowSessionStale(),
       postponeCountToday: totalPostponeCount,
       maxPostponesPerDay: maxPostpones,
