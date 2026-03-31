@@ -27,6 +27,7 @@ const api = {
     shuffleFlow: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.SHUFFLE_FLOW),
     reverseFlow: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.REVERSE_FLOW),
     triggerPendingBreakNow: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.TRIGGER_PENDING_BREAK_NOW),
+    startNextActivity: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.START_NEXT_ACTIVITY),
     // Office Focus Lock controls
     startOfficeFocusLock: (label, durationMinutes, isStrictMode = false) => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes, isStrictMode),
     stopOfficeFocusLock: () => electron_1.ipcRenderer.invoke(types_1.IPC_CHANNELS.STOP_OFFICE_FOCUS_LOCK),

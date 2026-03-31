@@ -171,6 +171,10 @@ class TimerEngine extends events_1.EventEmitter {
         // If paused, nothing to recover
         if (this.state.isPaused)
             return;
+        // If waiting for user to start next activity, nothing to recover
+        // phaseEndsAt is stale (from the completed phase) - don't let it trigger a reset
+        if (this.state.isWaitingForNextActivity)
+            return;
         // Validate and normalize state first
         const schedules = configService_1.default.getSchedules();
         const activeSchedule = this.state.activeScheduleId
@@ -368,6 +372,12 @@ class TimerEngine extends events_1.EventEmitter {
                 this.emitTick();
                 return;
             }
+        }
+        // Handle waiting-for-next-activity state (autoStartNextActivity=false)
+        // Timer holds here - emit tick for UI updates but don't advance
+        if (this.state.isWaitingForNextActivity) {
+            this.emitTick();
+            return;
         }
         // Handle postponed break - WORK CONTINUES during postpone!
         // Check if postponed break should now trigger
@@ -777,7 +787,7 @@ class TimerEngine extends events_1.EventEmitter {
             toIndex: result.nextIndex,
             newPhase: result.nextPhase,
         });
-        this.startPhase(result.nextPhase);
+        this.maybeStartPhase(result.nextPhase);
     }
     /**
      * Advance phase in rule-based mode
@@ -797,7 +807,43 @@ class TimerEngine extends events_1.EventEmitter {
         if ((0, transitions_1.isBreakPhase)(prevPhase)) {
             this.preBreakPhase = null;
         }
-        this.startPhase(nextPhase);
+        this.maybeStartPhase(nextPhase);
+    }
+    /**
+     * Start a phase immediately, or enter waiting state if autoStartNextActivity=false.
+     * Break phases always start immediately (user-initiated breaks should not be held).
+     * Only work/transition phases are held for manual confirmation.
+     */
+    maybeStartPhase(phase) {
+        const autoStart = this.currentSchedule?.autoStartNextActivity ?? true;
+        // Always auto-start break phases — only hold work/transition phases
+        if (!autoStart && !(0, breakConflict_1.isBreakPhase)(phase) && phase !== 'idle') {
+            logger_1.default.info('TimerEngine', 'Waiting for user to start next activity', { phase });
+            this.state.isWaitingForNextActivity = true;
+            this.state.waitingNextPhase = phase;
+            this.emit('phaseChange', { prevPhase: this.state.currentPhase, newPhase: phase, waiting: true });
+            this.saveStateImmediately();
+            return;
+        }
+        this.startPhase(phase);
+    }
+    /**
+     * Called by user when autoStartNextActivity=false and they want to start the queued phase.
+     * Returns true if a queued phase was started, false if nothing was waiting.
+     */
+    startNextActivity() {
+        if (!this.state.isWaitingForNextActivity || !this.state.waitingNextPhase) {
+            logger_1.default.debug('TimerEngine', 'startNextActivity: nothing waiting');
+            return false;
+        }
+        const phase = this.state.waitingNextPhase;
+        this.state.isWaitingForNextActivity = false;
+        this.state.waitingNextPhase = null;
+        logger_1.default.info('TimerEngine', 'startNextActivity: starting queued phase', { phase });
+        this.startPhase(phase);
+        this.emitTick();
+        this.saveState();
+        return true;
     }
     /**
      * Start a specific phase
@@ -1299,6 +1345,25 @@ class TimerEngine extends events_1.EventEmitter {
     skipPhase() {
         if (!this.currentSchedule)
             return;
+        // If waiting for user to start next activity, skip the queued phase
+        // and advance to the one after it (treat it as if the queued phase completed)
+        if (this.state.isWaitingForNextActivity && this.state.waitingNextPhase) {
+            if (this.currentSchedule.noSkipEnabled)
+                return;
+            logger_1.default.info('TimerEngine', 'skipPhase: skipping queued waiting phase', {
+                waitingNextPhase: this.state.waitingNextPhase,
+            });
+            const skippedPhase = this.state.waitingNextPhase;
+            this.state.isWaitingForNextActivity = false;
+            this.state.waitingNextPhase = null;
+            // Temporarily set currentPhase to the skipped phase so advancePhase
+            // can correctly compute what comes after it
+            this.state.currentPhase = skippedPhase;
+            this.advancePhase();
+            this.emitTick();
+            this.saveState();
+            return;
+        }
         // If a postponed break is pending, skip that pending break instead of
         // skipping the current phase. This enables "Skip waiting break" from
         // dashboard/overlay while user continues work or transitions.
@@ -1490,6 +1555,9 @@ class TimerEngine extends events_1.EventEmitter {
         this.state.prePostponeWorkPhase = null;
         this.state.prePostponeWorkPhaseRemainingMs = 0;
         this.state.prePostponeFlowIndex = undefined;
+        // Clear waiting-for-next-activity state
+        this.state.isWaitingForNextActivity = false;
+        this.state.waitingNextPhase = null;
         // Clear paused state (Invariant 4)
         this.state.isPaused = false;
         this.state.pausedAt = null;
@@ -1814,8 +1882,9 @@ class TimerEngine extends events_1.EventEmitter {
             const currentPhase = this.state.currentPhase;
             // Check for desync: currentPhase should match the flow step at currentIndex
             // Exception: during breaks (long-break is not in flow, short-break might be)
+            // Exception: when waiting for next activity (currentPhase is the completed phase, intentionally stale)
             const isInBreak = currentPhase === 'long-break';
-            if (!isInBreak && expectedCurrentPhase !== currentPhase) {
+            if (!isInBreak && !this.state.isWaitingForNextActivity && expectedCurrentPhase !== currentPhase) {
                 logger_1.default.warn('TimerEngine', 'FLOW STATE DESYNC DETECTED in emitTick', {
                     currentPhase,
                     currentFlowStepIndex: currentIndex,
@@ -1893,6 +1962,8 @@ class TimerEngine extends events_1.EventEmitter {
             thenPhaseDurationMs,
             cumulativeWorkTimeMs: this.state.cumulativeWorkTimeMs,
             isPaused: this.state.isPaused,
+            isWaitingForNextActivity: this.state.isWaitingForNextActivity ?? false,
+            waitingNextPhase: this.state.waitingNextPhase ?? null,
             isPostponed: this.state.isPostponed,
             pendingBreakPhase: this.state.postponedPhase,
             pendingBreakInMs: this.state.postponedUntil

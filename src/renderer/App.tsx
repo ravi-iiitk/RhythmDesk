@@ -61,6 +61,8 @@ function createFallbackTickForRestBlock(restBlockState: RestBlockState): TimerTi
     thenPhaseDurationMs: 0,
     cumulativeWorkTimeMs: 0,
     isPaused: false,
+    isWaitingForNextActivity: false,
+    waitingNextPhase: null,
     isPostponed: false,
     pendingBreakPhase: null,
     pendingBreakInMs: 0,

@@ -79,6 +79,9 @@ function registerIpcHandlers() {
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.TRIGGER_PENDING_BREAK_NOW, () => {
         return timerEngine.triggerPendingBreakNow();
     });
+    electron_1.ipcMain.handle(types_1.IPC_CHANNELS.START_NEXT_ACTIVITY, () => {
+        return timerEngine.startNextActivity();
+    });
     // Window control handlers
     electron_1.ipcMain.handle(types_1.IPC_CHANNELS.OPEN_SETTINGS, () => {
         (0, windowManager_1.showMainWindow)();

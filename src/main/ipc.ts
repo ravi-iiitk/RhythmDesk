@@ -93,6 +93,10 @@ export function registerIpcHandlers(): void {
     return timerEngine.triggerPendingBreakNow();
   });
 
+  ipcMain.handle(IPC_CHANNELS.START_NEXT_ACTIVITY, () => {
+    return timerEngine.startNextActivity();
+  });
+
   // Window control handlers
   ipcMain.handle(IPC_CHANNELS.OPEN_SETTINGS, () => {
     showMainWindow();

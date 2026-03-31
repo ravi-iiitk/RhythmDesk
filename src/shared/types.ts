@@ -139,6 +139,9 @@ export interface Schedule {
   strictModeEnabled?: boolean;
   // Prevent skipping to next activity (separate from strict mode which prevents early dismiss)
   noSkipEnabled?: boolean;
+  // If false, timer pauses after each phase ends and waits for user to manually start the next activity
+  // Default: true (auto-start next activity as before)
+  autoStartNextActivity?: boolean;
   // @deprecated Use per-break allowPostpone
   allowPostpone?: boolean;
   // @deprecated Use per-break postponeOptionsMinutes
@@ -245,6 +248,11 @@ export interface SessionState {
   // @deprecated Use postponeCountsToday
   postponeCountToday?: number;
   
+  // Waiting-for-user state: set when autoStartNextActivity=false and a phase just ended
+  // Timer holds here until user clicks "Start [Next Activity]"
+  isWaitingForNextActivity: boolean;
+  waitingNextPhase: PhaseType | null; // the phase ready to start when user confirms
+
   // Pause state
   isPaused: boolean;
   pausedAt: number | null;
@@ -393,6 +401,8 @@ export interface TimerTick {
   thenPhaseDurationMs: number;
   cumulativeWorkTimeMs: number;
   isPaused: boolean;
+  isWaitingForNextActivity: boolean;   // true when autoStartNextActivity=false and phase just ended
+  waitingNextPhase: PhaseType | null;  // the phase queued to start
   isPostponed: boolean;
   // Pending break info (when isPostponed is true, work continues but break is pending)
   pendingBreakPhase: PhaseType | null;
@@ -457,6 +467,7 @@ export const IPC_CHANNELS = {
   SHUFFLE_FLOW: 'timer:shuffleFlow',
   REVERSE_FLOW: 'timer:reverseFlow',
   TRIGGER_PENDING_BREAK_NOW: 'timer:triggerPendingBreakNow',
+  START_NEXT_ACTIVITY: 'timer:startNextActivity',
   
   // Office Focus Lock controls
   START_OFFICE_FOCUS_LOCK: 'officeFocusLock:start',
@@ -540,6 +551,8 @@ export const DEFAULT_SCHEDULE: Omit<Schedule, 'id' | 'name' | 'createdAt'> = {
   longBreakEveryMinutes: DEFAULT_LONG_BREAK_CONFIG.everyMinutes,
   longBreakDurationMinutes: DEFAULT_LONG_BREAK_CONFIG.durationMinutes,
   strictModeEnabled: true,
+  noSkipEnabled: false,
+  autoStartNextActivity: true,
   allowPostpone: true,
   postponeOptionsMinutes: [2, 5, 10],
   maxPostponesPerDay: 4,
@@ -578,6 +591,8 @@ export const INITIAL_SESSION_STATE: SessionState = {
   postponeCountsToday: { ...INITIAL_POSTPONE_COUNTS },
   postponeResetDate: new Date().toISOString().split('T')[0],
   breakSkipCountsToday: { ...INITIAL_BREAK_SKIP_COUNTS },
+  isWaitingForNextActivity: false,
+  waitingNextPhase: null,
   isPaused: false,
   pausedAt: null,
   pauseResumeAt: null,

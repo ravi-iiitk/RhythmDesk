@@ -106,6 +106,8 @@ function createMockSessionState(schedule: Schedule): SessionState {
       longBreak: 0,
     },
     postponeResetDate: today,
+    isWaitingForNextActivity: false,
+    waitingNextPhase: null,
     isPaused: false,
     pausedAt: null,
     pauseResumeAt: null,

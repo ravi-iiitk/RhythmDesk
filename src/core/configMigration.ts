@@ -385,6 +385,8 @@ export function migrateSessionState(state: unknown): SessionState {
       longBreak: 0,
     },
     postponeResetDate: s.postponeResetDate ?? today,
+    isWaitingForNextActivity: (s as any).isWaitingForNextActivity ?? false,
+    waitingNextPhase: (s as any).waitingNextPhase ?? null,
     isPaused: s.isPaused ?? false,
     pausedAt: s.pausedAt ?? null,
     pauseResumeAt: s.pauseResumeAt ?? null,

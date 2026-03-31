@@ -82,6 +82,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const handleShuffleFlow = () => window.rhythmDesk.shuffleFlow();
   const handleReverseFlow = () => window.rhythmDesk.reverseFlow();
   const handleTriggerPendingBreakNow = () => window.rhythmDesk.triggerPendingBreakNow();
+  const handleStartNextActivity = () => window.rhythmDesk.startNextActivity();
   
   const handleStartOfficeFocusLock = (minutes: number) => {
     window.rhythmDesk.startOfficeFocusLock(selectedLabel, minutes, focusStrictMode);
@@ -338,6 +339,11 @@ function DashboardPage({ tick }: DashboardPageProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <span style={{ fontSize: '1.5rem', fontWeight: 700, color: '#e2e8f0' }}>{tick.scheduleName}</span>
             {tick.isPaused && <span className="status-badge status-paused" style={{ fontSize: '0.875rem' }}>⏸️ Paused</span>}
+            {tick.isWaitingForNextActivity && tick.waitingNextPhase && (
+              <span className="status-badge" style={{ backgroundColor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontSize: '0.875rem' }}>
+                ⏸️ Ready: {tick.waitingNextPhase ? (PHASE_DISPLAY_NAMES[tick.waitingNextPhase] || tick.waitingNextPhase) : ''}
+              </span>
+            )}
             {tick.isPostponed && tick.pendingBreakPhase && (
               <span className="status-badge" style={{ backgroundColor: 'rgba(251, 191, 36, 0.2)', color: '#fbbf24', fontSize: '0.875rem' }}>
                 ⏳ Pending {PHASE_DISPLAY_NAMES[tick.pendingBreakPhase]} in {formatDuration(tick.pendingBreakInMs)}
@@ -544,7 +550,16 @@ function DashboardPage({ tick }: DashboardPageProps) {
           
           {/* Controls - right aligned, wraps on smaller screens */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-            {tick.isPaused ? (
+            {tick.isWaitingForNextActivity && tick.waitingNextPhase ? (
+              <button
+                className="btn btn-success"
+                onClick={handleStartNextActivity}
+                style={{ fontWeight: 700, fontSize: '1rem', padding: '0.5rem 1.25rem' }}
+                title={`Start ${PHASE_DISPLAY_NAMES[tick.waitingNextPhase] || tick.waitingNextPhase}`}
+              >
+                ▶ Start {PHASE_DISPLAY_NAMES[tick.waitingNextPhase] || tick.waitingNextPhase}
+              </button>
+            ) : tick.isPaused ? (
               <button className="btn btn-success" onClick={handleResume}>▶️ Resume</button>
             ) : (
               <button className="btn btn-secondary" onClick={handlePause}>⏸️ Pause</button>

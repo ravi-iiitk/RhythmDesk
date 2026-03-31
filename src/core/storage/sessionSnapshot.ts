@@ -70,6 +70,8 @@ function migrateSessionState(state: Partial<SessionState>): SessionState {
     interruptedFlowIndex: state.interruptedFlowIndex,
     postponeCountsToday,
     postponeResetDate: state.postponeResetDate ?? new Date().toISOString().split('T')[0],
+    isWaitingForNextActivity: state.isWaitingForNextActivity ?? false,
+    waitingNextPhase: state.waitingNextPhase ?? null,
     isPaused: state.isPaused ?? false,
     pausedAt: state.pausedAt ?? null,
     pauseResumeAt: state.pauseResumeAt ?? null,

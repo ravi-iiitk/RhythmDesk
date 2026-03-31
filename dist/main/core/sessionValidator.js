@@ -214,6 +214,11 @@ function normalizeSessionState(state, schedule) {
             changes.push('Cleared orphan postpone fields');
         }
     }
+    // Normalize waiting-for-next-activity state
+    if (!newState.isWaitingForNextActivity && newState.waitingNextPhase) {
+        newState.waitingNextPhase = null;
+        changes.push('Cleared orphan waitingNextPhase field');
+    }
     // Normalize pause state
     if (!newState.isPaused) {
         if (newState.pausedAt || newState.pauseResumeAt) {

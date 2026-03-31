@@ -320,6 +320,8 @@ function migrateSessionState(state) {
             longBreak: 0,
         },
         postponeResetDate: s.postponeResetDate ?? today,
+        isWaitingForNextActivity: s.isWaitingForNextActivity ?? false,
+        waitingNextPhase: s.waitingNextPhase ?? null,
         isPaused: s.isPaused ?? false,
         pausedAt: s.pausedAt ?? null,
         pauseResumeAt: s.pauseResumeAt ?? null,

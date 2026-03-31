@@ -74,6 +74,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         strictModeEnabled: rest.strictModeEnabled ?? true,
         // No skip mode
         noSkipEnabled: rest.noSkipEnabled ?? false,
+        // Auto start next activity
+        autoStartNextActivity: rest.autoStartNextActivity ?? true,
         // Postpone fields
         allowPostpone: rest.allowPostpone ?? true,
         postponeOptionsMinutes: rest.postponeOptionsMinutes ?? [2, 5, 10],
@@ -739,6 +741,21 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         </label>
         <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
           Prevents skipping to the next activity in the flow
+        </p>
+      </div>
+
+      {/* Auto Start Next Activity */}
+      <div className="form-group">
+        <label className="form-checkbox">
+          <input
+            type="checkbox"
+            checked={formData.autoStartNextActivity ?? true}
+            onChange={(e) => handleChange('autoStartNextActivity', e.target.checked)}
+          />
+          Auto-start next activity
+        </label>
+        <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+          When disabled, the timer pauses after each activity ends and waits for you to manually start the next one
         </p>
       </div>
 
