@@ -9,8 +9,8 @@
  * - Focus Lock resets to OFF on restart (not persisted)
  */
 
-import { app, BrowserWindow } from 'electron';
-import { createMainWindow, showOverlay, closeOverlay, sendToAll, sendToOverlay, getMainWindow, getOverlayWindow, recoverOverlayIfNeeded, startMainWindowHealthCheck } from './windowManager';
+import { app, BrowserWindow, powerMonitor } from 'electron';
+import { createMainWindow, showOverlay, closeOverlay, sendToAll, sendToOverlay, getMainWindow, getOverlayWindow, recoverOverlayIfNeeded, startMainWindowHealthCheck, setScreenLocked } from './windowManager';
 import logger from '../core/logger';
 import { createTray, updateTrayWithTick } from './tray';
 import { registerIpcHandlers } from './ipc';
@@ -202,12 +202,33 @@ function initialize(): void {
       if (newPolicy.showOverlay) {
         showOverlay(newPolicy.strictMode);
         sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: data.newPhase });
-        // NOTE: OverlayWatchdog disabled for regular overlays - it was causing
-        // infinite reload loops because it expects heartbeats but doesn't send
-        // heartbeat requests. The OverlaySyncService handles rest block monitoring.
+        
+        // Start overlay heartbeat watchdog for ALL overlay phases (breaks, transitions)
+        // This detects frozen overlays during long breaks when screensaver/screen-lock
+        // throttles the renderer process. Only start if not already running for a rest block.
+        if (!isRestBlockActive && !overlaySyncService.getState().isOverlayActive) {
+          overlaySyncService.start(
+            () => sendToOverlay(OVERLAY_SYNC_CHANNELS.HEARTBEAT_REQUEST, {}),
+            () => {
+              const recovered = recoverOverlayIfNeeded(newPolicy.strictMode, true);
+              if (recovered) {
+                sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: data.newPhase });
+                logger.warn('Main', 'Overlay recovered via heartbeat watchdog during phase', {
+                  phase: data.newPhase,
+                });
+              }
+            }
+          );
+        }
       } else if (prevPolicy.showOverlay && !isRestBlockActive) {
         // Close overlay when leaving a phase that required it
         // BUT only if no RestBlock is active (RestBlock takes priority)
+        
+        // Stop overlay heartbeat watchdog when overlay closes
+        if (overlaySyncService.getState().isOverlayActive) {
+          overlaySyncService.stop();
+        }
+        
         closeOverlay();
         sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
       }
@@ -414,6 +435,98 @@ function initialize(): void {
       }
     }, 10000); // Check every 10 seconds
 
+    // ========================================
+    // FIX: Screen-lock/unlock overlay recovery
+    // On Linux, screen-lock can freeze Chromium renderer processes.
+    // When the screen unlocks, we must verify the overlay is healthy
+    // and force-recover it if the renderer was killed or frozen.
+    // ========================================
+    powerMonitor.on('lock-screen', () => {
+      setScreenLocked(true);
+      logger.info('Main', 'Screen locked - overlay renderer may be throttled');
+    });
+    
+    powerMonitor.on('unlock-screen', () => {
+      setScreenLocked(false);
+      logger.info('Main', 'Screen unlocked - checking overlay health');
+      
+      // Delay recovery slightly to let the display compositor settle
+      setTimeout(() => {
+        const currentPhase = timerEngine.getState().currentPhase;
+        const policy = getOverlayPolicyForState(currentPhase);
+        const restBlockActive = getRestBlockService().isActive();
+        
+        if (policy.showOverlay || restBlockActive) {
+          const overlay = getOverlayWindow();
+          
+          if (!overlay || overlay.isDestroyed()) {
+            // Overlay window was destroyed during lock - recreate
+            logger.warn('Main', 'Overlay missing after screen unlock - recreating', { currentPhase });
+            const recovered = recoverOverlayIfNeeded(policy.strictMode, true);
+            if (recovered) {
+              if (restBlockActive) {
+                const restState = getRestBlockService().getState();
+                sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: 'rest-block', restBlock: restState });
+                sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
+                sendOverlayResyncSnapshot('screen-unlock-recovery');
+              } else {
+                sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: currentPhase });
+              }
+            }
+          } else {
+            // Overlay window exists - force reload content in case renderer was frozen
+            // The 'responsive' event handler may not fire reliably on all Linux WMs
+            logger.info('Main', 'Overlay exists after unlock - re-asserting and resyncing');
+            try {
+              overlay.setAlwaysOnTop(true, 'screen-saver');
+              overlay.setFullScreen(true);
+              overlay.show();
+              overlay.focus();
+            } catch (e) {
+              logger.error('Main', 'Failed to re-assert overlay after unlock - recreating', { error: String(e) });
+              recoverOverlayIfNeeded(policy.strictMode, true);
+            }
+            
+            // Send fresh state to overlay in case it was stale
+            if (restBlockActive) {
+              const restState = getRestBlockService().getState();
+              sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
+              sendOverlayResyncSnapshot('screen-unlock-resync');
+            }
+          }
+        }
+      }, 1500); // 1.5s delay for compositor to settle
+    });
+    
+    // Also handle system resume (suspend/hibernate)
+    powerMonitor.on('resume', () => {
+      logger.info('Main', 'System resumed from suspend - checking overlay');
+      // Same recovery logic as unlock, but with longer delay for system wake
+      setTimeout(() => {
+        const currentPhase = timerEngine.getState().currentPhase;
+        const policy = getOverlayPolicyForState(currentPhase);
+        const restBlockActive = getRestBlockService().isActive();
+        
+        if (policy.showOverlay || restBlockActive) {
+          const overlay = getOverlayWindow();
+          if (!overlay || overlay.isDestroyed()) {
+            logger.warn('Main', 'Overlay missing after system resume - recreating', { currentPhase });
+            const recovered = recoverOverlayIfNeeded(policy.strictMode, true);
+            if (recovered) {
+              if (restBlockActive) {
+                const restState = getRestBlockService().getState();
+                sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: 'rest-block', restBlock: restState });
+                sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
+                sendOverlayResyncSnapshot('system-resume-recovery');
+              } else {
+                sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: currentPhase });
+              }
+            }
+          }
+        }
+      }, 3000); // 3s delay for system to fully wake
+    });
+
     // Handle app activation (macOS specific, but doesn't hurt on Linux)
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -434,16 +547,32 @@ function ensureOverlayIfRequired(): void {
   const timerEngine = getTimerEngine();
   const state = timerEngine.getState();
   const currentPhase = state.currentPhase;
+  const restBlockActive = getRestBlockService().isActive();
   
   // Use centralized overlay policy
   const policy = getOverlayPolicyForState(currentPhase);
   
-  // Check if overlay should be showing
-  if (policy.showOverlay) {
+  // Check if overlay should be showing (for normal phases or rest blocks)
+  if (policy.showOverlay || restBlockActive) {
     const overlay = getOverlayWindow();
     if (!overlay || overlay.isDestroyed()) {
-      logger.warn('Main', 'Overlay should be visible but is not - reopening', { phase: currentPhase });
-      showOverlay(policy.strictMode);
+      logger.warn('Main', 'Overlay should be visible but is not - reopening', { phase: currentPhase, restBlockActive });
+      const strictMode = restBlockActive ? getRestBlockService().getState().isStrictMode : policy.strictMode;
+      showOverlay(strictMode);
+    } else {
+      // Window exists — check if renderer has crashed (zombie window)
+      try {
+        if (overlay.webContents.isCrashed()) {
+          logger.error('Main', 'Overlay renderer crashed (zombie window) - recreating', { phase: currentPhase });
+          const strictMode = restBlockActive ? getRestBlockService().getState().isStrictMode : policy.strictMode;
+          recoverOverlayIfNeeded(strictMode, true);
+        }
+      } catch {
+        // webContents access failed — window is in a bad state
+        logger.error('Main', 'Overlay webContents inaccessible - recreating');
+        const strictMode = restBlockActive ? getRestBlockService().getState().isStrictMode : policy.strictMode;
+        recoverOverlayIfNeeded(strictMode, true);
+      }
     }
   }
 }

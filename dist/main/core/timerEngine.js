@@ -233,8 +233,9 @@ class TimerEngine extends events_1.EventEmitter {
                 // This prevents weird state after app restart with stale state
                 const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
                 if (timeSincePhaseEnded > STALE_THRESHOLD_MS) {
+                    const prevPhase = this.state.currentPhase;
                     logger_1.default.info('TimerEngine', 'Phase ended long ago - resetting to idle', {
-                        phase: this.state.currentPhase,
+                        phase: prevPhase,
                         phaseEndsAt: this.state.phaseEndsAt,
                         timeSinceEndedMs: timeSincePhaseEnded,
                     });
@@ -244,6 +245,10 @@ class TimerEngine extends events_1.EventEmitter {
                     this.state.phaseRemainingMs = 0;
                     this.state.currentFlowStepIndex = undefined;
                     this.saveState();
+                    // Emit phaseChange so main.ts closes the overlay
+                    // Without this, a stale overlay stays visible with no backing timer
+                    this.emit('phaseChange', { prevPhase, newPhase: 'idle' });
+                    this.emitTick();
                 }
                 else {
                     // Phase ended recently - advance normally

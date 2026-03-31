@@ -26,6 +26,16 @@ let currentOverlayStrictMode: boolean = false;
 let isQuitting: boolean = false;
 let lastBlurFocusTime: number = 0;
 const BLUR_FOCUS_DEBOUNCE_MS = 500; // Prevent focus fights
+let screenLocked: boolean = false;
+
+/**
+ * Notify window manager that screen is locked/unlocked.
+ * Used to suppress strict-mode blur-refocus during screen-lock
+ * which can cause deadlock with the lock screen on Linux.
+ */
+export function setScreenLocked(locked: boolean): void {
+  screenLocked = locked;
+}
 
 /**
  * Set quitting flag - call before app.quit()
@@ -342,8 +352,9 @@ export function createOverlayWindow(strictMode: boolean = false): BrowserWindow 
     });
 
     // Re-focus if somehow loses focus in strict mode (with debounce to prevent fights)
+    // CRITICAL: Suppress during screen-lock to prevent deadlock with lock screen
     overlayWindow.on('blur', () => {
-      if (overlayWindow && !overlayWindow.isDestroyed() && currentOverlayStrictMode) {
+      if (overlayWindow && !overlayWindow.isDestroyed() && currentOverlayStrictMode && !screenLocked) {
         const now = Date.now();
         // Debounce to prevent rapid focus fights that could freeze the system
         if (now - lastBlurFocusTime < BLUR_FOCUS_DEBOUNCE_MS) {
@@ -352,7 +363,7 @@ export function createOverlayWindow(strictMode: boolean = false): BrowserWindow 
         lastBlurFocusTime = now;
         
         setTimeout(() => {
-          if (overlayWindow && !overlayWindow.isDestroyed() && currentOverlayStrictMode) {
+          if (overlayWindow && !overlayWindow.isDestroyed() && currentOverlayStrictMode && !screenLocked) {
             overlayWindow.focus();
           }
         }, 200);
@@ -381,25 +392,25 @@ export function createOverlayWindow(strictMode: boolean = false): BrowserWindow 
     logOverlayEvent({ event: 'overlay-unresponsive', reason: 'BrowserWindow unresponsive event' });
     logger.warn('WindowManager', 'Overlay became unresponsive - waiting for recovery (may be screensaver)');
 
-    // Give it 30 seconds to recover on its own (e.g., screensaver ends)
+    // Give it 15 seconds to recover on its own (e.g., screensaver ends)
+    // If still unresponsive, destroy and let the periodic watchdog recreate it.
+    // Reloading in-place often fails on Linux after prolonged throttling.
     overlayUnresponsiveTimeout = setTimeout(() => {
       if (overlayWindow && !overlayWindow.isDestroyed()) {
-        logger.error('WindowManager', 'Overlay still unresponsive after 30s - reloading content');
-        logOverlayCrash('renderer unresponsive timeout');
+        logger.error('WindowManager', 'Overlay still unresponsive after 15s - destroying for recreate');
+        logOverlayCrash('renderer unresponsive timeout - force destroy');
         try {
-          if (isDev()) {
-            overlayWindow.loadURL('http://localhost:5173/#/overlay');
-          } else {
-            overlayWindow.loadFile(path.join(__dirname, '../../renderer/index.html'), { hash: '/overlay' });
-          }
-        } catch (e) {
-          logger.error('WindowManager', 'Failed to reload unresponsive overlay - destroying', { error: String(e) });
+          overlayWindow.removeAllListeners('close');
           overlayWindow.destroy();
-          overlayWindow = null;
+        } catch (e) {
+          logger.error('WindowManager', 'Error destroying unresponsive overlay', { error: String(e) });
         }
+        overlayWindow = null;
+        currentOverlayStrictMode = false;
+        // The periodic ensureOverlayIfRequired or screen-unlock handler will recreate it
       }
       overlayUnresponsiveTimeout = null;
-    }, 30000);
+    }, 15000);
   });
 
   overlayWindow.on('responsive', () => {
