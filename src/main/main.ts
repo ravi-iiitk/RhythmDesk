@@ -49,6 +49,7 @@ function getOverlayPolicyForState(phase: PhaseType): ReturnType<typeof getOverla
     focusLockState: officeFocusLockService.getState(),
     isPaused: state.isPaused,
     isPostponed: state.isPostponed,
+    isWaitingForNextActivity: state.isWaitingForNextActivity,
   };
   
   return getOverlayPolicy(input);
@@ -193,7 +194,6 @@ function initialize(): void {
 
       // Use centralized overlay policy for decisions
       const newPolicy = getOverlayPolicyForState(data.newPhase);
-      const prevPolicy = getOverlayPolicyForState(data.prevPhase);
 
       // Check if RestBlock is active - don't interfere with its overlay
       const restBlockService = getRestBlockService();
@@ -220,17 +220,20 @@ function initialize(): void {
             }
           );
         }
-      } else if (prevPolicy.showOverlay && !isRestBlockActive) {
-        // Close overlay when leaving a phase that required it
-        // BUT only if no RestBlock is active (RestBlock takes priority)
-        
-        // Stop overlay heartbeat watchdog when overlay closes
-        if (overlaySyncService.getState().isOverlayActive) {
-          overlaySyncService.stop();
+      } else if (!isRestBlockActive) {
+        // Close overlay if it's open and new policy doesn't require it.
+        // This handles: transition→waiting (overlay was shown for transition,
+        // must close), and normal phase→work transitions.
+        const overlay = getOverlayWindow();
+        if (overlay && !overlay.isDestroyed()) {
+          // Stop overlay heartbeat watchdog when overlay closes
+          if (overlaySyncService.getState().isOverlayActive) {
+            overlaySyncService.stop();
+          }
+          
+          closeOverlay();
+          sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
         }
-        
-        closeOverlay();
-        sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
       }
     });
 

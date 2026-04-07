@@ -20,6 +20,7 @@ export interface OverlayPolicyInput {
   focusLockState?: OfficeFocusLockState;
   isPaused: boolean;
   isPostponed: boolean;
+  isWaitingForNextActivity: boolean;
 }
 
 /**
@@ -117,7 +118,7 @@ const DEFAULT_POLICY: OverlayPolicy = {
  * 5. Idle: no overlay
  */
 export function getOverlayPolicy(input: OverlayPolicyInput): OverlayPolicy {
-  const { phase, schedule, focusLockActive, isPaused } = input;
+  const { phase, schedule, focusLockActive, isPaused, isPostponed, isWaitingForNextActivity } = input;
 
   // No schedule = no overlay
   if (!schedule) {
@@ -134,8 +135,21 @@ export function getOverlayPolicy(input: OverlayPolicyInput): OverlayPolicy {
     return { ...DEFAULT_POLICY };
   }
 
+  // Waiting for user to start next activity = no overlay
+  // The timer is between activities; showing overlay makes no sense
+  if (isWaitingForNextActivity) {
+    return { ...DEFAULT_POLICY };
+  }
+
   // Work phases (sit/stand)
   if (isWorkPhase(phase)) {
+    // If a break is postponed, the user explicitly chose to keep working.
+    // Do NOT show the overlay even if Focus Lock is active — otherwise
+    // ensureOverlayIfRequired will re-open the overlay within seconds
+    // of the postpone closing it, trapping the user in work overlay.
+    if (isPostponed) {
+      return { ...DEFAULT_POLICY };
+    }
     if (focusLockActive) {
       // Focus Lock active during work = strict fullscreen overlay
       return {

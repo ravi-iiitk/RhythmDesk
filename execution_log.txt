@@ -1,0 +1,175 @@
+
+> rhythmdesk@0.1.0 dev
+> concurrently "npm run dev:main" "npm run dev:renderer" "wait-on http://localhost:5173 && wait-on dist/main/main/main.js && env -u ELECTRON_RUN_AS_NODE electron --no-sandbox ."
+
+[0] 
+[0] > rhythmdesk@0.1.0 dev:main
+[0] > tsc -p tsconfig.main.json --watch
+[0] 
+[1] 
+[1] > rhythmdesk@0.1.0 dev:renderer
+[1] > vite
+[1] 
+[0] [2J[3J[H1:52:35 PM - Starting compilation in watch mode...
+[0] 
+[1] [33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+[1] 
+[1]   VITE v5.4.21  ready in 148 ms
+[1] 
+[1]   ➜  Local:   http://localhost:5173/
+[1]   ➜  Network: use --host to expose
+[2] [2026-04-03T08:22:36.794Z] [INFO] [ConfigStore] Initialized {"path":"/home/rsk-lnx/.config/rhythmdesk/config.json","schemaVersion":1}
+[2] [2026-04-03T08:22:36.795Z] [INFO] [SessionSnapshot] Initialized {"path":"/home/rsk-lnx/.config/rhythmdesk/session-snapshot.json"}
+[2] [2026-04-03T08:22:36.805Z] [INFO] [ErrorHandler] Main process error handlers installed
+[2] [2026-04-03T08:22:36.805Z] [INFO] [Shutdown] Shutdown handlers installed
+[2] [2026-04-03T08:22:36.806Z] [INFO] [Main] Phase 5 production hardening initialized
+[0] 
+[0] 1:52:36 PM - Found 0 errors. Watching for file changes.
+[2] [2026-04-03T08:22:36.892Z] [INFO] [Migration] Initializing hybrid storage architecture
+[2] [2026-04-03T08:22:36.892Z] [INFO] [Migration] Storage initialized {"configStorePath":"/home/rsk-lnx/.config/rhythmdesk/config.json","sessionSnapshotPath":"/home/rsk-lnx/.config/rhythmdesk/session-snapshot.json"}
+[2] [2026-04-03T08:22:36.892Z] [INFO] [ConfigService] Hybrid storage initialized
+[2] [2026-04-03T08:22:36.893Z] [INFO] [SessionSnapshot] Loaded snapshot {"activeScheduleId":"7dd78546-6297-4f53-88f9-c17d926d49e2","currentPhase":"sit-to-stand-transition","savedAt":"2026-04-03T08:07:43.488Z"}
+[2] [2026-04-03T08:22:36.897Z] [INFO] [TrayDebug] [TRAY] event=tray-created
+[2] [2026-04-03T08:22:36.914Z] [INFO] [WindowManager] Main window created
+[2] [2026-04-03T08:22:36.920Z] [INFO] [Main] Main window health check watchdog started
+[2] [2026-04-03T08:22:36.920Z] [INFO] [TimerWatchdog] Started
+[2] [2026-04-03T08:22:36.920Z] [INFO] [HealthMonitor] Started {"checkIntervalMs":30000}
+[2] [2026-04-03T08:22:36.921Z] [INFO] [Main] Watchdogs and health monitor started
+[2] [2026-04-03T08:22:36.921Z] [INFO] [TimerEngine] Starting timer engine
+[2] [2026-04-03T08:22:36.921Z] [INFO] [TimerEngine] Flow snapshot frozen {"stepCount":5,"hash":"sit:720|sit-to-stand-transition:30|stand:720|stand-to-sit-transition:30|short-break:300"}
+[2] [2026-04-03T08:22:36.922Z] [INFO] [TimerEngine] Phase started: sit {"duration":720000,"endsAt":1775205276921}
+[2] [2026-04-03T08:22:36.924Z] [INFO] [SessionSnapshot] Loaded snapshot {"activeScheduleId":"7dd78546-6297-4f53-88f9-c17d926d49e2","currentPhase":"sit","savedAt":"2026-04-03T08:22:36.923Z"}
+[2] [2026-04-03T08:22:36.926Z] [INFO] [TrayDebug] [TRAY] event=tray-menu-rebuilt reason=state changed
+[2] [2026-04-03T08:22:37.119Z] [INFO] [WindowManager] Main window renderer loaded
+[2] [2026-04-03T08:22:46.999Z] [INFO] [TimerEngine] startNextActivity: starting queued phase {"phase":"stand"}
+[2] [2026-04-03T08:22:47.000Z] [INFO] [TimerEngine] Phase started: stand {"duration":480000,"endsAt":1775205047000}
+[2] [2026-04-03T08:22:47.004Z] [WARN] [TimerEngine] FLOW STATE DESYNC DETECTED in emitTick {"currentPhase":"stand","currentFlowStepIndex":0,"expectedCurrentPhase":"sit","nextPhase":"sit-to-stand-transition","flowSteps":"0:sit, 1:sit-to-stand-transition, 2:stand, 3:stand-to-sit-transition, 4:short-break"}
+[2] [2026-04-03T08:22:47.004Z] [INFO] [TimerEngine] Resyncing flow index {"oldIndex":0,"newIndex":2,"phase":"stand"}
+[2] [2026-04-03T08:23:02.260Z] [INFO] [Transition] reset:requested {"scheduleName":"Fabric Work - Day","currentPhase":"stand","scheduleMode":"flow-based"}
+[2] [2026-04-03T08:23:02.261Z] [INFO] [TimerEngine] Flow snapshot frozen {"stepCount":5,"hash":"sit:720|sit-to-stand-transition:30|stand:720|stand-to-sit-transition:30|short-break:300"}
+[2] [2026-04-03T08:23:02.263Z] [INFO] [SessionDebug] [TIMER] event=resetSession phase=sit index=0 cumulativeWorkMs=0s scheduleId=7dd78546-6297-4f53-88f9-c17d926d49e2
+[2] [2026-04-03T08:23:41.974Z] [INFO] [RestBlockService] Starting rest block {"name":"Bath + Lunch ","durationMinutes":60,"durationMs":3600000,"isStrictMode":true,"presetId":null}
+[2] [2026-04-03T08:23:41.975Z] [INFO] [Main] Rest block started - pausing timer and showing overlay
+[2] [2026-04-03T08:23:41.975Z] [INFO] [OverlayDebug] [OVERLAY] event=rest-block-start phase=Bath + Lunch  remainingMs=3600s strictMode=true
+[2] [2026-04-03T08:23:41.975Z] [INFO] [OverlayDebug] [OVERLAY] event=overlay-show phase=requested strictMode=true
+[2] [2026-04-03T08:23:41.982Z] [INFO] [WindowManager] Overlay window created {"strictMode":true,"width":1440,"height":900}
+[2] [2026-04-03T08:23:41.990Z] [INFO] [Main] Overlay state resent {"reason":"rest-block-start","hasTick":true,"restBlockActive":true,"restRemainingMs":3600000}
+[2] [2026-04-03T08:23:42.149Z] [INFO] [WindowManager] Overlay renderer loaded
+[2] [2026-04-03T08:23:42.161Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-03T08:23:42.161Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":true,"currentPhase":"sit","remainingMs":3600000}
+[2] [2026-04-03T08:23:42.162Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-03T08:23:42.162Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":true,"currentPhase":"sit","remainingMs":3600000}
+[2] [2026-04-03T08:23:42.963Z] [INFO] [TrayDebug] [TRAY] event=tray-menu-rebuilt reason=state changed
+[2] [2026-04-03T08:54:31.711Z] [INFO] [TimerEngine] System suspending - saving state
+[2] [2026-04-03T08:54:31.716Z] [INFO] [TimerEngine] System suspending - saving state
+[2] [2026-04-03T08:54:31.821Z] [INFO] [WindowManager] Overlay renderer loaded
+[2] [2026-04-03T08:54:31.824Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-03T08:54:31.824Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":true,"currentPhase":"sit","remainingMs":1750494}
+[2] [2026-04-03T08:54:31.827Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-03T08:54:31.827Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":true,"currentPhase":"sit","remainingMs":1750494}
+[2] [2026-04-03T08:54:32.127Z] [INFO] [WindowManager] Main window renderer loaded
+[2] [2026-04-03T09:02:22.424Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-03T09:02:22.424Z] [WARN] [TimerEngine] Time jump detected: 466940ms - recovering state
+[2] [2026-04-03T09:02:22.424Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":true,"currentPhase":"sit","remainingMs":1746489}
+[2] [2026-04-03T09:02:22.531Z] [INFO] [TimerEngine] System resuming - recovering state
+[2] [2026-04-03T09:02:22.531Z] [INFO] [Main] System resumed from suspend - checking overlay
+[2] [2026-04-03T09:02:22.532Z] [INFO] [TimerEngine] System resuming - recovering state
+[2] [2026-04-03T09:02:22.532Z] [INFO] [Main] System resumed from suspend - checking overlay
+[2] [2026-04-03T09:02:22.603Z] [WARN] [Main] Overlay heartbeat missed during rest block {"missedCount":1,"restBlockActive":true}
+[2] [2026-04-03T09:23:42.551Z] [INFO] [RestBlockService] Rest block expired {"name":"Bath + Lunch "}
+[2] [2026-04-03T09:23:42.551Z] [INFO] [RestBlockService] Force stopping rest block
+[2] [2026-04-03T09:23:42.552Z] [INFO] [Main] Rest block stopped - resuming timer
+[2] [2026-04-03T09:23:42.552Z] [INFO] [OverlayDebug] [OVERLAY] event=rest-block-end phase=manual reason=user stopped
+[2] [2026-04-03T09:23:42.562Z] [INFO] [OverlayDebug] [OVERLAY] event=overlay-hide reason=close requested
+[2] [2026-04-03T09:23:42.565Z] [INFO] [Main] Rest block expired - resuming timer
+[2] [2026-04-03T09:23:42.566Z] [INFO] [OverlayDebug] [OVERLAY] event=rest-block-end phase=expired reason=timer completed
+[2] [2026-04-03T09:23:43.551Z] [INFO] [TrayDebug] [TRAY] event=tray-menu-rebuilt reason=state changed
+[2] [2026-04-03T09:32:31.199Z] [INFO] [TimerEngine] System suspending - saving state
+[2] [2026-04-03T09:32:31.207Z] [INFO] [TimerEngine] System suspending - saving state
+[2] [2026-04-03T09:32:31.313Z] [INFO] [WindowManager] Main window renderer loaded
+[2] [2026-04-03T09:55:41.341Z] [INFO] [TimerEngine] System resuming - recovering state
+[2] [2026-04-03T09:55:41.341Z] [INFO] [TimerEngine] Phase ended long ago - resetting to idle {"phase":"sit","phaseEndsAt":1775205302261,"timeSinceEndedMs":4839080}
+[2] [2026-04-03T09:55:41.344Z] [WARN] [TimerEngine] FLOW STATE DESYNC DETECTED in emitTick {"currentPhase":"idle","currentFlowStepIndex":0,"expectedCurrentPhase":"sit","nextPhase":"sit-to-stand-transition","flowSteps":"0:sit, 1:sit-to-stand-transition, 2:stand, 3:stand-to-sit-transition, 4:short-break"}
+[2] [2026-04-03T09:55:41.344Z] [INFO] [SessionDebug] [TIMER] event=validationError reason=currentFlowStepIndex is undefined in flow mode phase=idle next=sit-to-stand-transition
+[2] [2026-04-03T09:55:41.344Z] [INFO] [SessionDebug] [TIMER] event=flowDesync reason=reset to first work phase index=0 phase=idle next=sit-to-stand-transition
+[2] [2026-04-03T09:55:41.344Z] [INFO] [Main] System resumed from suspend - checking overlay
+[2] [2026-04-03T09:55:41.344Z] [WARN] [TimerEngine] Time jump detected: 1390454ms - recovering state
+[2] [2026-04-03T09:55:41.344Z] [WARN] [TimerEngine] FLOW STATE DESYNC DETECTED in emitTick {"currentPhase":"idle","currentFlowStepIndex":0,"expectedCurrentPhase":"sit","nextPhase":"sit-to-stand-transition","flowSteps":"0:sit, 1:sit-to-stand-transition, 2:stand, 3:stand-to-sit-transition, 4:short-break"}
+[2] [2026-04-03T09:55:41.345Z] [INFO] [TimerEngine] System resuming - recovering state
+[2] [2026-04-03T09:55:41.345Z] [INFO] [Main] System resumed from suspend - checking overlay
+[2] [2026-04-03T09:55:42.346Z] [WARN] [TimerEngine] Flow index desync detected {"prevPhase":"idle","currentIndex":0,"expectedPhaseAtIndex":"sit"}
+[2] [2026-04-03T09:55:42.346Z] [INFO] [TimerEngine] advanceFlowBasedPhase - advancing {"prevPhase":"idle","fromIndex":0,"toIndex":1,"newPhase":"sit-to-stand-transition"}
+[2] [2026-04-03T09:55:42.347Z] [INFO] [TimerEngine] Waiting for user to start next activity {"phase":"sit-to-stand-transition"}
+[2] [2026-04-03T09:55:42.347Z] [INFO] [OverlayDebug] [OVERLAY] event=overlay-show phase=requested strictMode=true
+[2] [2026-04-03T09:55:42.354Z] [INFO] [WindowManager] Overlay window created {"strictMode":true,"width":1440,"height":900}
+[2] [2026-04-03T09:55:42.362Z] [INFO] [SessionDebug] [TIMER] event=phaseTransition fromPhase=idle toPhase=idle indexBefore=0 indexAfter=1 next=stand cumulativeWorkMs=568s scheduleId=7dd78546-6297-4f53-88f9-c17d926d49e2
+[2] [2026-04-03T09:55:42.482Z] [INFO] [WindowManager] Overlay renderer loaded
+[2] [2026-04-03T09:55:42.490Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-03T09:55:42.490Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":false,"currentPhase":"idle","remainingMs":0}
+[2] [2026-04-03T09:55:42.491Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-03T09:55:42.491Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":false,"currentPhase":"idle","remainingMs":0}
+[2] [2026-04-03T10:25:41.672Z] [INFO] [TimerEngine] System suspending - saving state
+[2] [2026-04-03T10:25:41.676Z] [INFO] [TimerEngine] System suspending - saving state
+[2] [2026-04-03T10:25:41.770Z] [INFO] [WindowManager] Overlay renderer loaded
+[2] [2026-04-03T10:25:41.772Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-03T10:25:41.772Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":false,"currentPhase":"idle","remainingMs":0}
+[2] [2026-04-03T10:25:41.773Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-03T10:25:41.773Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":false,"currentPhase":"idle","remainingMs":0}
+[2] [2026-04-03T10:25:41.796Z] [INFO] [WindowManager] Main window renderer loaded
+[2] [2026-04-04T10:01:17.347Z] [INFO] [TimerEngine] System resuming - recovering state
+[2] [2026-04-04T10:01:17.347Z] [INFO] [Main] System resumed from suspend - checking overlay
+[2] [2026-04-04T10:01:17.347Z] [WARN] [Main] Overlay heartbeat missed during rest block {"missedCount":1,"restBlockActive":false}
+[2] [2026-04-04T10:01:17.348Z] [WARN] [TimerEngine] Time jump detected: 84935716ms - recovering state
+[2] [2026-04-04T10:01:17.351Z] [INFO] [TimerEngine] System resuming - recovering state
+[2] [2026-04-04T10:01:17.351Z] [INFO] [Main] System resumed from suspend - checking overlay
+[2] [2026-04-04T10:01:18.350Z] [INFO] [TimerEngine] Schedule ended - emitting phaseChange to close overlay {"prevPhase":"idle"}
+[2] [2026-04-04T10:01:18.350Z] [INFO] [SessionSnapshot] Loaded snapshot {"activeScheduleId":"7dd78546-6297-4f53-88f9-c17d926d49e2","currentPhase":"idle","savedAt":"2026-04-04T10:01:17.350Z"}
+[2] [2026-04-04T10:01:18.351Z] [INFO] [TrayDebug] [TRAY] event=tray-menu-rebuilt reason=state changed
+[2] [2026-04-04T10:31:17.547Z] [INFO] [TimerEngine] System suspending - saving state
+[2] [2026-04-04T10:31:17.551Z] [INFO] [TimerEngine] System suspending - saving state
+[2] [2026-04-04T10:31:17.655Z] [INFO] [WindowManager] Overlay renderer loaded
+[2] [2026-04-04T10:31:17.657Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-04T10:31:17.657Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":false,"currentPhase":"idle","remainingMs":0}
+[2] [2026-04-04T10:31:17.658Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-04T10:31:17.659Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":false,"currentPhase":"idle","remainingMs":0}
+[2] [2026-04-04T10:31:17.683Z] [INFO] [WindowManager] Main window renderer loaded
+[2] [2026-04-05T07:31:03.351Z] [INFO] [TimerEngine] System resuming - recovering state
+[2] [2026-04-05T07:31:03.352Z] [INFO] [Main] System resumed from suspend - checking overlay
+[2] [2026-04-05T07:31:03.352Z] [INFO] [TimerEngine] System resuming - recovering state
+[2] [2026-04-05T07:31:03.352Z] [INFO] [Main] System resumed from suspend - checking overlay
+[2] [2026-04-05T07:31:03.418Z] [WARN] [TimerEngine] Time jump detected: 75585737ms - recovering state
+[2] [2026-04-05T07:31:07.348Z] [WARN] [Main] Overlay heartbeat missed during rest block {"missedCount":1,"restBlockActive":false}
+[2] [2026-04-05T07:33:54.738Z] [INFO] [Shutdown] Initiating graceful shutdown {"reason":"app_quit"}
+[2] [2026-04-05T07:33:54.738Z] [INFO] [HealthMonitor] Stopped
+[2] [2026-04-05T07:33:54.738Z] [INFO] [Main] App quitting - flushing session snapshot
+[2] [2026-04-05T07:33:54.738Z] [INFO] [TimerEngine] Stopping timer engine
+[2] [2026-04-05T07:33:54.741Z] [INFO] [TimerEngine] Stopping timer engine
+[2] [2026-04-05T07:33:54.744Z] [INFO] [Shutdown] Graceful shutdown complete {"duration":6}
+[2] [97167:0405/130354.763526:ERROR:command_buffer_proxy_impl.cc(319)] GPU state invalid after WaitForGetOffsetInRange.
+[1] npm run dev:renderer exited with code SIGHUP
+[2] [2026-04-05T07:33:54.767Z] [INFO] [OverlayDebug] [OVERLAY] event=overlay-crash reason=webContents crashed
+[2] (electron) 'crashed event' is deprecated and will be removed. Please use 'render-process-gone event' instead.
+[2] [2026-04-05T07:33:54.767Z] [ERROR] [WindowManager] Overlay webContents crashed - will recover
+[2] [2026-04-05T07:33:54.767Z] [ERROR] [WindowManager] Overlay render process gone {"reason":"clean-exit","exitCode":1}
+[2] [2026-04-05T07:33:54.767Z] [INFO] [OverlayDebug] [OVERLAY] event=overlay-crash reason=render-process-gone:clean-exit
+[2] [97167:0405/130354.769812:ERROR:zygote_communication_linux.cc(290)] Failed to send GetTerminationStatus message to zygote
+[2] (electron) 'crashed event' is deprecated and will be removed. Please use 'render-process-gone event' instead.
+[2] [2026-04-05T07:33:54.770Z] [ERROR] [WindowManager] Main window renderer crashed {"killed":false}
+[2] [2026-04-05T07:33:54.770Z] [WARN] [WindowManager] Reloading main window {"reason":"crashed"}
+[2] [2026-04-05T07:33:54.770Z] [INFO] [WindowManager] Main window destroyed, recreating
+[0] npm run dev:main exited with code SIGHUP
+[2] [2026-04-05T07:33:54.778Z] [INFO] [WindowManager] Main window created
+[2] [97167:0405/130354.785941:ERROR:network_service_instance_impl.cc(663)] Network service crashed, restarting service.
+[2] [2026-04-05T07:33:54.793Z] [ERROR] [WindowManager] Main window render process gone {"reason":"clean-exit","exitCode":1}
+[2] [97167:0405/130354.794458:ERROR:zygote_communication_linux.cc(290)] Failed to send GetTerminationStatus message to zygote
+[2] [97167:0405/130354.807626:ERROR:gpu_process_host.cc(985)] GPU process launch failed: error_code=1002
+[2] [97167:0405/130354.810784:ERROR:gpu_process_host.cc(985)] GPU process launch failed: error_code=1002
+[2] [97167:0405/130354.811784:ERROR:gpu_process_host.cc(985)] GPU process launch failed: error_code=1002
+[2] [97167:0405/130354.814967:ERROR:gpu_process_host.cc(985)] GPU process launch failed: error_code=1002
+[2] [97167:0405/130354.816726:ERROR:gpu_process_host.cc(985)] GPU process launch failed: error_code=1002
+[2] [97167:0405/130354.817426:ERROR:gpu_process_host.cc(985)] GPU process launch failed: error_code=1002
+[2] [97167:0405/130354.818234:ERROR:gpu_process_host.cc(985)] GPU process launch failed: error_code=1002
+[2] [97167:0405/130354.824615:ERROR:gpu_process_host.cc(985)] GPU process launch failed: error_code=1002
+[2] [97167:0405/130354.826132:ERROR:gpu_process_host.cc(985)] GPU process launch failed: error_code=1002
+[2] [97167:0405/130354.826150:FATAL:gpu_data_manager_impl_private.cc(448)] GPU process isn't usable. Goodbye.
+[2] wait-on http://localhost:5173 && wait-on dist/main/main/main.js && env -u ELECTRON_RUN_AS_NODE electron --no-sandbox . exited with code SIGHUP

@@ -51,6 +51,7 @@ function getOverlayPolicyForState(phase) {
         focusLockState: officeFocusLockService.getState(),
         isPaused: state.isPaused,
         isPostponed: state.isPostponed,
+        isWaitingForNextActivity: state.isWaitingForNextActivity,
     };
     return (0, overlayPolicy_1.getOverlayPolicy)(input);
 }
@@ -168,7 +169,6 @@ function initialize() {
             }
             // Use centralized overlay policy for decisions
             const newPolicy = getOverlayPolicyForState(data.newPhase);
-            const prevPolicy = getOverlayPolicyForState(data.prevPhase);
             // Check if RestBlock is active - don't interfere with its overlay
             const restBlockService = (0, restBlockService_1.getRestBlockService)();
             const isRestBlockActive = restBlockService.isActive();
@@ -190,15 +190,19 @@ function initialize() {
                     });
                 }
             }
-            else if (prevPolicy.showOverlay && !isRestBlockActive) {
-                // Close overlay when leaving a phase that required it
-                // BUT only if no RestBlock is active (RestBlock takes priority)
-                // Stop overlay heartbeat watchdog when overlay closes
-                if (overlaySyncService.getState().isOverlayActive) {
-                    overlaySyncService.stop();
+            else if (!isRestBlockActive) {
+                // Close overlay if it's open and new policy doesn't require it.
+                // This handles: transition→waiting (overlay was shown for transition,
+                // must close), and normal phase→work transitions.
+                const overlay = (0, windowManager_1.getOverlayWindow)();
+                if (overlay && !overlay.isDestroyed()) {
+                    // Stop overlay heartbeat watchdog when overlay closes
+                    if (overlaySyncService.getState().isOverlayActive) {
+                        overlaySyncService.stop();
+                    }
+                    (0, windowManager_1.closeOverlay)();
+                    (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.HIDE_OVERLAY, {});
                 }
-                (0, windowManager_1.closeOverlay)();
-                (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.HIDE_OVERLAY, {});
             }
         });
         timerEngine.on('scheduleChange', (_schedule) => {

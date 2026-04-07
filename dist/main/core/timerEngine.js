@@ -354,6 +354,14 @@ class TimerEngine extends events_1.EventEmitter {
         if (realDeltaMs > TIME_JUMP_THRESHOLD_MS) {
             logger_1.default.warn('TimerEngine', `Time jump detected: ${realDeltaMs}ms - recovering state`);
             this.recoverStateFromTimestamps();
+            // CRITICAL: Return early after recovery. The stale deltaMs from the
+            // time jump must NOT be applied to the already-recovered state.
+            // Without this, the recovered phaseRemainingMs gets the huge delta
+            // subtracted, causing double-advance or corrupt timer state (stuck at 0:00).
+            this.lastTickTime = Date.now();
+            this.emitTick();
+            this.saveState();
+            return;
         }
         // Apply simulate mode speed multiplier
         const deltaMs = this.getEffectiveDelta(realDeltaMs);
@@ -823,10 +831,19 @@ class TimerEngine extends events_1.EventEmitter {
         const autoStart = this.currentSchedule?.autoStartNextActivity ?? true;
         // Always auto-start break phases — only hold work/transition phases
         if (!autoStart && !(0, breakConflict_1.isBreakPhase)(phase) && phase !== 'idle') {
-            logger_1.default.info('TimerEngine', 'Waiting for user to start next activity', { phase });
+            const prevPhase = this.state.currentPhase;
+            logger_1.default.info('TimerEngine', 'Waiting for user to start next activity', { phase, prevPhase });
             this.state.isWaitingForNextActivity = true;
             this.state.waitingNextPhase = phase;
-            this.emit('phaseChange', { prevPhase: this.state.currentPhase, newPhase: phase, waiting: true });
+            // CRITICAL: Update currentPhase to the WAITING phase so that:
+            // 1. ensureOverlayIfRequired sees the correct phase (work phase → no overlay)
+            // 2. emitTick reports the correct phase to the UI
+            // 3. Stale completed-phase at 0:00 doesn't cause overlay to reopen
+            this.state.currentPhase = phase;
+            this.state.phaseRemainingMs = 0;
+            this.state.phaseEndsAt = 0;
+            this.state.phaseTotalMs = this.getPhaseDurationMs(phase);
+            this.emit('phaseChange', { prevPhase, newPhase: phase, waiting: true });
             this.saveStateImmediately();
             return;
         }
