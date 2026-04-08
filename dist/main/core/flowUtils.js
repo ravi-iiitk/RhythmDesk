@@ -29,7 +29,10 @@ function isFlowBasedSchedule(schedule) {
 /**
  * Get display name for a flow step type
  */
-function getFlowStepDisplayName(type) {
+function getFlowStepDisplayName(type, label) {
+    if (type === 'custom') {
+        return label || 'Custom Activity';
+    }
     switch (type) {
         case 'sit':
             return 'Sit';
@@ -79,24 +82,43 @@ function getFlowStepDurationMs(step) {
  * Check if a flow step type counts as work time
  * Only sit and stand phases count toward cumulative work time
  */
-function isFlowStepWorkPhase(type) {
-    return type === 'sit' || type === 'stand';
+function isFlowStepWorkPhase(step) {
+    if (typeof step === 'string') {
+        return step === 'sit' || step === 'stand';
+    }
+    // FlowStep object: sit/stand are work, custom with countsAsWork flag also counts
+    if (step.type === 'sit' || step.type === 'stand')
+        return true;
+    if (step.type === 'custom' && step.countsAsWork)
+        return true;
+    return false;
 }
 /**
  * Create a new flow step with default duration
  */
-function createFlowStep(type, durationSeconds) {
+function createFlowStep(type, durationSeconds, options) {
     const defaultDurations = {
         'sit': 12 * 60, // 12 minutes
         'stand': 12 * 60, // 12 minutes
         'sit-to-stand-transition': 30, // 30 seconds
         'stand-to-sit-transition': 30, // 30 seconds
         'short-break': 5 * 60, // 5 minutes
+        'custom': 60, // 1 minute default for custom
     };
     return {
         id: (0, uuid_1.v4)(),
         type,
         durationSeconds: durationSeconds ?? defaultDurations[type],
+        ...(type === 'custom' ? {
+            label: options?.label ?? 'Custom Activity',
+            showOverlay: options?.showOverlay ?? true,
+            allowPause: options?.allowPause ?? false,
+            color: options?.color ?? '#14b8a6',
+            message: options?.message ?? '',
+            strictMode: options?.strictMode ?? false,
+            countsAsWork: options?.countsAsWork ?? false,
+        } : {}),
+        ...options,
     };
 }
 /**

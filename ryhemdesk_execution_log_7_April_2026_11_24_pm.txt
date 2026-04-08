@@ -101,3 +101,67 @@
 [2] [2026-04-08T04:50:10.918Z] [INFO] [TrayDebug] [TRAY] event=tray-menu-rebuilt reason=state changed
 [2] [2026-04-08T04:50:39.937Z] [INFO] [TrayDebug] [TRAY] event=tray-menu-rebuilt reason=state changed
 [2] [2026-04-08T04:50:42.937Z] [INFO] [TrayDebug] [TRAY] event=tray-menu-rebuilt reason=state changed
+[2] [2026-04-08T05:02:08.409Z] [INFO] [TimerEngine] advanceFlowBasedPhase - advancing {"prevPhase":"sit","fromIndex":0,"toIndex":1,"newPhase":"sit-to-stand-transition"}
+[2] [2026-04-08T05:02:08.409Z] [INFO] [TimerEngine] Phase started: sit-to-stand-transition {"duration":30000,"endsAt":1775624558409}
+[2] [2026-04-08T05:02:08.410Z] [INFO] [OverlayDebug] [OVERLAY] event=overlay-show phase=requested strictMode=true
+[2] [2026-04-08T05:02:08.432Z] [INFO] [WindowManager] Overlay window created {"strictMode":true,"width":1440,"height":900}
+[2] [2026-04-08T05:02:08.444Z] [INFO] [SessionDebug] [TIMER] event=phaseTransition fromPhase=sit toPhase=sit-to-stand-transition indexBefore=0 indexAfter=1 next=stand cumulativeWorkMs=720s scheduleId=7dd78546-6297-4f53-88f9-c17d926d49e2
+[2] [2026-04-08T05:02:08.594Z] [INFO] [WindowManager] Overlay renderer loaded
+[2] [2026-04-08T05:02:08.604Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-08T05:02:08.604Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":false,"currentPhase":"sit-to-stand-transition","remainingMs":0}
+[2] [2026-04-08T05:02:08.604Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-08T05:02:08.605Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":false,"currentPhase":"sit-to-stand-transition","remainingMs":0}
+[2] [2026-04-08T05:02:38.435Z] [INFO] [TimerEngine] advanceFlowBasedPhase - advancing {"prevPhase":"sit-to-stand-transition","fromIndex":1,"toIndex":2,"newPhase":"stand"}
+[2] [2026-04-08T05:02:38.435Z] [INFO] [TimerEngine] Phase started: stand {"duration":720000,"endsAt":1775625278435}
+[2] [2026-04-08T05:02:38.436Z] [INFO] [OverlayDebug] [OVERLAY] event=overlay-hide reason=close requested
+[2] [2026-04-08T05:02:38.442Z] [INFO] [SessionDebug] [TIMER] event=phaseTransition fromPhase=sit-to-stand-transition toPhase=stand indexBefore=1 indexAfter=2 next=stand-to-sit-transition cumulativeWorkMs=751s scheduleId=7dd78546-6297-4f53-88f9-c17d926d49e2
+[1] 10:33:24 AM [vite] hmr update /src/renderer/App.tsx, /src/renderer/pages/SettingsPage.tsx, /src/renderer/pages/DashboardPage.tsx, /src/renderer/components/ScheduleForm.tsx
+[0] [2J[3J[H10:33:25 AM - File change detected. Starting incremental compilation...
+[0] 
+[0] src/core/flowUtils.ts(80,9): error TS2741: Property 'custom' is missing in type '{ sit: number; stand: number; 'sit-to-stand-transition': number; 'stand-to-sit-transition': number; 'short-break': number; }' but required in type 'Record<FlowStepType, number>'.
+[0] 
+[0] 10:33:25 AM - Found 1 error. Watching for file changes.
+[1] 10:33:38 AM [vite] hmr update /src/renderer/App.tsx, /src/renderer/pages/SettingsPage.tsx, /src/renderer/pages/DashboardPage.tsx, /src/renderer/components/ScheduleForm.tsx
+[0] [2J[3J[H10:33:38 AM - File change detected. Starting incremental compilation...
+[0] 
+[0] src/core/flowUtils.ts(80,9): error TS2741: Property 'custom' is missing in type '{ sit: number; stand: number; 'sit-to-stand-transition': number; 'stand-to-sit-transition': number; 'short-break': number; }' but required in type 'Record<FlowStepType, number>'.
+[0] 
+[0] 10:33:39 AM - Found 1 error. Watching for file changes.
+[1] 10:34:04 AM [vite] hmr update /src/renderer/pages/SchedulesPage.tsx, /src/renderer/components/OverlayView.tsx, /src/renderer/pages/DashboardPage.tsx, /src/renderer/components/ScheduleForm.tsx
+[0] [2J[3J[H10:34:04 AM - File change detected. Starting incremental compilation...
+[0] 
+[0] src/core/flowUtils.ts(80,9): error TS2741: Property 'custom' is missing in type '{ sit: number; stand: number; 'sit-to-stand-transition': number; 'stand-to-sit-transition': number; 'short-break': number; }' but required in type 'Record<FlowStepType, number>'.
+[0] 
+[0] 10:34:04 AM - Found 1 error. Watching for file changes.
+[0] [2J[3J[H10:34:27 AM - File change detected. Starting incremental compilation...
+[0] 
+[0] src/core/flowUtils.ts(80,9): error TS2741: Property 'custom' is missing in type '{ sit: number; stand: number; 'sit-to-stand-transition': number; 'stand-to-sit-transition': number; 'short-break': number; }' but required in type 'Record<FlowStepType, number>'.
+[0] 
+[0] 10:34:28 AM - Found 1 error. Watching for file changes.
+[0] [2J[3J[H10:35:09 AM - File change detected. Starting incremental compilation...
+[0] 
+[0] src/core/flowUtils.ts(80,9): error TS2741: Property 'custom' is missing in type '{ sit: number; stand: number; 'sit-to-stand-transition': number; 'stand-to-sit-transition': number; 'short-break': number; }' but required in type 'Record<FlowStepType, number>'.
+[0] 
+[0] 10:35:09 AM - Found 1 error. Watching for file changes.
+[0] [2J[3J[H10:35:36 AM - File change detected. Starting incremental compilation...
+[0] 
+[0] src/core/flowUtils.ts(80,9): error TS2741: Property 'custom' is missing in type '{ sit: number; stand: number; 'sit-to-stand-transition': number; 'stand-to-sit-transition': number; 'short-break': number; }' but required in type 'Record<FlowStepType, number>'.
+[0] 
+[0] 10:35:36 AM - Found 1 error. Watching for file changes.
+[0] [2J[3J[H10:35:56 AM - File change detected. Starting incremental compilation...
+[0] 
+[0] src/core/flowUtils.ts(80,9): error TS2741: Property 'custom' is missing in type '{ sit: number; stand: number; 'sit-to-stand-transition': number; 'stand-to-sit-transition': number; 'short-break': number; }' but required in type 'Record<FlowStepType, number>'.
+[0] 
+[0] 10:35:56 AM - Found 1 error. Watching for file changes.
+[0] [2J[3J[H10:36:41 AM - File change detected. Starting incremental compilation...
+[0] 
+[0] src/core/flowUtils.ts(80,9): error TS2741: Property 'custom' is missing in type '{ sit: number; stand: number; 'sit-to-stand-transition': number; 'stand-to-sit-transition': number; 'short-break': number; }' but required in type 'Record<FlowStepType, number>'.
+[0] 
+[0] 10:36:42 AM - Found 1 error. Watching for file changes.
+[1] 10:37:17 AM [vite] hmr update /src/renderer/components/ScheduleForm.tsx
+[0] [2J[3J[H10:37:17 AM - File change detected. Starting incremental compilation...
+[0] 
+[0] 
+[0] 10:37:17 AM - Found 0 errors. Watching for file changes.
+[1] 10:38:13 AM [vite] hmr update /src/renderer/components/OverlayView.tsx
+[1] 10:38:37 AM [vite] hmr update /src/renderer/components/OverlayView.tsx

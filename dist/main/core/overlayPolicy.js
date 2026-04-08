@@ -39,13 +39,18 @@ function isWorkPhase(phase) {
     return phase === 'sit' || phase === 'stand';
 }
 /**
- * Check if phase is a break or transition (overlay phases)
+ * Check if phase is a break or transition (overlay phases).
+ * Custom phases with showOverlay flag are also overlay phases.
  */
-function isBreakOrTransitionPhase(phase) {
-    return (phase === 'sit-to-stand-transition' ||
+function isBreakOrTransitionPhase(phase, flowStep) {
+    if (phase === 'sit-to-stand-transition' ||
         phase === 'stand-to-sit-transition' ||
         phase === 'short-break' ||
-        phase === 'long-break');
+        phase === 'long-break')
+        return true;
+    if (phase === 'custom' && flowStep?.showOverlay)
+        return true;
+    return false;
 }
 /**
  * Get break/transition config for a phase from schedule
@@ -133,6 +138,25 @@ function getOverlayPolicy(input) {
             // Normal work phase = no overlay
             return { ...DEFAULT_POLICY };
         }
+    }
+    // Custom phase: behavior is driven by FlowStep flags, not hard-coded phase config
+    if (phase === 'custom') {
+        const flowStep = input.currentFlowStep;
+        if (flowStep?.showOverlay) {
+            const strictMode = focusLockActive || (flowStep.strictMode ?? false);
+            return {
+                showOverlay: true,
+                fullscreen: true,
+                strictMode,
+                allowPostpone: false, // Custom steps don't support postpone (no BreakType mapping)
+                allowClose: !strictMode,
+                allowSkip: !strictMode,
+                postponeOptions: [],
+                maxPostpones: 0,
+            };
+        }
+        // Custom step without showOverlay = background activity, no overlay
+        return { ...DEFAULT_POLICY };
     }
     // Break/transition phases - always show overlay
     const phaseConfig = getPhaseConfig(schedule, phase);

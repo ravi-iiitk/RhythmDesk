@@ -16,7 +16,10 @@ export function isFlowBasedSchedule(schedule: Schedule | null): boolean {
 /**
  * Get display name for a flow step type
  */
-export function getFlowStepDisplayName(type: FlowStepType): string {
+export function getFlowStepDisplayName(type: FlowStepType, label?: string): string {
+  if (type === 'custom') {
+    return label || 'Custom Activity';
+  }
   switch (type) {
     case 'sit':
       return 'Sit';
@@ -69,26 +72,43 @@ export function getFlowStepDurationMs(step: FlowStep): number {
  * Check if a flow step type counts as work time
  * Only sit and stand phases count toward cumulative work time
  */
-export function isFlowStepWorkPhase(type: FlowStepType): boolean {
-  return type === 'sit' || type === 'stand';
+export function isFlowStepWorkPhase(step: FlowStep | FlowStepType): boolean {
+  if (typeof step === 'string') {
+    return step === 'sit' || step === 'stand';
+  }
+  // FlowStep object: sit/stand are work, custom with countsAsWork flag also counts
+  if (step.type === 'sit' || step.type === 'stand') return true;
+  if (step.type === 'custom' && step.countsAsWork) return true;
+  return false;
 }
 
 /**
  * Create a new flow step with default duration
  */
-export function createFlowStep(type: FlowStepType, durationSeconds?: number): FlowStep {
+export function createFlowStep(type: FlowStepType, durationSeconds?: number, options?: Partial<FlowStep>): FlowStep {
   const defaultDurations: Record<FlowStepType, number> = {
     'sit': 12 * 60, // 12 minutes
     'stand': 12 * 60, // 12 minutes
     'sit-to-stand-transition': 30, // 30 seconds
     'stand-to-sit-transition': 30, // 30 seconds
     'short-break': 5 * 60, // 5 minutes
+    'custom': 60, // 1 minute default for custom
   };
 
   return {
     id: uuidv4(),
     type,
     durationSeconds: durationSeconds ?? defaultDurations[type],
+    ...(type === 'custom' ? {
+      label: options?.label ?? 'Custom Activity',
+      showOverlay: options?.showOverlay ?? true,
+      allowPause: options?.allowPause ?? false,
+      color: options?.color ?? '#14b8a6',
+      message: options?.message ?? '',
+      strictMode: options?.strictMode ?? false,
+      countsAsWork: options?.countsAsWork ?? false,
+    } : {}),
+    ...options,
   };
 }
 

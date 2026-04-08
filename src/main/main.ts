@@ -56,6 +56,12 @@ function getOverlayPolicyForState(phase: PhaseType): ReturnType<typeof getOverla
   const schedule = timerEngine.getCurrentSchedule();
   const state = timerEngine.getState();
   
+  // Get current flow step for custom step overlay/pause/strict flags
+  const currentFlowStep = schedule?.mode === 'flow-based' && schedule.flowSteps
+    && state.currentFlowStepIndex !== undefined
+    ? schedule.flowSteps[state.currentFlowStepIndex]
+    : undefined;
+  
   const input: OverlayPolicyInput = {
     phase,
     schedule,
@@ -64,6 +70,7 @@ function getOverlayPolicyForState(phase: PhaseType): ReturnType<typeof getOverla
     isPaused: state.isPaused,
     isPostponed: state.isPostponed,
     isWaitingForNextActivity: state.isWaitingForNextActivity,
+    currentFlowStep,
   };
   
   return getOverlayPolicy(input);

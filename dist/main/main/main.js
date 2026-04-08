@@ -57,6 +57,11 @@ function getOverlayPolicyForState(phase) {
     const officeFocusLockService = (0, officeFocusLockService_1.getOfficeFocusLockService)();
     const schedule = timerEngine.getCurrentSchedule();
     const state = timerEngine.getState();
+    // Get current flow step for custom step overlay/pause/strict flags
+    const currentFlowStep = schedule?.mode === 'flow-based' && schedule.flowSteps
+        && state.currentFlowStepIndex !== undefined
+        ? schedule.flowSteps[state.currentFlowStepIndex]
+        : undefined;
     const input = {
         phase,
         schedule,
@@ -65,6 +70,7 @@ function getOverlayPolicyForState(phase) {
         isPaused: state.isPaused,
         isPostponed: state.isPostponed,
         isWaitingForNextActivity: state.isWaitingForNextActivity,
+        currentFlowStep,
     };
     return (0, overlayPolicy_1.getOverlayPolicy)(input);
 }

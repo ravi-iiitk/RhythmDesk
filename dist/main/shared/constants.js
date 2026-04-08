@@ -26,6 +26,7 @@ exports.PHASE_DISPLAY_NAMES = {
     'stand-to-sit-transition': 'Sit Down',
     'short-break': 'Short Break',
     'long-break': 'Long Break',
+    'custom': 'Custom Activity',
     'idle': 'Idle',
 };
 // Phase colors for UI
@@ -36,6 +37,7 @@ exports.PHASE_COLORS = {
     'stand-to-sit-transition': '#f59e0b', // amber
     'short-break': '#8b5cf6', // purple
     'long-break': '#ec4899', // pink
+    'custom': '#14b8a6', // teal
     'idle': '#6b7280', // gray
 };
 // Day of week display

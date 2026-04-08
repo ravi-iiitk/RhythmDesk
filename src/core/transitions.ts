@@ -172,6 +172,25 @@ export function isTransitionPhase(phase: PhaseType): boolean {
 }
 
 /**
+ * Check if a phase is a custom phase
+ * Custom phases get their overlay/pause/strict behavior from FlowStep flags
+ */
+export function isCustomPhase(phase: PhaseType): boolean {
+  return phase === 'custom';
+}
+
+/**
+ * Check if a phase shows an overlay (transition, break, or custom with showOverlay flag).
+ * For custom phases, the FlowStep must be passed to check the showOverlay flag.
+ * Use this to decide overlay behavior; use isBreakPhase() for break-specific logic.
+ */
+export function isOverlayPhase(phase: PhaseType, flowStep?: FlowStep): boolean {
+  if (isBreakPhase(phase) || isTransitionPhase(phase)) return true;
+  if (phase === 'custom' && flowStep?.showOverlay) return true;
+  return false;
+}
+
+/**
  * Find the first work phase index in a flow
  * Returns 0 if no work phase found (shouldn't happen with valid flows)
  */

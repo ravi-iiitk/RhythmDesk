@@ -2005,6 +2005,17 @@ class TimerEngine extends events_1.EventEmitter {
             restBlock: (0, restBlockService_1.getRestBlockService)().getState(),
             breakProgress,
             configuredDurations,
+            // Custom flow step metadata (for overlay display of custom steps)
+            ...(schedule && (0, flowUtils_1.isFlowBasedSchedule)(schedule) && currentIndex !== undefined
+                && schedule.flowSteps[currentIndex]
+                ? {
+                    currentStepShowOverlay: schedule.flowSteps[currentIndex].showOverlay,
+                    currentStepAllowPause: schedule.flowSteps[currentIndex].allowPause,
+                    currentStepColor: schedule.flowSteps[currentIndex].color,
+                    currentStepMessage: schedule.flowSteps[currentIndex].message,
+                    currentStepStrictMode: schedule.flowSteps[currentIndex].strictMode,
+                }
+                : {}),
             // Phase 1.5: Include debug snapshot for dev mode dashboard
             debugSnapshot: {
                 currentFlowStepIndex: debugSnapshot.currentFlowStepIndex,

@@ -14,6 +14,7 @@ export type PhaseType =
   | 'stand-to-sit-transition'
   | 'short-break'
   | 'long-break'
+  | 'custom'
   | 'idle';
 
 // Break/transition types for per-break configuration
@@ -28,7 +29,8 @@ export type FlowStepType =
   | 'stand'
   | 'sit-to-stand-transition'
   | 'stand-to-sit-transition'
-  | 'short-break';
+  | 'short-break'
+  | 'custom';
 
 // A single step in a flow-based schedule
 export interface FlowStep {
@@ -36,6 +38,13 @@ export interface FlowStep {
   type: FlowStepType;
   durationSeconds: number;
   label?: string; // Optional custom label for this step
+  // Custom step overlay behavior (used when type === 'custom', optional override for built-in types)
+  showOverlay?: boolean;       // If true, shows fullscreen overlay during this step (like transitions)
+  allowPause?: boolean;        // If true, shows pause button on overlay to pause countdown
+  color?: string;              // Custom color for overlay UI (hex, e.g. '#f59e0b')
+  message?: string;            // Custom message shown on overlay screen
+  strictMode?: boolean;        // If true, user cannot dismiss overlay early
+  countsAsWork?: boolean;      // If true, counts toward cumulative work time (default: false for custom)
 }
 
 /**
@@ -429,6 +438,12 @@ export interface TimerTick {
   breakProgress: BreakProgress;
   // Configured durations from active schedule
   configuredDurations: ConfiguredDurations;
+  // Custom flow step metadata (populated when current step has custom properties)
+  currentStepShowOverlay?: boolean;   // Whether current step forces overlay
+  currentStepAllowPause?: boolean;    // Whether pause button should show on overlay
+  currentStepColor?: string;          // Custom color for overlay UI
+  currentStepMessage?: string;        // Custom message for overlay
+  currentStepStrictMode?: boolean;    // Custom strict mode override
   // Phase 1.5: Debug snapshot for dev mode dashboard panel
   debugSnapshot?: {
     currentFlowStepIndex: number | undefined;

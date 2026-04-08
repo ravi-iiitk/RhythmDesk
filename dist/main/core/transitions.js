@@ -18,6 +18,8 @@ exports.computeThenRuleBasedPhase = computeThenRuleBasedPhase;
 exports.isWorkPhase = isWorkPhase;
 exports.isBreakPhase = isBreakPhase;
 exports.isTransitionPhase = isTransitionPhase;
+exports.isCustomPhase = isCustomPhase;
+exports.isOverlayPhase = isOverlayPhase;
 exports.findFirstWorkPhaseIndex = findFirstWorkPhaseIndex;
 exports.findPhaseIndex = findPhaseIndex;
 exports.getPhaseDuration = getPhaseDuration;
@@ -152,6 +154,25 @@ function isBreakPhase(phase) {
  */
 function isTransitionPhase(phase) {
     return phase === 'sit-to-stand-transition' || phase === 'stand-to-sit-transition';
+}
+/**
+ * Check if a phase is a custom phase
+ * Custom phases get their overlay/pause/strict behavior from FlowStep flags
+ */
+function isCustomPhase(phase) {
+    return phase === 'custom';
+}
+/**
+ * Check if a phase shows an overlay (transition, break, or custom with showOverlay flag).
+ * For custom phases, the FlowStep must be passed to check the showOverlay flag.
+ * Use this to decide overlay behavior; use isBreakPhase() for break-specific logic.
+ */
+function isOverlayPhase(phase, flowStep) {
+    if (isBreakPhase(phase) || isTransitionPhase(phase))
+        return true;
+    if (phase === 'custom' && flowStep?.showOverlay)
+        return true;
+    return false;
 }
 /**
  * Find the first work phase index in a flow

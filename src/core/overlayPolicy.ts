@@ -7,7 +7,7 @@
  * This removes duplicate overlay logic scattered across windowManager and timerEngine.
  */
 
-import { PhaseType, Schedule, BreakType } from '../shared/types';
+import { PhaseType, Schedule, BreakType, FlowStep } from '../shared/types';
 import { OfficeFocusLockState } from '../shared/types';
 
 /**
@@ -21,6 +21,7 @@ export interface OverlayPolicyInput {
   isPaused: boolean;
   isPostponed: boolean;
   isWaitingForNextActivity: boolean;
+  currentFlowStep?: FlowStep;  // Current flow step (for custom step overlay/pause/strict flags)
 }
 
 /**
@@ -63,15 +64,18 @@ export function isWorkPhase(phase: PhaseType): boolean {
 }
 
 /**
- * Check if phase is a break or transition (overlay phases)
+ * Check if phase is a break or transition (overlay phases).
+ * Custom phases with showOverlay flag are also overlay phases.
  */
-export function isBreakOrTransitionPhase(phase: PhaseType): boolean {
-  return (
+export function isBreakOrTransitionPhase(phase: PhaseType, flowStep?: FlowStep): boolean {
+  if (
     phase === 'sit-to-stand-transition' ||
     phase === 'stand-to-sit-transition' ||
     phase === 'short-break' ||
     phase === 'long-break'
-  );
+  ) return true;
+  if (phase === 'custom' && flowStep?.showOverlay) return true;
+  return false;
 }
 
 /**
@@ -166,6 +170,26 @@ export function getOverlayPolicy(input: OverlayPolicyInput): OverlayPolicy {
       // Normal work phase = no overlay
       return { ...DEFAULT_POLICY };
     }
+  }
+
+  // Custom phase: behavior is driven by FlowStep flags, not hard-coded phase config
+  if (phase === 'custom') {
+    const flowStep = input.currentFlowStep;
+    if (flowStep?.showOverlay) {
+      const strictMode = focusLockActive || (flowStep.strictMode ?? false);
+      return {
+        showOverlay: true,
+        fullscreen: true,
+        strictMode,
+        allowPostpone: false,  // Custom steps don't support postpone (no BreakType mapping)
+        allowClose: !strictMode,
+        allowSkip: !strictMode,
+        postponeOptions: [],
+        maxPostpones: 0,
+      };
+    }
+    // Custom step without showOverlay = background activity, no overlay
+    return { ...DEFAULT_POLICY };
   }
 
   // Break/transition phases - always show overlay
