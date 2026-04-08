@@ -111,6 +111,7 @@ exports.DEFAULT_TRANSITION_CONFIG = {
     durationSeconds: 60,
     strictModeEnabled: true,
     allowPostpone: true,
+    allowPause: true,
     postponeOptionsMinutes: [2, 5, 10],
     maxPostponesPerDay: 4,
 };

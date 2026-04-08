@@ -83,6 +83,7 @@ export interface TransitionConfig {
   durationSeconds: number;
   strictModeEnabled: boolean;
   allowPostpone: boolean;
+  allowPause: boolean;             // If true, shows pause button on transition overlay
   postponeOptionsMinutes: number[];
   maxPostponesPerDay: number;
 }
@@ -518,6 +519,7 @@ export const DEFAULT_TRANSITION_CONFIG: TransitionConfig = {
   durationSeconds: 60,
   strictModeEnabled: true,
   allowPostpone: true,
+  allowPause: true,
   postponeOptionsMinutes: [2, 5, 10],
   maxPostponesPerDay: 4,
 };

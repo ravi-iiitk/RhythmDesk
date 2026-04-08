@@ -88,7 +88,7 @@ function OverlayView({ tick }: OverlayViewProps) {
   const nextPhaseName = tick.nextPhaseLabel || PHASE_DISPLAY_NAMES[tick.nextPhase] || tick.nextPhase;
   const message = tick.currentStepMessage || PHASE_MESSAGES[tick.currentPhase] || '';
   
-  // Custom step pause support
+  // Pause support (transitions + custom steps with allowPause enabled)
   const allowPause = tick.currentStepAllowPause ?? false;
 
   const handleComplete = () => window.rhythmDesk.completePhase();

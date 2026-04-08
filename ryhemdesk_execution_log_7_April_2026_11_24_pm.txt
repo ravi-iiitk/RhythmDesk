@@ -291,3 +291,7 @@
 [2] [2026-04-08T05:32:36.788Z] [INFO] [TrayDebug] [TRAY] event=tray-menu-rebuilt reason=state changed
 [2] [2026-04-08T05:32:48.036Z] [INFO] [SessionDebug] [TIMER] event=skipPhase phase=sit fromPhase=sit pendingBreak=short-break next=sit-to-stand-transition scheduleId=7dd78546-6297-4f53-88f9-c17d926d49e2 reason=Skipped pending postponed break
 [2] [2026-04-08T05:32:48.036Z] [INFO] [TrayDebug] [TRAY] event=tray-menu-rebuilt reason=state changed
+[2] /home/rsk-lnx/CascadeProjects/posture-guard/node_modules/electron/dist/electron exited with signal SIGINT
+[1] npm run dev:renderer exited with code SIGINT
+[2] wait-on http://localhost:5173 && wait-on dist/main/main/main.js && env -u ELECTRON_RUN_AS_NODE electron --no-sandbox . exited with code SIGINT
+[0] npm run dev:main exited with code SIGINT

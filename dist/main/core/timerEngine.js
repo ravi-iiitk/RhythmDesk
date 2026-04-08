@@ -2024,6 +2024,13 @@ class TimerEngine extends events_1.EventEmitter {
                     currentStepStrictMode: schedule.flowSteps[currentIndex].strictMode,
                 }
                 : {}),
+            // Built-in transition allowPause from TransitionConfig (applies in both modes)
+            ...(this.state.currentPhase === 'sit-to-stand-transition' && schedule?.transitions?.sitToStand
+                ? { currentStepAllowPause: schedule.transitions.sitToStand.allowPause ?? true }
+                : {}),
+            ...(this.state.currentPhase === 'stand-to-sit-transition' && schedule?.transitions?.standToSit
+                ? { currentStepAllowPause: schedule.transitions.standToSit.allowPause ?? true }
+                : {}),
             // Phase 1.5: Include debug snapshot for dev mode dashboard
             debugSnapshot: {
                 currentFlowStepIndex: debugSnapshot.currentFlowStepIndex,

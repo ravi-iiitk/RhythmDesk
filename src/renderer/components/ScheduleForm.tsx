@@ -43,6 +43,9 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
   const [flowSteps, setFlowSteps] = useState<FlowStep[]>(getDefaultFlowSteps());
   const [flowValidationErrors, setFlowValidationErrors] = useState<string[]>([]);
   
+  // Transition pause toggle (shared for both sit-to-stand and stand-to-sit)
+  const [transitionAllowPause, setTransitionAllowPause] = useState<boolean>(true);
+  
   // Drag and drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -86,6 +89,9 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         transitionsCountAsCumulativeWork: rest.transitionsCountAsCumulativeWork ?? true,
         shortBreaksCountAsCumulativeWork: rest.shortBreaksCountAsCumulativeWork ?? true,
       });
+      
+      // Load transition allowPause from nested config
+      setTransitionAllowPause(schedule.transitions?.sitToStand?.allowPause ?? true);
       
       // Load schedule mode and flow steps
       setScheduleMode(rest.mode ?? 'rule-based');
@@ -285,6 +291,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
           durationSeconds: formData.sitToStandTransitionSeconds ?? 60,
           strictModeEnabled: formData.strictModeEnabled ?? true,
           allowPostpone: formData.allowPostpone ?? true,
+          allowPause: transitionAllowPause,
           postponeOptionsMinutes: formData.postponeOptionsMinutes ?? [2, 5, 10],
           maxPostponesPerDay: formData.maxPostponesPerDay ?? 3,
         },
@@ -292,6 +299,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
           durationSeconds: formData.standToSitTransitionSeconds ?? 60,
           strictModeEnabled: formData.strictModeEnabled ?? true,
           allowPostpone: formData.allowPostpone ?? true,
+          allowPause: transitionAllowPause,
           postponeOptionsMinutes: formData.postponeOptionsMinutes ?? [2, 5, 10],
           maxPostponesPerDay: formData.maxPostponesPerDay ?? 3,
         },
@@ -677,6 +685,21 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
                 required
               />
             </div>
+          </div>
+
+          {/* Transition Pause Toggle */}
+          <div className="form-group">
+            <label className="form-checkbox">
+              <input
+                type="checkbox"
+                checked={transitionAllowPause}
+                onChange={(e) => setTransitionAllowPause(e.target.checked)}
+              />
+              Allow Pause on Transitions
+            </label>
+            <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+              Show a pause button on the transition overlay so you can take your time adjusting your desk.
+            </p>
           </div>
 
           {/* Short Break */}
