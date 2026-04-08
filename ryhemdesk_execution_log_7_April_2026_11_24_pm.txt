@@ -165,3 +165,129 @@
 [0] 10:37:17 AM - Found 0 errors. Watching for file changes.
 [1] 10:38:13 AM [vite] hmr update /src/renderer/components/OverlayView.tsx
 [1] 10:38:37 AM [vite] hmr update /src/renderer/components/OverlayView.tsx
+[1] 10:41:54 AM [vite] hmr update /src/renderer/components/ScheduleForm.tsx
+[1] 10:42:06 AM [vite] hmr update /src/renderer/components/ScheduleForm.tsx
+[1] 10:42:15 AM [vite] hmr update /src/renderer/components/ScheduleForm.tsx
+[1] 10:42:38 AM [vite] hmr update /src/renderer/components/ScheduleForm.tsx
+[1] 10:42:38 AM [vite] Internal server error: /home/rsk-lnx/CascadeProjects/posture-guard/src/renderer/components/ScheduleForm.tsx: Unexpected token, expected "," (533:14)
+[1] 
+[1]   531 |                 </button>
+[1]   532 |               </div>
+[1] > 533 |               {/* Custom step configuration panel */}
+[1]       |               ^
+[1]   534 |               {step.type === 'custom' && (
+[1]   535 |                 <div style={{
+[1]   536 |                   marginLeft: '3rem',
+[1]   Plugin: vite:react-babel
+[1]   File: /home/rsk-lnx/CascadeProjects/posture-guard/src/renderer/components/ScheduleForm.tsx:533:14
+[1]   531|                  </button>
+[1]   532|                </div>
+[1]   533|                {/* Custom step configuration panel */}
+[1]      |                ^
+[1]   534|                {step.type === 'custom' && (
+[1]   535|                  <div style={{
+[1]       at constructor (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:365:19)
+[1]       at TypeScriptParserMixin.raise (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:6599:19)
+[1]       at TypeScriptParserMixin.unexpected (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:6619:16)
+[1]       at TypeScriptParserMixin.expect (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:6899:12)
+[1]       at TypeScriptParserMixin.parseParenAndDistinguishExpression (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11661:14)
+[1]       at TypeScriptParserMixin.parseExprAtom (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11331:23)
+[1]       at TypeScriptParserMixin.parseExprAtom (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:4764:20)
+[1]       at TypeScriptParserMixin.parseExprSubscripts (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11081:23)
+[1]       at TypeScriptParserMixin.parseUpdate (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11066:21)
+[1]       at TypeScriptParserMixin.parseMaybeUnary (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11046:23)
+[1]       at TypeScriptParserMixin.parseMaybeUnary (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:9837:18)
+[1]       at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:10899:61)
+[1]       at TypeScriptParserMixin.parseExprOps (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:10904:23)
+[1]       at TypeScriptParserMixin.parseMaybeConditional (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:10881:23)
+[1]       at TypeScriptParserMixin.parseMaybeAssign (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:10831:21)
+[1]       at TypeScriptParserMixin.parseMaybeAssign (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:9786:20)
+[1]       at TypeScriptParserMixin.parseFunctionBody (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:12093:24)
+[1]       at TypeScriptParserMixin.parseArrowExpression (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:12075:10)
+[1]       at TypeScriptParserMixin.parseParenAndDistinguishExpression (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11687:12)
+[1]       at TypeScriptParserMixin.parseExprAtom (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11331:23)
+[1]       at TypeScriptParserMixin.parseExprAtom (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:4764:20)
+[1]       at TypeScriptParserMixin.parseExprSubscripts (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11081:23)
+[1]       at TypeScriptParserMixin.parseUpdate (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11066:21)
+[1]       at TypeScriptParserMixin.parseMaybeUnary (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11046:23)
+[1]       at TypeScriptParserMixin.parseMaybeUnary (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:9837:18)
+[1]       at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:10899:61)
+[1]       at TypeScriptParserMixin.parseExprOps (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:10904:23)
+[1]       at TypeScriptParserMixin.parseMaybeConditional (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:10881:23)
+[1]       at TypeScriptParserMixin.parseMaybeAssign (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:10831:21)
+[1]       at TypeScriptParserMixin.parseMaybeAssign (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:9786:20)
+[1]       at /home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:10800:39
+[1]       at TypeScriptParserMixin.allowInAnd (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:12426:12)
+[1]       at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:10800:17)
+[1]       at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:12493:17)
+[1]       at TypeScriptParserMixin.parseExprListItem (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:12175:18)
+[1]       at TypeScriptParserMixin.parseCallExpressionArguments (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11252:22)
+[1]       at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11186:29)
+[1]       at TypeScriptParserMixin.parseSubscript (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11120:19)
+[1]       at TypeScriptParserMixin.parseSubscript (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:9272:18)
+[1]       at TypeScriptParserMixin.parseSubscripts (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11094:19)
+[1]       at TypeScriptParserMixin.parseExprSubscripts (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11085:17)
+[1]       at TypeScriptParserMixin.parseUpdate (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11066:21)
+[1]       at TypeScriptParserMixin.parseMaybeUnary (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:11046:23)
+[1]       at TypeScriptParserMixin.parseMaybeUnary (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:9837:18)
+[1]       at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:10899:61)
+[1]       at TypeScriptParserMixin.parseExprOps (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:10904:23)
+[1]       at TypeScriptParserMixin.parseMaybeConditional (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:10881:23)
+[1]       at TypeScriptParserMixin.parseMaybeAssign (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:10831:21)
+[1]       at TypeScriptParserMixin.parseMaybeAssign (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:9786:20)
+[1]       at TypeScriptParserMixin.parseExpressionBase (/home/rsk-lnx/CascadeProjects/posture-guard/node_modules/@babel/parser/lib/index.js:10784:23)
+[1] 10:42:53 AM [vite] hmr update /src/renderer/components/ScheduleForm.tsx
+[0] [2J[3J[H10:44:03 AM - File change detected. Starting incremental compilation...
+[0] 
+[0] 
+[0] 10:44:04 AM - Found 0 errors. Watching for file changes.
+[1] 10:44:37 AM [vite] hmr update /src/renderer/App.tsx, /src/renderer/pages/SettingsPage.tsx, /src/renderer/pages/DashboardPage.tsx, /src/renderer/components/ScheduleForm.tsx
+[0] [2J[3J[H10:44:38 AM - File change detected. Starting incremental compilation...
+[0] 
+[0] 
+[0] 10:44:38 AM - Found 0 errors. Watching for file changes.
+[2] [2026-04-08T05:14:38.907Z] [INFO] [TimerEngine] advanceFlowBasedPhase - advancing {"prevPhase":"stand","fromIndex":2,"toIndex":3,"newPhase":"stand-to-sit-transition"}
+[2] [2026-04-08T05:14:38.907Z] [INFO] [TimerEngine] Phase started: stand-to-sit-transition {"duration":30000,"endsAt":1775625308907}
+[2] [2026-04-08T05:14:38.908Z] [INFO] [OverlayDebug] [OVERLAY] event=overlay-show phase=requested strictMode=true
+[2] [2026-04-08T05:14:38.918Z] [INFO] [WindowManager] Overlay window created {"strictMode":true,"width":1440,"height":900}
+[2] [2026-04-08T05:14:38.931Z] [INFO] [SessionDebug] [TIMER] event=phaseTransition fromPhase=stand toPhase=stand-to-sit-transition indexBefore=2 indexAfter=3 next=short-break cumulativeWorkMs=1471s scheduleId=7dd78546-6297-4f53-88f9-c17d926d49e2
+[2] [2026-04-08T05:14:39.226Z] [INFO] [WindowManager] Overlay renderer loaded
+[2] [2026-04-08T05:14:39.244Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-08T05:14:39.245Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":false,"currentPhase":"stand-to-sit-transition","remainingMs":0}
+[2] [2026-04-08T05:14:39.246Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-08T05:14:39.247Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":false,"currentPhase":"stand-to-sit-transition","remainingMs":0}
+[0] [2J[3J[H10:45:03 AM - File change detected. Starting incremental compilation...
+[0] 
+[0] 
+[0] 10:45:03 AM - Found 0 errors. Watching for file changes.
+[2] [2026-04-08T05:15:08.926Z] [INFO] [TimerEngine] Saving interrupted work phase for break {"interruptedFlowIndex":3,"interruptedPhase":"stand-to-sit-transition","nextBreakPhase":"short-break"}
+[2] [2026-04-08T05:15:08.926Z] [INFO] [TimerEngine] advanceFlowBasedPhase - advancing {"prevPhase":"stand-to-sit-transition","fromIndex":3,"toIndex":4,"newPhase":"short-break"}
+[2] [2026-04-08T05:15:08.926Z] [INFO] [TimerEngine] Phase started: short-break {"duration":300000,"endsAt":1775625608926}
+[2] [2026-04-08T05:15:08.927Z] [INFO] [OverlayDebug] [OVERLAY] event=overlay-show phase=requested strictMode=true
+[2] [2026-04-08T05:15:08.928Z] [INFO] [WindowManager] Overlay window shown {"strictMode":true}
+[2] [2026-04-08T05:15:08.931Z] [INFO] [SessionDebug] [TIMER] event=phaseTransition fromPhase=stand-to-sit-transition toPhase=short-break indexBefore=3 indexAfter=4 next=sit cumulativeWorkMs=1501s scheduleId=7dd78546-6297-4f53-88f9-c17d926d49e2
+[2] [2026-04-08T05:17:17.668Z] [INFO] [SessionDebug] [TIMER] event=postponeBreak phase=sit pendingBreak=short-break postponeUntil=120s cumulativeWorkMs=1629s scheduleId=7dd78546-6297-4f53-88f9-c17d926d49e2 restoredFlowIndex=0
+[2] [2026-04-08T05:17:17.669Z] [INFO] [OverlayDebug] [OVERLAY] event=overlay-hide reason=close requested
+[2] [2026-04-08T05:17:18.014Z] [INFO] [TrayDebug] [TRAY] event=tray-menu-rebuilt reason=state changed
+[2] [2026-04-08T05:17:35.140Z] [INFO] [RestBlockService] Starting rest block {"name":"My Break","durationMinutes":15,"durationMs":900000,"isStrictMode":true,"presetId":null}
+[2] [2026-04-08T05:17:35.141Z] [INFO] [Main] Rest block started - pausing timer and showing overlay
+[2] [2026-04-08T05:17:35.141Z] [INFO] [OverlayDebug] [OVERLAY] event=rest-block-start phase=My Break remainingMs=900s strictMode=true
+[2] [2026-04-08T05:17:35.141Z] [INFO] [OverlayDebug] [OVERLAY] event=overlay-show phase=requested strictMode=true
+[2] [2026-04-08T05:17:35.147Z] [INFO] [WindowManager] Overlay window created {"strictMode":true,"width":1440,"height":900}
+[2] [2026-04-08T05:17:35.153Z] [INFO] [Main] Overlay state resent {"reason":"rest-block-start","hasTick":true,"restBlockActive":true,"restRemainingMs":900000}
+[2] [2026-04-08T05:17:35.315Z] [INFO] [WindowManager] Overlay renderer loaded
+[2] [2026-04-08T05:17:35.326Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-08T05:17:35.326Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":true,"currentPhase":"sit","remainingMs":900000}
+[2] [2026-04-08T05:17:35.327Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":true,"currentPhase":"sit","remainingMs":900000}
+[2] [2026-04-08T05:17:35.326Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-08T05:17:36.027Z] [INFO] [TrayDebug] [TRAY] event=tray-menu-rebuilt reason=state changed
+[2] [2026-04-08T05:32:35.787Z] [INFO] [RestBlockService] Rest block expired {"name":"My Break"}
+[2] [2026-04-08T05:32:35.788Z] [INFO] [RestBlockService] Force stopping rest block
+[2] [2026-04-08T05:32:35.788Z] [INFO] [Main] Rest block stopped - resuming timer
+[2] [2026-04-08T05:32:35.788Z] [INFO] [OverlayDebug] [OVERLAY] event=rest-block-end phase=manual reason=user stopped
+[2] [2026-04-08T05:32:35.792Z] [INFO] [OverlayDebug] [OVERLAY] event=overlay-hide reason=close requested
+[2] [2026-04-08T05:32:35.795Z] [INFO] [Main] Rest block expired - resuming timer
+[2] [2026-04-08T05:32:35.795Z] [INFO] [OverlayDebug] [OVERLAY] event=rest-block-end phase=expired reason=timer completed
+[2] [2026-04-08T05:32:36.788Z] [INFO] [TrayDebug] [TRAY] event=tray-menu-rebuilt reason=state changed
+[2] [2026-04-08T05:32:48.036Z] [INFO] [SessionDebug] [TIMER] event=skipPhase phase=sit fromPhase=sit pendingBreak=short-break next=sit-to-stand-transition scheduleId=7dd78546-6297-4f53-88f9-c17d926d49e2 reason=Skipped pending postponed break
+[2] [2026-04-08T05:32:48.036Z] [INFO] [TrayDebug] [TRAY] event=tray-menu-rebuilt reason=state changed

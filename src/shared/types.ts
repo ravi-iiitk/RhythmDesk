@@ -53,9 +53,14 @@ export interface FlowStep {
  */
 export function computeFlowConfigHash(flowSteps: FlowStep[] | undefined): string {
   if (!flowSteps || flowSteps.length === 0) return '';
-  // Create a string representation of the flow order and durations
-  // This captures: step order, types, and durations
-  return flowSteps.map(s => `${s.type}:${s.durationSeconds}`).join('|');
+  // Create a string representation of the flow order, durations, and custom step flags
+  return flowSteps.map(s => {
+    let hash = `${s.type}:${s.durationSeconds}`;
+    if (s.type === 'custom') {
+      hash += `:o${s.showOverlay ? 1 : 0}:p${s.allowPause ? 1 : 0}:s${s.strictMode ? 1 : 0}:w${s.countsAsWork ? 1 : 0}`;
+    }
+    return hash;
+  }).join('|');
 }
 
 // Timer engine events

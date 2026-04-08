@@ -1223,6 +1223,15 @@ export class TimerEngine extends EventEmitter {
       return schedule.shortBreaksCountAsCumulativeWork ?? true;
     }
     
+    // Custom phases: check the FlowStep's countsAsWork flag
+    if (phase === 'custom' && isFlowBasedSchedule(schedule) && schedule.flowSteps) {
+      const currentIndex = this.state.currentFlowStepIndex ?? 0;
+      const step = schedule.flowSteps[currentIndex];
+      if (step && step.type === 'custom') {
+        return step.countsAsWork ?? false;
+      }
+    }
+    
     return false;
   }
 
@@ -2408,6 +2417,10 @@ export class TimerEngine extends EventEmitter {
   private getPostponeOptionsForCurrentPhase(): number[] {
     if (!this.currentSchedule) return [];
     const schedule = this.currentSchedule;
+    
+    // Custom phases don't support postpone (no BreakType mapping)
+    if (this.state.currentPhase === 'custom') return [];
+    
     const breakType = phaseToBreakType(this.state.currentPhase);
     
     if (!breakType) return schedule.postponeOptionsMinutes ?? [];
@@ -2432,6 +2445,16 @@ export class TimerEngine extends EventEmitter {
   private getStrictModeForCurrentPhase(): boolean {
     if (!this.currentSchedule) return false;
     const schedule = this.currentSchedule;
+    
+    // Custom phases: use FlowStep's strictMode flag
+    if (this.state.currentPhase === 'custom' && isFlowBasedSchedule(schedule) && schedule.flowSteps) {
+      const currentIndex = this.state.currentFlowStepIndex ?? 0;
+      const step = schedule.flowSteps[currentIndex];
+      if (step && step.type === 'custom') {
+        return step.strictMode ?? false;
+      }
+    }
+    
     const breakType = phaseToBreakType(this.state.currentPhase);
     
     // Work phases use global setting

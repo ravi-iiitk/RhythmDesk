@@ -21,6 +21,7 @@ const FLOW_STEP_TYPES: FlowStepType[] = [
   'sit-to-stand-transition',
   'stand-to-sit-transition',
   'short-break',
+  'custom',
 ];
 
 interface ScheduleFormProps {
@@ -220,6 +221,12 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
     const newSteps = [...flowSteps];
     // Store raw value while typing - trim only on save
     newSteps[index] = { ...newSteps[index], label: label || undefined };
+    setFlowSteps(newSteps);
+  };
+
+  const handleCustomStepPropChange = (index: number, prop: keyof FlowStep, value: unknown) => {
+    const newSteps = [...flowSteps];
+    newSteps[index] = { ...newSteps[index], [prop]: value };
     setFlowSteps(newSteps);
   };
 
@@ -423,8 +430,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
           )}
           <div className="flow-steps" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {flowSteps.map((step, index) => (
+              <React.Fragment key={step.id}>
               <div 
-                key={step.id} 
                 className="flow-step"
                 draggable
                 onDragStart={(e) => handleDragStart(e, index)}
@@ -461,8 +468,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
                 <span style={{ width: '1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                   {index + 1}.
                 </span>
-                <span style={{ minWidth: '8rem', fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  {getFlowStepDisplayName(step.type)}
+                <span style={{ minWidth: '8rem', fontWeight: 500, color: step.type === 'custom' ? (step.color || '#14b8a6') : 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  {getFlowStepDisplayName(step.type, step.label)}
                 </span>
                 <input
                   type="text"
@@ -523,6 +530,73 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
                   ✕
                 </button>
               </div>
+              {/* Custom step configuration panel */}
+              {step.type === 'custom' && (
+                <div style={{
+                  marginLeft: '3rem',
+                  padding: '0.5rem 0.75rem',
+                  background: 'rgba(20, 184, 166, 0.05)',
+                  borderRadius: '0.375rem',
+                  border: '1px solid rgba(20, 184, 166, 0.15)',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '0.75rem',
+                  alignItems: 'center',
+                  fontSize: '0.8rem',
+                }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={step.showOverlay ?? true}
+                      onChange={(e) => handleCustomStepPropChange(index, 'showOverlay', e.target.checked)}
+                    />
+                    Show Overlay
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={step.allowPause ?? false}
+                      onChange={(e) => handleCustomStepPropChange(index, 'allowPause', e.target.checked)}
+                    />
+                    Allow Pause
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={step.strictMode ?? false}
+                      onChange={(e) => handleCustomStepPropChange(index, 'strictMode', e.target.checked)}
+                    />
+                    Strict Mode
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={step.countsAsWork ?? false}
+                      onChange={(e) => handleCustomStepPropChange(index, 'countsAsWork', e.target.checked)}
+                    />
+                    Counts as Work
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    Color:
+                    <input
+                      type="color"
+                      value={step.color || '#14b8a6'}
+                      onChange={(e) => handleCustomStepPropChange(index, 'color', e.target.value)}
+                      style={{ width: '2rem', height: '1.5rem', padding: 0, border: 'none', cursor: 'pointer' }}
+                    />
+                  </label>
+                  <input
+                    type="text"
+                    value={step.message || ''}
+                    onChange={(e) => handleCustomStepPropChange(index, 'message', e.target.value || undefined)}
+                    placeholder="Overlay message (optional)"
+                    style={{ flex: 1, minWidth: '10rem', padding: '0.3rem 0.5rem', fontSize: '0.8rem' }}
+                    className="form-input"
+                    maxLength={100}
+                  />
+                </div>
+              )}
+            </React.Fragment>
             ))}
           </div>
           <div style={{ marginTop: '0.5rem' }}>
