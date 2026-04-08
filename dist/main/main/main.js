@@ -39,6 +39,19 @@ const soundService_1 = require("../core/soundService");
  * Get overlay policy for current state
  * Centralized decision engine - all overlay logic goes through here
  */
+/**
+ * Safely close the overlay AND stop the heartbeat watchdog.
+ * Every overlay-close path must use this to prevent the watchdog from
+ * detecting "missed heartbeats" on a closed overlay and recreating it.
+ */
+function safeCloseOverlay() {
+    const syncService = (0, overlaySync_1.getOverlaySyncService)();
+    if (syncService.getState().isOverlayActive) {
+        syncService.stop();
+    }
+    (0, windowManager_1.closeOverlay)();
+    (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.HIDE_OVERLAY, {});
+}
 function getOverlayPolicyForState(phase) {
     const timerEngine = (0, timerEngine_1.getTimerEngine)();
     const officeFocusLockService = (0, officeFocusLockService_1.getOfficeFocusLockService)();
@@ -180,11 +193,23 @@ function initialize() {
                 // throttles the renderer process. Only start if not already running for a rest block.
                 if (!isRestBlockActive && !overlaySyncService.getState().isOverlayActive) {
                     overlaySyncService.start(() => (0, windowManager_1.sendToOverlay)(overlaySync_1.OVERLAY_SYNC_CHANNELS.HEARTBEAT_REQUEST, {}), () => {
-                        const recovered = (0, windowManager_1.recoverOverlayIfNeeded)(newPolicy.strictMode, true);
+                        // CRITICAL: Use CURRENT state, not stale closure values.
+                        // Recovery can fire long after the phaseChange event (e.g., after
+                        // postpone changed the phase). Using stale values would recreate
+                        // an overlay for the wrong phase.
+                        const currentPhase = timerEngine.getState().currentPhase;
+                        const currentPolicy = getOverlayPolicyForState(currentPhase);
+                        if (!currentPolicy.showOverlay) {
+                            // Phase no longer needs overlay (e.g., user postponed) — just stop
+                            logger_1.default.info('Main', 'Heartbeat recovery skipped — overlay no longer needed', { currentPhase });
+                            overlaySyncService.stop();
+                            return;
+                        }
+                        const recovered = (0, windowManager_1.recoverOverlayIfNeeded)(currentPolicy.strictMode, true);
                         if (recovered) {
-                            (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.SHOW_OVERLAY, { phase: data.newPhase });
+                            (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.SHOW_OVERLAY, { phase: currentPhase });
                             logger_1.default.warn('Main', 'Overlay recovered via heartbeat watchdog during phase', {
-                                phase: data.newPhase,
+                                phase: currentPhase,
                             });
                         }
                     });
@@ -196,12 +221,7 @@ function initialize() {
                 // must close), and normal phase→work transitions.
                 const overlay = (0, windowManager_1.getOverlayWindow)();
                 if (overlay && !overlay.isDestroyed()) {
-                    // Stop overlay heartbeat watchdog when overlay closes
-                    if (overlaySyncService.getState().isOverlayActive) {
-                        overlaySyncService.stop();
-                    }
-                    (0, windowManager_1.closeOverlay)();
-                    (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.HIDE_OVERLAY, {});
+                    safeCloseOverlay();
                 }
             }
         });
@@ -214,8 +234,7 @@ function initialize() {
             // Don't close overlay if RestBlock is active
             const restBlockService = (0, restBlockService_1.getRestBlockService)();
             if (!restBlockService.isActive()) {
-                (0, windowManager_1.closeOverlay)();
-                (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.HIDE_OVERLAY, {});
+                safeCloseOverlay();
             }
         });
         // Handle session reset
@@ -243,8 +262,7 @@ function initialize() {
             const restBlockService = (0, restBlockService_1.getRestBlockService)();
             // Close overlay if policy says no overlay needed AND no RestBlock is active
             if (!policy.showOverlay && !restBlockService.isActive()) {
-                (0, windowManager_1.closeOverlay)();
-                (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.HIDE_OVERLAY, {});
+                safeCloseOverlay();
             }
             (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, officeFocusLockService.getState());
         });
@@ -255,8 +273,7 @@ function initialize() {
             const policy = getOverlayPolicyForState(currentPhase);
             const restBlockService = (0, restBlockService_1.getRestBlockService)();
             if (!policy.showOverlay && !restBlockService.isActive()) {
-                (0, windowManager_1.closeOverlay)();
-                (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.HIDE_OVERLAY, {});
+                safeCloseOverlay();
             }
             (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, officeFocusLockService.getState());
         });
@@ -324,14 +341,11 @@ function initialize() {
             // When Rest Block stops, resume timer and check if overlay should close
             logger_1.default.info('Main', 'Rest block stopped - resuming timer');
             (0, overlayDebug_1.logRestBlockEnd)('manual', 'user stopped');
-            // Stop overlay sync watchdog
-            (0, overlaySync_1.getOverlaySyncService)().stop();
             timerEngine.resume();
             const currentPhase = timerEngine.getState().currentPhase;
             const policy = getOverlayPolicyForState(currentPhase);
             if (!policy.showOverlay) {
-                (0, windowManager_1.closeOverlay)();
-                (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.HIDE_OVERLAY, {});
+                safeCloseOverlay();
             }
             (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.REST_BLOCK_CHANGED, restBlockService.getState());
         });
@@ -340,14 +354,11 @@ function initialize() {
             // Rest Block timer expired - resume timer and check overlay
             logger_1.default.info('Main', 'Rest block expired - resuming timer');
             (0, overlayDebug_1.logRestBlockEnd)('expired', 'timer completed');
-            // Stop overlay sync watchdog
-            (0, overlaySync_1.getOverlaySyncService)().stop();
             timerEngine.resume();
             const currentPhase = timerEngine.getState().currentPhase;
             const policy = getOverlayPolicyForState(currentPhase);
             if (!policy.showOverlay) {
-                (0, windowManager_1.closeOverlay)();
-                (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.HIDE_OVERLAY, {});
+                safeCloseOverlay();
             }
             (0, windowManager_1.sendToAll)(types_1.IPC_CHANNELS.REST_BLOCK_CHANGED, restBlockService.getState());
         });

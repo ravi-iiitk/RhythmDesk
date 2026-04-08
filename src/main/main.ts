@@ -36,6 +36,20 @@ import { playSound } from '../core/soundService';
  * Get overlay policy for current state
  * Centralized decision engine - all overlay logic goes through here
  */
+/**
+ * Safely close the overlay AND stop the heartbeat watchdog.
+ * Every overlay-close path must use this to prevent the watchdog from
+ * detecting "missed heartbeats" on a closed overlay and recreating it.
+ */
+function safeCloseOverlay(): void {
+  const syncService = getOverlaySyncService();
+  if (syncService.getState().isOverlayActive) {
+    syncService.stop();
+  }
+  closeOverlay();
+  sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
+}
+
 function getOverlayPolicyForState(phase: PhaseType): ReturnType<typeof getOverlayPolicy> {
   const timerEngine = getTimerEngine();
   const officeFocusLockService = getOfficeFocusLockService();
@@ -210,11 +224,23 @@ function initialize(): void {
           overlaySyncService.start(
             () => sendToOverlay(OVERLAY_SYNC_CHANNELS.HEARTBEAT_REQUEST, {}),
             () => {
-              const recovered = recoverOverlayIfNeeded(newPolicy.strictMode, true);
+              // CRITICAL: Use CURRENT state, not stale closure values.
+              // Recovery can fire long after the phaseChange event (e.g., after
+              // postpone changed the phase). Using stale values would recreate
+              // an overlay for the wrong phase.
+              const currentPhase = timerEngine.getState().currentPhase;
+              const currentPolicy = getOverlayPolicyForState(currentPhase);
+              if (!currentPolicy.showOverlay) {
+                // Phase no longer needs overlay (e.g., user postponed) — just stop
+                logger.info('Main', 'Heartbeat recovery skipped — overlay no longer needed', { currentPhase });
+                overlaySyncService.stop();
+                return;
+              }
+              const recovered = recoverOverlayIfNeeded(currentPolicy.strictMode, true);
               if (recovered) {
-                sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: data.newPhase });
+                sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: currentPhase });
                 logger.warn('Main', 'Overlay recovered via heartbeat watchdog during phase', {
-                  phase: data.newPhase,
+                  phase: currentPhase,
                 });
               }
             }
@@ -226,13 +252,7 @@ function initialize(): void {
         // must close), and normal phase→work transitions.
         const overlay = getOverlayWindow();
         if (overlay && !overlay.isDestroyed()) {
-          // Stop overlay heartbeat watchdog when overlay closes
-          if (overlaySyncService.getState().isOverlayActive) {
-            overlaySyncService.stop();
-          }
-          
-          closeOverlay();
-          sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
+          safeCloseOverlay();
         }
       }
     });
@@ -247,8 +267,7 @@ function initialize(): void {
       // Don't close overlay if RestBlock is active
       const restBlockService = getRestBlockService();
       if (!restBlockService.isActive()) {
-        closeOverlay();
-        sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
+        safeCloseOverlay();
       }
     });
     
@@ -282,8 +301,7 @@ function initialize(): void {
       
       // Close overlay if policy says no overlay needed AND no RestBlock is active
       if (!policy.showOverlay && !restBlockService.isActive()) {
-        closeOverlay();
-        sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
+        safeCloseOverlay();
       }
       sendToAll(IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, officeFocusLockService.getState());
     });
@@ -296,8 +314,7 @@ function initialize(): void {
       const restBlockService = getRestBlockService();
       
       if (!policy.showOverlay && !restBlockService.isActive()) {
-        closeOverlay();
-        sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
+        safeCloseOverlay();
       }
       sendToAll(IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, officeFocusLockService.getState());
     });
@@ -379,16 +396,12 @@ function initialize(): void {
       logger.info('Main', 'Rest block stopped - resuming timer');
       logRestBlockEnd('manual', 'user stopped');
       
-      // Stop overlay sync watchdog
-      getOverlaySyncService().stop();
-      
       timerEngine.resume();
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
       
       if (!policy.showOverlay) {
-        closeOverlay();
-        sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
+        safeCloseOverlay();
       }
       sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restBlockService.getState());
     });
@@ -399,16 +412,12 @@ function initialize(): void {
       logger.info('Main', 'Rest block expired - resuming timer');
       logRestBlockEnd('expired', 'timer completed');
       
-      // Stop overlay sync watchdog
-      getOverlaySyncService().stop();
-      
       timerEngine.resume();
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
       
       if (!policy.showOverlay) {
-        closeOverlay();
-        sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
+        safeCloseOverlay();
       }
       sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restBlockService.getState());
     });

@@ -463,3 +463,44 @@
 [2] [2026-04-07T17:37:15.196Z] [INFO] [TimerEngine] Waiting for user to start next activity {"phase":"sit-to-stand-transition","prevPhase":"sit"}
 [2] [2026-04-07T17:37:15.196Z] [INFO] [OverlayDebug] [OVERLAY] event=overlay-hide reason=close requested
 [2] [2026-04-07T17:37:15.204Z] [INFO] [SessionDebug] [TIMER] event=phaseTransition fromPhase=sit toPhase=sit-to-stand-transition indexBefore=0 indexAfter=1 next=stand cumulativeWorkMs=4113s scheduleId=cf266f3b-b211-422c-a3c9-4912eee13770
+[0] [2J[3J[H11:14:04 PM - File change detected. Starting incremental compilation...
+[0] 
+[0] 
+[0] 11:14:04 PM - Found 0 errors. Watching for file changes.
+[0] [2J[3J[H11:14:20 PM - File change detected. Starting incremental compilation...
+[0] 
+[0] 
+[0] 11:14:20 PM - Found 0 errors. Watching for file changes.
+[2] [2026-04-07T17:44:32.926Z] [INFO] [TimerEngine] startNextActivity: starting queued phase {"phase":"sit-to-stand-transition"}
+[2] [2026-04-07T17:44:32.926Z] [INFO] [TimerEngine] Phase started: sit-to-stand-transition {"duration":30000,"endsAt":1775583902926}
+[2] [2026-04-07T17:44:32.927Z] [INFO] [OverlayDebug] [OVERLAY] event=overlay-show phase=requested strictMode=true
+[2] [2026-04-07T17:44:32.933Z] [INFO] [WindowManager] Overlay window created {"strictMode":true,"width":1440,"height":900}
+[2] [2026-04-07T17:44:33.094Z] [INFO] [WindowManager] Overlay renderer loaded
+[2] [2026-04-07T17:44:33.104Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-07T17:44:33.104Z] [WARN] [IPC] [OVERLAY_SYNC] resync requested by overlay renderer
+[2] [2026-04-07T17:44:33.104Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":false,"currentPhase":"sit-to-stand-transition","remainingMs":0}
+[2] [2026-04-07T17:44:33.104Z] [INFO] [IPC] [OVERLAY_SYNC] resync data sent to overlay {"hasTick":true,"restBlockActive":false,"currentPhase":"sit-to-stand-transition","remainingMs":0}
+[2] [2026-04-07T17:45:02.931Z] [INFO] [TimerEngine] advanceFlowBasedPhase - advancing {"prevPhase":"sit-to-stand-transition","fromIndex":1,"toIndex":2,"newPhase":"stand"}
+[2] [2026-04-07T17:45:02.931Z] [INFO] [TimerEngine] Waiting for user to start next activity {"phase":"stand","prevPhase":"sit-to-stand-transition"}
+[2] [2026-04-07T17:45:02.931Z] [INFO] [OverlayDebug] [OVERLAY] event=overlay-hide reason=close requested
+[2] [2026-04-07T17:45:02.938Z] [INFO] [SessionDebug] [TIMER] event=phaseTransition fromPhase=sit-to-stand-transition toPhase=stand indexBefore=1 indexAfter=2 next=stand-to-sit-transition cumulativeWorkMs=4143s scheduleId=cf266f3b-b211-422c-a3c9-4912eee13770
+[0] [2J[3J[H11:15:12 PM - File change detected. Starting incremental compilation...
+[0] 
+[0] 
+[0] 11:15:12 PM - Found 0 errors. Watching for file changes.
+[0] [2J[3J[H11:15:30 PM - File change detected. Starting incremental compilation...
+[0] 
+[0] 
+[0] 11:15:30 PM - Found 0 errors. Watching for file changes.
+[0] [2J[3J[H11:15:49 PM - File change detected. Starting incremental compilation...
+[0] 
+[0] 
+[0] 11:15:49 PM - Found 0 errors. Watching for file changes.
+[0] [2J[3J[H11:16:09 PM - File change detected. Starting incremental compilation...
+[0] 
+[0] 
+[0] 11:16:09 PM - Found 0 errors. Watching for file changes.
+[2] /home/rsk-lnx/CascadeProjects/posture-guard/node_modules/electron/dist/electron exited with signal SIGINT
+[1] npm run dev:renderer exited with code SIGINT
+[2] wait-on http://localhost:5173 && wait-on dist/main/main/main.js && env -u ELECTRON_RUN_AS_NODE electron --no-sandbox . exited with code SIGINT
+[0] npm run dev:main exited with code SIGINT
