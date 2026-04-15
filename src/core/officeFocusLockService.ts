@@ -23,7 +23,7 @@ class OfficeFocusLockService extends EventEmitter {
 
   /**
    * Start Office Focus Lock for a specified duration with a work label
-   * @param label Work label (e.g., "EPAM", "Resy", or custom)
+   * @param label Work label (e.g., "Deep Work", "Meeting", or custom)
    * @param durationMinutes Duration in minutes
    * @param isStrictMode If true, cannot stop focus mode early
    */

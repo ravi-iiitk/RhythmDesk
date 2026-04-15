@@ -156,7 +156,7 @@ class ConfigStore {
   // ===== Schedules =====
 
   getSchedules(): Schedule[] {
-    return this.store.get('schedules');
+    return this.store.get('schedules') ?? [];
   }
 
   getScheduleById(id: string): Schedule | undefined {

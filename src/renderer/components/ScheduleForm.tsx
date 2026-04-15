@@ -348,7 +348,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
           className="form-input"
           value={formData.name}
           onChange={(e) => handleChange('name', e.target.value)}
-          placeholder="e.g., EPAM Day"
+          placeholder="e.g., Weekday Work"
           required
         />
       </div>

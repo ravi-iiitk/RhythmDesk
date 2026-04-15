@@ -311,7 +311,7 @@ export interface GeneralSettings {
 // Manual mode for enforcing fullscreen overlay during work phases
 export interface OfficeFocusLockState {
   isActive: boolean;
-  label: string;                 // Work label (e.g., "EPAM", "Resy", custom)
+  label: string;                 // Work label (e.g., "Deep Work", "Client Call", custom)
   startedAt: number | null;      // timestamp when lock started
   durationMs: number;            // total duration in milliseconds
   remainingMs: number;           // remaining time
@@ -319,7 +319,7 @@ export interface OfficeFocusLockState {
 }
 
 // Preset work labels for Office Focus Lock
-export const OFFICE_FOCUS_LABELS = ['EPAM', 'Resy'] as const;
+export const OFFICE_FOCUS_LABELS = ['Deep Work', 'Meeting', 'Client Call', 'Research'] as const;
 export type OfficeFocusLabel = typeof OFFICE_FOCUS_LABELS[number] | string;
 
 // Rest Block - saved preset for manual rest/break blocks

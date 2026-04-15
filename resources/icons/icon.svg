@@ -1,8 +1,55 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <rect width="256" height="256" rx="32" fill="#1a1a2e"/>
-  <circle cx="128" cy="100" r="45" fill="#3b82f6"/>
-  <rect x="98" y="150" width="60" height="80" rx="8" fill="#3b82f6"/>
-  <rect x="78" y="160" width="20" height="50" rx="4" fill="#3b82f6"/>
-  <rect x="158" y="160" width="20" height="50" rx="4" fill="#3b82f6"/>
-  <text x="128" y="250" text-anchor="middle" fill="#22c55e" font-family="sans-serif" font-size="20" font-weight="bold">PG</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Gradient background -->
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e293b;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="deskGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2563eb;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="personGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#60a5fa;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Rounded background -->
+  <rect width="512" height="512" rx="110" fill="url(#bgGrad)"/>
+  
+  <!-- Desk surface (adjustable height desk) -->
+  <rect x="140" y="280" width="232" height="16" rx="8" fill="url(#deskGrad)"/>
+  
+  <!-- Desk legs (showing height adjustment) -->
+  <rect x="150" y="296" width="12" height="140" rx="6" fill="#1e40af"/>
+  <rect x="350" y="296" width="12" height="140" rx="6" fill="#1e40af"/>
+  
+  <!-- Height adjustment indicators (lines showing movement) -->
+  <line x1="156" y1="320" x2="156" y2="380" stroke="#22c55e" stroke-width="3" stroke-dasharray="8,8" opacity="0.6"/>
+  <line x1="356" y1="320" x2="356" y2="380" stroke="#22c55e" stroke-width="3" stroke-dasharray="8,8" opacity="0.6"/>
+  
+  <!-- Person (standing figure) -->
+  <!-- Head -->
+  <circle cx="256" cy="140" r="38" fill="url(#personGrad)"/>
+  
+  <!-- Body -->
+  <rect x="226" y="185" width="60" height="85" rx="12" fill="url(#personGrad)"/>
+  
+  <!-- Arms -->
+  <rect x="190" y="195" width="24" height="60" rx="12" fill="#60a5fa"/>
+  <rect x="298" y="195" width="24" height="60" rx="12" fill="#60a5fa"/>
+  
+  <!-- Legs (standing position) -->
+  <rect x="226" y="270" width="24" height="70" rx="12" fill="#60a5fa"/>
+  <rect x="262" y="270" width="24" height="70" rx="12" fill="#60a5fa"/>
+  
+  <!-- Rhythm/Timer indicator (circular arc showing time) -->
+  <circle cx="256" cy="256" r="200" fill="none" stroke="#22c55e" stroke-width="8" opacity="0.15"/>
+  <path d="M 256 56 A 200 200 0 0 1 406 156" fill="none" stroke="#22c55e" stroke-width="8" stroke-linecap="round" opacity="0.8"/>
+  
+  <!-- Clock/Timer accent in corner -->
+  <circle cx="400" cy="112" r="32" fill="#22c55e" opacity="0.9"/>
+  <line x1="400" y1="112" x2="400" y2="92" stroke="#0f172a" stroke-width="4" stroke-linecap="round"/>
+  <line x1="400" y1="112" x2="415" y2="120" stroke="#0f172a" stroke-width="4" stroke-linecap="round"/>
 </svg>

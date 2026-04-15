@@ -63,7 +63,8 @@ function OverlayView({ tick }: OverlayViewProps) {
   }, []);
 
   // Phase 2: Respond to heartbeat requests from main process
-  // This allows the watchdog to detect if overlay is frozen/unresponsive
+  // CRITICAL: Must be before ALL early returns — if tick is null this still needs to fire
+  // otherwise the watchdog marks the overlay stale and force-recreates it in strict mode
   useEffect(() => {
     const cleanup = window.rhythmDesk.onHeartbeatRequest(() => {
       window.rhythmDesk.sendHeartbeatResponse();
@@ -72,6 +73,7 @@ function OverlayView({ tick }: OverlayViewProps) {
   }, []);
 
   // Show nothing while waiting for first tick - prevents idle flash
+  // NOTE: heartbeat useEffect above must stay before this return
   if (!tick) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
