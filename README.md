@@ -1,19 +1,30 @@
 # RhythmDesk
 
-A strict work posture and break scheduler for Linux desktop. Designed for users with back pain / sciatica who need to enforce configurable work schedules alternating between sitting and standing work.
+> A smart posture and break reminder app for Linux that helps you maintain healthy work habits with sit/stand schedules and enforced break times.
 
-## Features
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Platform](https://img.shields.io/badge/platform-Linux-blue.svg)](https://www.linux.org/)
+[![Electron](https://img.shields.io/badge/Electron-27.3-47848F.svg)](https://www.electronjs.org/)
+
+Designed for users with back pain, sciatica, or anyone who needs to maintain healthy posture habits during long work sessions. RhythmDesk enforces configurable schedules that alternate between sitting and standing work, with automatic break reminders.
+
+## 📸 Screenshots
+
+<!-- TODO: Add screenshots here -->
+_Coming soon_
+
+## ✨ Features
 
 ### Core Features
-- **Sit/Stand Cycles**: Configurable sitting and standing work periods with transition breaks
-- **Break Management**: Short and long breaks based on cumulative active work time
-- **Strict Mode**: Fullscreen overlays that block normal interaction during breaks
-- **Postpone System**: Limited postpones per day for when you're in the middle of work
-- **System Tray**: Quick access to timer state and controls with detailed tooltip
-- **Multiple Schedules**: Create named schedules for different work contexts (e.g., "EPAM Day", "Resy Night")
-- **Sleep/Wake Recovery**: Timer survives system sleep and recovers state from timestamps
-- **Auto-Reopen Overlay**: Break overlays automatically reopen if accidentally closed
-- **Local Storage**: All data stored locally in JSON, no cloud sync
+- **Sit/Stand Cycles**: Configurable sitting and standing work periods with smooth transition breaks
+- **Break Management**: Smart short and long breaks based on cumulative active work time
+- **Strict Mode**: Fullscreen overlays that ensure you actually take breaks (not just dismiss them)
+- **Postpone System**: Limited postpones per day for when you're in the middle of critical work
+- **System Tray**: Quick access to timer state and controls with detailed real-time tooltip
+- **Multiple Schedules**: Create named schedules for different work contexts (weekdays, evenings, weekends)
+- **Sleep/Wake Recovery**: Timer survives system sleep/hibernate and recovers state from timestamps
+- **Auto-Reopen Overlay**: Break overlays automatically reopen if accidentally closed during strict mode
+- **Local Storage**: All data stored locally in JSON files - no cloud, no tracking, complete privacy
 
 ### Schedule Modes
 - **Rule-Based**: Traditional mode with sit/stand durations and break intervals
@@ -39,6 +50,53 @@ A strict work posture and break scheduler for Linux desktop. Designed for users 
 - **Per-Event Control**: Enable/disable sounds for specific events
 - **Volume Control**: Adjustable sound volume
 
+## 📥 Installation
+
+### Option 1: Download Pre-built Package (Recommended)
+
+1. Go to the [Releases](https://github.com/YOUR_USERNAME/rhythmdesk/releases) page
+2. Download the latest `.deb` file for Debian/Ubuntu or `.AppImage` for other distros
+
+**For Debian/Ubuntu:**
+```bash
+sudo dpkg -i RhythmDesk-0.1.0-amd64.deb
+```
+
+**For AppImage:**
+```bash
+chmod +x RhythmDesk-0.1.0-x86_64.AppImage
+./RhythmDesk-0.1.0-x86_64.AppImage
+```
+
+**Note:** AppImage requires FUSE. Install it if needed:
+```bash
+sudo apt install libfuse2  # Debian/Ubuntu
+```
+
+### Option 2: Build from Source
+
+See the [Development](#-development) section below.
+
+## 🚀 Quick Start
+
+1. **Launch the app** from your application menu or run `rhythmdesk` in terminal
+2. **Create your first schedule:**
+   - Click "Schedules" in the sidebar
+   - Click "+ Create Schedule"
+   - Choose "Rule-Based" for simple setup or "Flow-Based" for custom sequences
+   - Set your sit/stand durations and break intervals
+   - Enable the schedule
+3. **The timer starts automatically** when a schedule is active during its time window
+4. **Access controls** from the system tray icon (right-click for menu)
+
+### Example Schedules
+
+The app includes two example schedules on first launch:
+- **Weekday Work (Example)**: Rule-based schedule for typical 9-5 work (disabled by default)
+- **Focus Session (Example)**: Flow-based schedule with custom step sequence (disabled by default)
+
+Feel free to edit or delete these and create your own!
+
 ## Technical Stack
 
 - **Electron** - Desktop application framework
@@ -46,32 +104,50 @@ A strict work posture and break scheduler for Linux desktop. Designed for users 
 - **TypeScript** - Type-safe JavaScript
 - **Vite** - Build tool and dev server
 
-## Development
+## 🛠️ Development
 
 ### Prerequisites
 
-- Node.js 18+
-- npm or yarn
+- Node.js 18+ and npm
+- Linux development environment
 
-### Install Dependencies
+### Setup
 
+1. **Clone the repository:**
+```bash
+git clone https://github.com/YOUR_USERNAME/rhythmdesk.git
+cd rhythmdesk
+```
+
+2. **Install dependencies:**
 ```bash
 npm install
 ```
 
-### Run in Development
-
+3. **Run in development mode:**
 ```bash
-npm run electron:dev
+npm run dev
 ```
 
-### Build for Production
+This starts the Electron app with hot-reload for both main and renderer processes.
+
+### Build Commands
 
 ```bash
-npm run electron:build
+# Build for production (AppImage + deb)
+npm run dist:linux
+
+# Build only AppImage
+npm run dist:appimage
+
+# Build only Debian package
+npm run dist:deb
+
+# Type checking
+npm run typecheck
 ```
 
-This will create AppImage and deb packages in the `release/` directory.
+Built packages are output to the `release/` directory.
 
 ## Architecture
 
@@ -185,7 +261,7 @@ npm run dist:linux
 
 Output files are placed in `release/` directory.
 
-## Logging
+## 📝 Logging & Debugging
 
 In development, logs are output to console. In production, logs are written to:
 
@@ -193,8 +269,44 @@ In development, logs are output to console. In production, logs are written to:
 ~/.config/rhythmdesk/logs/app.log
 ```
 
-Logs include schedule activation, phase transitions, break triggers, postpone actions, and errors.
+Logs include:
+- Schedule activation and deactivation
+- Phase transitions (sit → stand, breaks, etc.)
+- Break triggers and postpone actions
+- System sleep/wake recovery
+- Errors and warnings
 
-## License
+**View logs in real-time:**
+```bash
+tail -f ~/.config/rhythmdesk/logs/app.log
+```
 
-MIT
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Built with [Electron](https://www.electronjs.org/)
+- UI powered by [React](https://reactjs.org/)
+- Icons from system theme
+
+## 💬 Support
+
+If you encounter any issues or have questions:
+- Open an [issue](https://github.com/YOUR_USERNAME/rhythmdesk/issues)
+- Check existing issues for solutions
+
+---
+
+**Made with ❤️ for healthier work habits**
