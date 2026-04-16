@@ -4,6 +4,7 @@ import { resolve } from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  base: './', // Required for Electron file:// protocol - use relative asset paths
   resolve: {
     alias: {
       '@shared': resolve(__dirname, 'src/shared'),

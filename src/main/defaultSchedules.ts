@@ -9,23 +9,27 @@ import configService from '../core/configService';
 
 /**
  * Create default sample schedules
+ * One rule-based example and one flow-based example
  */
 export function createDefaultSchedules(): void {
-  const epamDay: Schedule = {
+  // Example 1: Rule-based schedule for typical work day
+  const weekdayWork: Schedule = {
     id: uuidv4(),
-    name: 'EPAM Day',
-    enabled: true,
+    name: 'Weekday Work (Example)',
+    enabled: false, // Disabled by default so users can customize first
     activeDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
-    startTime: '08:00',
-    endTime: '16:00',
+    startTime: '09:00',
+    endTime: '17:00',
     priority: 1,
-    sitMinutes: 12,
-    standMinutes: 8,
+    mode: 'rule-based',
+    sitMinutes: 25,
+    standMinutes: 10,
     transitions: {
       sitToStand: {
         durationSeconds: 60,
         strictModeEnabled: true,
         allowPostpone: true,
+        allowPause: true,
         postponeOptionsMinutes: [2, 5, 10],
         maxPostponesPerDay: 4,
       },
@@ -33,6 +37,7 @@ export function createDefaultSchedules(): void {
         durationSeconds: 60,
         strictModeEnabled: true,
         allowPostpone: true,
+        allowPause: true,
         postponeOptionsMinutes: [2, 5, 10],
         maxPostponesPerDay: 4,
       },
@@ -41,38 +46,49 @@ export function createDefaultSchedules(): void {
       enabled: true,
       everyMinutes: 60,
       durationMinutes: 5,
-      strictModeEnabled: true,
+      strictModeEnabled: false,
       allowPostpone: true,
       postponeOptionsMinutes: [2, 5, 10],
       maxPostponesPerDay: 4,
     },
     longBreak: {
       enabled: true,
-      everyMinutes: 150,
+      everyMinutes: 120,
       durationMinutes: 15,
-      strictModeEnabled: true,
+      strictModeEnabled: false,
       allowPostpone: true,
-      postponeOptionsMinutes: [2, 5, 10],
+      postponeOptionsMinutes: [5, 10, 15],
       maxPostponesPerDay: 2,
     },
     createdAt: Date.now(),
   };
 
-  const resyNight: Schedule = {
+  // Example 2: Flow-based schedule for focused work sessions
+  const focusSession: Schedule = {
     id: uuidv4(),
-    name: 'Resy Night',
-    enabled: true,
-    activeDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat'],
-    startTime: '20:00',
-    endTime: '00:00',
+    name: 'Focus Session (Example)',
+    enabled: false, // Disabled by default
+    activeDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+    startTime: '10:00',
+    endTime: '18:00',
     priority: 0,
-    sitMinutes: 10,
-    standMinutes: 10,
+    mode: 'flow-based',
+    // Flow-based: explicit step sequence (sitMinutes/standMinutes not used but required by type)
+    sitMinutes: 25,
+    standMinutes: 15,
+    flowSteps: [
+      { id: uuidv4(), type: 'sit', durationSeconds: 25 * 60 },
+      { id: uuidv4(), type: 'sit-to-stand-transition', durationSeconds: 60 },
+      { id: uuidv4(), type: 'stand', durationSeconds: 15 * 60 },
+      { id: uuidv4(), type: 'stand-to-sit-transition', durationSeconds: 60 },
+      { id: uuidv4(), type: 'short-break', durationSeconds: 5 * 60 },
+    ],
     transitions: {
       sitToStand: {
         durationSeconds: 60,
         strictModeEnabled: true,
         allowPostpone: true,
+        allowPause: true,
         postponeOptionsMinutes: [2, 5, 10],
         maxPostponesPerDay: 3,
       },
@@ -80,31 +96,32 @@ export function createDefaultSchedules(): void {
         durationSeconds: 60,
         strictModeEnabled: true,
         allowPostpone: true,
+        allowPause: true,
         postponeOptionsMinutes: [2, 5, 10],
         maxPostponesPerDay: 3,
       },
     },
     shortBreak: {
-      enabled: true,
-      everyMinutes: 50,
+      enabled: false, // Flow-based uses flowSteps for breaks
+      everyMinutes: 60,
       durationMinutes: 5,
-      strictModeEnabled: true,
+      strictModeEnabled: false,
       allowPostpone: true,
       postponeOptionsMinutes: [2, 5, 10],
       maxPostponesPerDay: 3,
     },
     longBreak: {
-      enabled: true,
+      enabled: false,
       everyMinutes: 120,
-      durationMinutes: 12,
-      strictModeEnabled: true,
+      durationMinutes: 15,
+      strictModeEnabled: false,
       allowPostpone: true,
-      postponeOptionsMinutes: [2, 5, 10],
+      postponeOptionsMinutes: [5, 10, 15],
       maxPostponesPerDay: 2,
     },
     createdAt: Date.now() + 1,
   };
 
-  configService.saveSchedule(epamDay);
-  configService.saveSchedule(resyNight);
+  configService.saveSchedule(weekdayWork);
+  configService.saveSchedule(focusSession);
 }

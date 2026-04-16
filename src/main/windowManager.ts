@@ -199,52 +199,55 @@ const MAIN_WINDOW_MAX_MISSED_HEALTH_CHECKS = 2; // Reload after 2 missed checks
  * Detects zombie states where renderer is alive but not functional
  */
 export function startMainWindowHealthCheck(): void {
-  // Check every 30 seconds when window is visible
-  setInterval(() => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (!mainWindow.isVisible()) return; // Only check visible windows
-    
-    // Don't send another check if one is already pending
-    if (mainWindowHealthCheckPending) {
-      mainWindowMissedHealthChecks++;
-      logger.warn('WindowManager', 'Main window health check still pending', {
-        missedChecks: mainWindowMissedHealthChecks,
-      });
-      
-      if (mainWindowMissedHealthChecks >= MAIN_WINDOW_MAX_MISSED_HEALTH_CHECKS) {
-        logger.error('WindowManager', 'Main window failed health checks - reloading');
-        mainWindowHealthCheckPending = false;
-        mainWindowMissedHealthChecks = 0;
-        if (mainWindowHealthCheckTimeout) {
-          clearTimeout(mainWindowHealthCheckTimeout);
-          mainWindowHealthCheckTimeout = null;
-        }
-        reloadMainWindow('health-check-failed');
-      }
-      return;
-    }
-    
-    // Send health check request
-    mainWindowHealthCheckPending = true;
-    mainWindow.webContents.send('main-window:health-check');
-    
-    // Set timeout for response
-    mainWindowHealthCheckTimeout = setTimeout(() => {
+  // Delay first check cycle to give renderer time to load and register IPC listener.
+  // Without this grace period the first 30s check fires while React is still mounting.
+  setTimeout(() => {
+    setInterval(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (!mainWindow.isVisible()) return; // Only check visible windows
+
+      // Don't send another check if one is already pending
       if (mainWindowHealthCheckPending) {
         mainWindowMissedHealthChecks++;
-        logger.warn('WindowManager', 'Main window health check timeout', {
+        logger.warn('WindowManager', 'Main window health check still pending', {
           missedChecks: mainWindowMissedHealthChecks,
         });
-        mainWindowHealthCheckPending = false;
-        
+
         if (mainWindowMissedHealthChecks >= MAIN_WINDOW_MAX_MISSED_HEALTH_CHECKS) {
           logger.error('WindowManager', 'Main window failed health checks - reloading');
+          mainWindowHealthCheckPending = false;
           mainWindowMissedHealthChecks = 0;
-          reloadMainWindow('health-check-timeout');
+          if (mainWindowHealthCheckTimeout) {
+            clearTimeout(mainWindowHealthCheckTimeout);
+            mainWindowHealthCheckTimeout = null;
+          }
+          reloadMainWindow('health-check-failed');
         }
+        return;
       }
-    }, MAIN_WINDOW_HEALTH_CHECK_TIMEOUT_MS);
-  }, 30000); // Check every 30 seconds
+
+      // Send health check request
+      mainWindowHealthCheckPending = true;
+      mainWindow.webContents.send('main-window:health-check');
+
+      // Set timeout for response
+      mainWindowHealthCheckTimeout = setTimeout(() => {
+        if (mainWindowHealthCheckPending) {
+          mainWindowMissedHealthChecks++;
+          logger.warn('WindowManager', 'Main window health check timeout', {
+            missedChecks: mainWindowMissedHealthChecks,
+          });
+          mainWindowHealthCheckPending = false;
+
+          if (mainWindowMissedHealthChecks >= MAIN_WINDOW_MAX_MISSED_HEALTH_CHECKS) {
+            logger.error('WindowManager', 'Main window failed health checks - reloading');
+            mainWindowMissedHealthChecks = 0;
+            reloadMainWindow('health-check-timeout');
+          }
+        }
+      }, MAIN_WINDOW_HEALTH_CHECK_TIMEOUT_MS);
+    }, 30000); // Check every 30 seconds
+  }, 15000); // 15-second startup grace period
 }
 
 /**

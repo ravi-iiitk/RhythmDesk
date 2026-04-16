@@ -1,1 +1,42 @@
-node_modules
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+release/
+*.asar
+
+# Logs
+*.log
+logs/
+*_log*.txt
+execution_log*.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Generated files
+generate-icons.js
+
+# Electron cache
+.electron/
+
+# Coverage
+coverage/
+
+# Temporary files
+*.tmp
+*.temp

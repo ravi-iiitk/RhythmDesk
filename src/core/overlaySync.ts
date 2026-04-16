@@ -26,6 +26,7 @@ import logger from './logger';
 const HEARTBEAT_INTERVAL_MS = 5000;  // Send heartbeat every 5 seconds
 const HEARTBEAT_TIMEOUT_MS = 10000;  // Consider stale after 10 seconds no response
 const MAX_MISSED_HEARTBEATS = 2;     // Recover after 2 missed heartbeats
+const STARTUP_GRACE_MS = 8000;       // Wait before first heartbeat check (overlay load time)
 
 // ============================================================
 // TYPES
@@ -64,6 +65,7 @@ class OverlaySyncService extends EventEmitter {
   };
   
   private heartbeatInterval: NodeJS.Timeout | null = null;
+  private startupGraceTimeout: NodeJS.Timeout | null = null;
   private sendHeartbeatFn: (() => void) | null = null;
   private recoverOverlayFn: (() => void) | null = null;
 
@@ -83,26 +85,47 @@ class OverlaySyncService extends EventEmitter {
     this.state.missedHeartbeats = 0;
     this.state.isStale = false;
     
-    // Clear any existing interval
+    // Clear any existing interval and grace timer
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+    if (this.startupGraceTimeout) {
+      clearTimeout(this.startupGraceTimeout);
+      this.startupGraceTimeout = null;
     }
     
-    // Start heartbeat loop
-    this.heartbeatInterval = setInterval(() => {
-      this.checkHeartbeat();
-    }, HEARTBEAT_INTERVAL_MS);
+    // Delay starting heartbeat loop to give overlay renderer time to load and
+    // register its IPC listener. Without this grace period, the first heartbeat
+    // fires before React mounts, causing immediate force-recreate in kiosk mode.
+    this.startupGraceTimeout = setTimeout(() => {
+      this.startupGraceTimeout = null;
+      if (!this.state.isOverlayActive) return; // Overlay already closed
+      
+      // Reset baseline so grace period doesn't count as missed
+      this.state.lastHeartbeatReceived = Date.now();
+      this.state.missedHeartbeats = 0;
+      
+      // Start heartbeat loop
+      this.heartbeatInterval = setInterval(() => {
+        this.checkHeartbeat();
+      }, HEARTBEAT_INTERVAL_MS);
+      
+      // Send first heartbeat
+      this.sendHeartbeat();
+    }, STARTUP_GRACE_MS);
     
-    // Send initial heartbeat
-    this.sendHeartbeat();
-    
-    this.logEvent('heartbeat-sent', 'Overlay sync started');
+    this.logEvent('heartbeat-sent', 'Overlay sync started (grace period active)');
   }
 
   /**
    * Stop the heartbeat watchdog
    */
   stop(): void {
+    if (this.startupGraceTimeout) {
+      clearTimeout(this.startupGraceTimeout);
+      this.startupGraceTimeout = null;
+    }
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;

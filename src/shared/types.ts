@@ -14,6 +14,7 @@ export type PhaseType =
   | 'stand-to-sit-transition'
   | 'short-break'
   | 'long-break'
+  | 'custom'
   | 'idle';
 
 // Break/transition types for per-break configuration
@@ -28,7 +29,8 @@ export type FlowStepType =
   | 'stand'
   | 'sit-to-stand-transition'
   | 'stand-to-sit-transition'
-  | 'short-break';
+  | 'short-break'
+  | 'custom';
 
 // A single step in a flow-based schedule
 export interface FlowStep {
@@ -36,6 +38,13 @@ export interface FlowStep {
   type: FlowStepType;
   durationSeconds: number;
   label?: string; // Optional custom label for this step
+  // Custom step overlay behavior (used when type === 'custom', optional override for built-in types)
+  showOverlay?: boolean;       // If true, shows fullscreen overlay during this step (like transitions)
+  allowPause?: boolean;        // If true, shows pause button on overlay to pause countdown
+  color?: string;              // Custom color for overlay UI (hex, e.g. '#f59e0b')
+  message?: string;            // Custom message shown on overlay screen
+  strictMode?: boolean;        // If true, user cannot dismiss overlay early
+  countsAsWork?: boolean;      // If true, counts toward cumulative work time (default: false for custom)
 }
 
 /**
@@ -44,9 +53,14 @@ export interface FlowStep {
  */
 export function computeFlowConfigHash(flowSteps: FlowStep[] | undefined): string {
   if (!flowSteps || flowSteps.length === 0) return '';
-  // Create a string representation of the flow order and durations
-  // This captures: step order, types, and durations
-  return flowSteps.map(s => `${s.type}:${s.durationSeconds}`).join('|');
+  // Create a string representation of the flow order, durations, and custom step flags
+  return flowSteps.map(s => {
+    let hash = `${s.type}:${s.durationSeconds}`;
+    if (s.type === 'custom') {
+      hash += `:o${s.showOverlay ? 1 : 0}:p${s.allowPause ? 1 : 0}:s${s.strictMode ? 1 : 0}:w${s.countsAsWork ? 1 : 0}`;
+    }
+    return hash;
+  }).join('|');
 }
 
 // Timer engine events
@@ -69,6 +83,7 @@ export interface TransitionConfig {
   durationSeconds: number;
   strictModeEnabled: boolean;
   allowPostpone: boolean;
+  allowPause: boolean;             // If true, shows pause button on transition overlay
   postponeOptionsMinutes: number[];
   maxPostponesPerDay: number;
 }
@@ -296,7 +311,7 @@ export interface GeneralSettings {
 // Manual mode for enforcing fullscreen overlay during work phases
 export interface OfficeFocusLockState {
   isActive: boolean;
-  label: string;                 // Work label (e.g., "EPAM", "Resy", custom)
+  label: string;                 // Work label (e.g., "Deep Work", "Client Call", custom)
   startedAt: number | null;      // timestamp when lock started
   durationMs: number;            // total duration in milliseconds
   remainingMs: number;           // remaining time
@@ -304,7 +319,7 @@ export interface OfficeFocusLockState {
 }
 
 // Preset work labels for Office Focus Lock
-export const OFFICE_FOCUS_LABELS = ['EPAM', 'Resy'] as const;
+export const OFFICE_FOCUS_LABELS = ['Deep Work', 'Meeting', 'Client Call', 'Research'] as const;
 export type OfficeFocusLabel = typeof OFFICE_FOCUS_LABELS[number] | string;
 
 // Rest Block - saved preset for manual rest/break blocks
@@ -429,6 +444,12 @@ export interface TimerTick {
   breakProgress: BreakProgress;
   // Configured durations from active schedule
   configuredDurations: ConfiguredDurations;
+  // Custom flow step metadata (populated when current step has custom properties)
+  currentStepShowOverlay?: boolean;   // Whether current step forces overlay
+  currentStepAllowPause?: boolean;    // Whether pause button should show on overlay
+  currentStepColor?: string;          // Custom color for overlay UI
+  currentStepMessage?: string;        // Custom message for overlay
+  currentStepStrictMode?: boolean;    // Custom strict mode override
   // Phase 1.5: Debug snapshot for dev mode dashboard panel
   debugSnapshot?: {
     currentFlowStepIndex: number | undefined;
@@ -498,6 +519,7 @@ export const DEFAULT_TRANSITION_CONFIG: TransitionConfig = {
   durationSeconds: 60,
   strictModeEnabled: true,
   allowPostpone: true,
+  allowPause: true,
   postponeOptionsMinutes: [2, 5, 10],
   maxPostponesPerDay: 4,
 };

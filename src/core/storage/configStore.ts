@@ -69,6 +69,7 @@ function migrateSchedule(schedule: Partial<Schedule> & { id: string; name: strin
         durationSeconds: schedule.sitToStandTransitionSeconds ?? DEFAULT_TRANSITION_CONFIG.durationSeconds,
         strictModeEnabled: legacyStrictMode,
         allowPostpone: legacyAllowPostpone,
+        allowPause: true,
         postponeOptionsMinutes: [...legacyPostponeOptions],
         maxPostponesPerDay: legacyMaxPostpones,
       },
@@ -76,6 +77,7 @@ function migrateSchedule(schedule: Partial<Schedule> & { id: string; name: strin
         durationSeconds: schedule.standToSitTransitionSeconds ?? DEFAULT_TRANSITION_CONFIG.durationSeconds,
         strictModeEnabled: legacyStrictMode,
         allowPostpone: legacyAllowPostpone,
+        allowPause: true,
         postponeOptionsMinutes: [...legacyPostponeOptions],
         maxPostponesPerDay: legacyMaxPostpones,
       },
@@ -129,10 +131,52 @@ class ConfigStore {
       },
     });
 
+    // PERMANENT FIX: Ensure all required keys exist with defaults
+    // electron-store only applies defaults to NEW stores, not existing ones with missing keys
+    // This guarantees the store is always in a valid state
+    this.ensureRequiredKeysExist();
+
     logger.info('ConfigStore', 'Initialized', {
       path: this.store.path,
       schemaVersion: this.store.get('schemaVersion'),
     });
+  }
+
+  /**
+   * Ensure all required keys exist in the store with proper defaults.
+   * This fixes the issue where existing stores may be missing keys that were
+   * added in later versions, causing undefined errors at runtime.
+   */
+  private ensureRequiredKeysExist(): void {
+    let modified = false;
+
+    // Check and set schedules
+    if (this.store.get('schedules') === undefined) {
+      this.store.set('schedules', []);
+      modified = true;
+    }
+
+    // Check and set generalSettings
+    if (this.store.get('generalSettings') === undefined) {
+      this.store.set('generalSettings', { ...DEFAULT_GENERAL_SETTINGS });
+      modified = true;
+    }
+
+    // Check and set restBlockPresets
+    if (this.store.get('restBlockPresets') === undefined) {
+      this.store.set('restBlockPresets', [...DEFAULT_REST_BLOCK_PRESETS]);
+      modified = true;
+    }
+
+    // Check and set schemaVersion
+    if (this.store.get('schemaVersion') === undefined) {
+      this.store.set('schemaVersion', CURRENT_SCHEMA_VERSION);
+      modified = true;
+    }
+
+    if (modified) {
+      logger.info('ConfigStore', 'Added missing required keys to existing store');
+    }
   }
 
   static getInstance(): ConfigStore {
@@ -154,7 +198,7 @@ class ConfigStore {
   // ===== Schedules =====
 
   getSchedules(): Schedule[] {
-    return this.store.get('schedules');
+    return this.store.get('schedules') ?? [];
   }
 
   getScheduleById(id: string): Schedule | undefined {
@@ -196,7 +240,7 @@ class ConfigStore {
   // ===== General Settings =====
 
   getGeneralSettings(): GeneralSettings {
-    return this.store.get('generalSettings');
+    return this.store.get('generalSettings') ?? { ...DEFAULT_GENERAL_SETTINGS };
   }
 
   saveGeneralSettings(settings: GeneralSettings): void {
@@ -207,7 +251,7 @@ class ConfigStore {
   // ===== Rest Block Presets =====
 
   getRestBlockPresets(): RestBlockPreset[] {
-    return this.store.get('restBlockPresets');
+    return this.store.get('restBlockPresets') ?? [...DEFAULT_REST_BLOCK_PRESETS];
   }
 
   saveRestBlockPreset(preset: RestBlockPreset): void {

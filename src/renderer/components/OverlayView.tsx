@@ -46,6 +46,7 @@ const PHASE_MESSAGES: Record<PhaseType, string> = {
   'stand-to-sit-transition': 'Sit down and adjust your desk',
   'short-break': 'Take a short break - stretch and rest your eyes',
   'long-break': 'Take a longer break - walk around and hydrate',
+  'custom': 'Custom activity',
   'idle': 'No active schedule',
 };
 
@@ -62,7 +63,8 @@ function OverlayView({ tick }: OverlayViewProps) {
   }, []);
 
   // Phase 2: Respond to heartbeat requests from main process
-  // This allows the watchdog to detect if overlay is frozen/unresponsive
+  // CRITICAL: Must be before ALL early returns — if tick is null this still needs to fire
+  // otherwise the watchdog marks the overlay stale and force-recreates it in strict mode
   useEffect(() => {
     const cleanup = window.rhythmDesk.onHeartbeatRequest(() => {
       window.rhythmDesk.sendHeartbeatResponse();
@@ -71,6 +73,7 @@ function OverlayView({ tick }: OverlayViewProps) {
   }, []);
 
   // Show nothing while waiting for first tick - prevents idle flash
+  // NOTE: heartbeat useEffect above must stay before this return
   if (!tick) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
@@ -80,11 +83,15 @@ function OverlayView({ tick }: OverlayViewProps) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
 
-  const phaseColor = PHASE_COLORS[tick.currentPhase] || '#6b7280';
+  // Use custom step color/message if provided (from FlowStep flags), otherwise use defaults
+  const phaseColor = tick.currentStepColor || PHASE_COLORS[tick.currentPhase] || '#6b7280';
   // Use custom labels from tick (includes user-defined flow step labels)
   const phaseName = tick.currentPhaseLabel || PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
   const nextPhaseName = tick.nextPhaseLabel || PHASE_DISPLAY_NAMES[tick.nextPhase] || tick.nextPhase;
-  const message = PHASE_MESSAGES[tick.currentPhase] || '';
+  const message = tick.currentStepMessage || PHASE_MESSAGES[tick.currentPhase] || '';
+  
+  // Pause support (transitions + custom steps with allowPause enabled)
+  const allowPause = tick.currentStepAllowPause ?? false;
 
   const handleComplete = () => window.rhythmDesk.completePhase();
   const handlePostpone = (minutes: number) => window.rhythmDesk.postpone(minutes);
@@ -92,6 +99,8 @@ function OverlayView({ tick }: OverlayViewProps) {
   const handleCloseOverlay = () => window.rhythmDesk.closeOverlay();
   const handleStopOfficeFocusLock = () => window.rhythmDesk.stopOfficeFocusLock();
   const handleStopRestBlock = () => window.rhythmDesk.stopRestBlock();
+  const handlePause = () => window.rhythmDesk.pause();
+  const handleResume = () => window.rhythmDesk.resume();
 
   // Check if rest block is active - takes priority over normal phases
   const isRestBlockActive = tick.restBlock.isActive;
@@ -102,7 +111,7 @@ function OverlayView({ tick }: OverlayViewProps) {
     'stand-to-sit-transition',
     'short-break',
     'long-break',
-  ].includes(tick.currentPhase);
+  ].includes(tick.currentPhase) || (tick.currentPhase === 'custom' && tick.currentStepShowOverlay);
   
   const isWorkPhase = tick.currentPhase === 'sit' || tick.currentPhase === 'stand';
   const isActiveBreakPhase = tick.currentPhase === 'short-break' || tick.currentPhase === 'long-break';
@@ -275,6 +284,26 @@ function OverlayView({ tick }: OverlayViewProps) {
           {showSkipButton && (
             <button className="btn btn-secondary" onClick={handleSkip}>
               Skip
+            </button>
+          )}
+
+          {allowPause && !tick.isPaused && (
+            <button className="btn btn-secondary" onClick={handlePause} style={{
+              backgroundColor: 'rgba(251, 191, 36, 0.15)',
+              borderColor: 'rgba(251, 191, 36, 0.3)',
+              color: '#fbbf24',
+            }}>
+              ⏸ Pause
+            </button>
+          )}
+
+          {allowPause && tick.isPaused && (
+            <button className="btn btn-success" onClick={handleResume} style={{
+              backgroundColor: 'rgba(34, 197, 94, 0.2)',
+              borderColor: 'rgba(34, 197, 94, 0.3)',
+              color: '#22c55e',
+            }}>
+              ▶ Resume
             </button>
           )}
 

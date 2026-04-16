@@ -510,17 +510,17 @@ function buildStaticTrayMenu(): Electron.Menu {
     enabled: !focusLockActive,
     submenu: [
       {
-        label: 'EPAM',
+        label: 'Deep Work',
         submenu: OFFICE_FOCUS_LOCK_DURATIONS.map((minutes) => ({
           label: `${minutes} min`,
-          click: () => officeFocusLockService.start('EPAM', minutes),
+          click: () => officeFocusLockService.start('Deep Work', minutes),
         })),
       },
       {
-        label: 'Resy',
+        label: 'Meeting',
         submenu: OFFICE_FOCUS_LOCK_DURATIONS.map((minutes) => ({
           label: `${minutes} min`,
-          click: () => officeFocusLockService.start('Resy', minutes),
+          click: () => officeFocusLockService.start('Meeting', minutes),
         })),
       },
     ],

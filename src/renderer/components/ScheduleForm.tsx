@@ -21,6 +21,7 @@ const FLOW_STEP_TYPES: FlowStepType[] = [
   'sit-to-stand-transition',
   'stand-to-sit-transition',
   'short-break',
+  'custom',
 ];
 
 interface ScheduleFormProps {
@@ -41,6 +42,9 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>('rule-based');
   const [flowSteps, setFlowSteps] = useState<FlowStep[]>(getDefaultFlowSteps());
   const [flowValidationErrors, setFlowValidationErrors] = useState<string[]>([]);
+  
+  // Transition pause toggle (shared for both sit-to-stand and stand-to-sit)
+  const [transitionAllowPause, setTransitionAllowPause] = useState<boolean>(true);
   
   // Drag and drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -85,6 +89,9 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         transitionsCountAsCumulativeWork: rest.transitionsCountAsCumulativeWork ?? true,
         shortBreaksCountAsCumulativeWork: rest.shortBreaksCountAsCumulativeWork ?? true,
       });
+      
+      // Load transition allowPause from nested config
+      setTransitionAllowPause(schedule.transitions?.sitToStand?.allowPause ?? true);
       
       // Load schedule mode and flow steps
       setScheduleMode(rest.mode ?? 'rule-based');
@@ -223,6 +230,12 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
     setFlowSteps(newSteps);
   };
 
+  const handleCustomStepPropChange = (index: number, prop: keyof FlowStep, value: unknown) => {
+    const newSteps = [...flowSteps];
+    newSteps[index] = { ...newSteps[index], [prop]: value };
+    setFlowSteps(newSteps);
+  };
+
   // Convert seconds to h:m:s components
   const secondsToHMS = (totalSeconds: number): { h: number; m: number; s: number } => {
     const h = Math.floor(totalSeconds / 3600);
@@ -278,6 +291,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
           durationSeconds: formData.sitToStandTransitionSeconds ?? 60,
           strictModeEnabled: formData.strictModeEnabled ?? true,
           allowPostpone: formData.allowPostpone ?? true,
+          allowPause: transitionAllowPause,
           postponeOptionsMinutes: formData.postponeOptionsMinutes ?? [2, 5, 10],
           maxPostponesPerDay: formData.maxPostponesPerDay ?? 3,
         },
@@ -285,6 +299,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
           durationSeconds: formData.standToSitTransitionSeconds ?? 60,
           strictModeEnabled: formData.strictModeEnabled ?? true,
           allowPostpone: formData.allowPostpone ?? true,
+          allowPause: transitionAllowPause,
           postponeOptionsMinutes: formData.postponeOptionsMinutes ?? [2, 5, 10],
           maxPostponesPerDay: formData.maxPostponesPerDay ?? 3,
         },
@@ -333,7 +348,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
           className="form-input"
           value={formData.name}
           onChange={(e) => handleChange('name', e.target.value)}
-          placeholder="e.g., EPAM Day"
+          placeholder="e.g., Weekday Work"
           required
         />
       </div>
@@ -423,8 +438,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
           )}
           <div className="flow-steps" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {flowSteps.map((step, index) => (
+              <React.Fragment key={step.id}>
               <div 
-                key={step.id} 
                 className="flow-step"
                 draggable
                 onDragStart={(e) => handleDragStart(e, index)}
@@ -461,8 +476,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
                 <span style={{ width: '1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                   {index + 1}.
                 </span>
-                <span style={{ minWidth: '8rem', fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  {getFlowStepDisplayName(step.type)}
+                <span style={{ minWidth: '8rem', fontWeight: 500, color: step.type === 'custom' ? (step.color || '#14b8a6') : 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  {getFlowStepDisplayName(step.type, step.label)}
                 </span>
                 <input
                   type="text"
@@ -523,6 +538,73 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
                   ✕
                 </button>
               </div>
+              {/* Custom step configuration panel */}
+              {step.type === 'custom' && (
+                <div style={{
+                  marginLeft: '3rem',
+                  padding: '0.5rem 0.75rem',
+                  background: 'rgba(20, 184, 166, 0.05)',
+                  borderRadius: '0.375rem',
+                  border: '1px solid rgba(20, 184, 166, 0.15)',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '0.75rem',
+                  alignItems: 'center',
+                  fontSize: '0.8rem',
+                }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={step.showOverlay ?? true}
+                      onChange={(e) => handleCustomStepPropChange(index, 'showOverlay', e.target.checked)}
+                    />
+                    Show Overlay
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={step.allowPause ?? false}
+                      onChange={(e) => handleCustomStepPropChange(index, 'allowPause', e.target.checked)}
+                    />
+                    Allow Pause
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={step.strictMode ?? false}
+                      onChange={(e) => handleCustomStepPropChange(index, 'strictMode', e.target.checked)}
+                    />
+                    Strict Mode
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={step.countsAsWork ?? false}
+                      onChange={(e) => handleCustomStepPropChange(index, 'countsAsWork', e.target.checked)}
+                    />
+                    Counts as Work
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    Color:
+                    <input
+                      type="color"
+                      value={step.color || '#14b8a6'}
+                      onChange={(e) => handleCustomStepPropChange(index, 'color', e.target.value)}
+                      style={{ width: '2rem', height: '1.5rem', padding: 0, border: 'none', cursor: 'pointer' }}
+                    />
+                  </label>
+                  <input
+                    type="text"
+                    value={step.message || ''}
+                    onChange={(e) => handleCustomStepPropChange(index, 'message', e.target.value || undefined)}
+                    placeholder="Overlay message (optional)"
+                    style={{ flex: 1, minWidth: '10rem', padding: '0.3rem 0.5rem', fontSize: '0.8rem' }}
+                    className="form-input"
+                    maxLength={100}
+                  />
+                </div>
+              )}
+            </React.Fragment>
             ))}
           </div>
           <div style={{ marginTop: '0.5rem' }}>
@@ -603,6 +685,21 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
                 required
               />
             </div>
+          </div>
+
+          {/* Transition Pause Toggle */}
+          <div className="form-group">
+            <label className="form-checkbox">
+              <input
+                type="checkbox"
+                checked={transitionAllowPause}
+                onChange={(e) => setTransitionAllowPause(e.target.checked)}
+              />
+              Allow Pause on Transitions
+            </label>
+            <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+              Show a pause button on the transition overlay so you can take your time adjusting your desk.
+            </p>
           </div>
 
           {/* Short Break */}
