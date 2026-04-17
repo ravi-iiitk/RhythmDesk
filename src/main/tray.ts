@@ -27,8 +27,19 @@ import { Tray, Menu, nativeImage, app } from 'electron';
 import * as path from 'path';
 import { TimerTick, OFFICE_FOCUS_LOCK_DURATIONS, PhaseType } from '../shared/types';
 import { PHASE_DISPLAY_NAMES } from '../shared/constants';
-import { formatDuration, formatDurationHuman } from '../shared/timeUtils';
+import { formatDurationHuman } from '../shared/timeUtils';
 import { showMainWindow, setQuitting } from './windowManager';
+
+/**
+ * Format milliseconds to minutes only (rounded) for tray display
+ * Shows "X min" format which doesn't look stale as quickly
+ */
+function formatMinutesOnly(ms: number): string {
+  const totalMinutes = Math.ceil(ms / 60000);
+  if (totalMinutes <= 0) return '< 1 min';
+  if (totalMinutes === 1) return '1 min';
+  return `${totalMinutes} min`;
+}
 import { getTimerEngine } from '../core/timerEngine';
 import { getOfficeFocusLockService } from '../core/officeFocusLockService';
 import { 
@@ -70,13 +81,12 @@ interface TrayMenuState {
 
 let previousMenuState: TrayMenuState | null = null;
 
-// Tooltip throttling - 5 second cadence for stability
-// Immediate update on important state changes (handled separately)
-const TOOLTIP_INTERVAL_MS = 5000;
-let lastTooltipUpdate: number = 0;
-
-// Track last phase for detecting phase changes (triggers immediate tooltip update)
+// Track last phase for detecting phase changes
 let lastPhase: PhaseType | null = null;
+
+// 30-second refresh interval for tooltip/menu - balances accuracy vs flickering
+const REFRESH_INTERVAL_MS = 30000;
+let lastRefresh: number = 0;
 
 
 // ============================================================================
@@ -123,20 +133,27 @@ export function updateTrayWithTick(tick: TimerTick): void {
     return;
   }
   
-  const now = Date.now();
-  
-  // Check for phase change - triggers immediate tooltip update
+  // Check for phase change - triggers immediate update
   const phaseChanged = lastPhase !== null && lastPhase !== tick.currentPhase;
   lastPhase = tick.currentPhase;
   
-  // Throttled tooltip update (5s cadence) OR immediate on phase change
-  if (phaseChanged || now - lastTooltipUpdate >= TOOLTIP_INTERVAL_MS) {
+  // Check for 30-second refresh interval
+  const now = Date.now();
+  const needsTimeRefresh = now - lastRefresh >= REFRESH_INTERVAL_MS;
+  
+  // Update tooltip on phase change OR every 30 seconds
+  if (phaseChanged || needsTimeRefresh) {
     updateTrayTooltip(tick);
-    lastTooltipUpdate = now;
+    lastRefresh = now;
   }
   
-  // Check if menu needs rebuild (structural change only)
-  checkAndRebuildMenuIfNeeded(tick);
+  // Rebuild menu on phase change OR every 30 seconds (for time accuracy)
+  if (phaseChanged || needsTimeRefresh) {
+    rebuildMenuWithTracking();
+  } else {
+    // Still check for structural changes (pause/resume, etc.)
+    checkAndRebuildMenuIfNeeded(tick);
+  }
 }
 
 /**
@@ -272,65 +289,83 @@ function updateTrayTooltip(tick: TimerTick): void {
   
   logTrayTooltipUpdated(tick.currentPhase, tick.phaseRemainingMs);
 
-  const lines: string[] = ['RhythmDesk'];
+  const lines: string[] = [];
   
   if (tick.scheduleName) {
-    // Schedule info
-    lines.push(`Schedule: ${tick.scheduleName}`);
-    
-    // Schedule mode (if available in tick)
-    if (tick.scheduleMode) {
-      const modeLabel = tick.scheduleMode === 'flow-based' ? 'Flow-Based' : 'Rule-Based';
-      lines.push(`Mode: ${modeLabel}`);
-    }
+    // Header with schedule name
+    lines.push(`RhythmDesk - ${tick.scheduleName}`);
     
     // Focus lock status (prominent if active)
     if (tick.officeFocusLock.isActive) {
-      const lockRemaining = formatDuration(tick.officeFocusLock.remainingMs);
-      lines.push(`🔒 Focus: ${tick.officeFocusLock.label} (${lockRemaining})`);
+      const lockRemaining = formatMinutesOnly(tick.officeFocusLock.remainingMs);
+      lines.push(`🔒 Focus Lock: ${tick.officeFocusLock.label} (${lockRemaining})`);
     }
     
-    // Current phase and remaining time (use custom label if available)
+    // Current activity with time - MOST IMPORTANT INFO (in minutes)
     const phaseName = tick.currentPhaseLabel || PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
-    const remaining = formatDuration(tick.phaseRemainingMs);
-    lines.push(`Current: ${phaseName}`);
-    lines.push(`Remaining: ${remaining}`);
+    const remaining = formatMinutesOnly(tick.phaseRemainingMs);
+    const phaseEmoji = getPhaseEmoji(tick.currentPhase);
+    lines.push(`${phaseEmoji} Now: ${phaseName} - ${remaining} left`);
     
     // Paused/postponed status
     if (tick.isPaused) {
-      lines.push('⏸ PAUSED');
+      lines.push('⏸️ PAUSED');
     } else if (tick.isPostponed) {
       lines.push('⏳ POSTPONED');
     }
     
-    // Next phase (use custom label if available)
+    // Next activity
     if (tick.nextPhase && tick.nextPhase !== 'idle') {
       const nextPhaseName = tick.nextPhaseLabel || PHASE_DISPLAY_NAMES[tick.nextPhase] || tick.nextPhase;
       const nextDuration = tick.nextPhaseDurationMs ? formatDurationHuman(tick.nextPhaseDurationMs) : '';
-      lines.push(`Next: ${nextPhaseName}${nextDuration ? ` (${nextDuration})` : ''}`);
+      const nextEmoji = getPhaseEmoji(tick.nextPhase);
+      lines.push(`${nextEmoji} Next: ${nextPhaseName}${nextDuration ? ` (${nextDuration})` : ''}`);
     }
     
-    // Then phase (use custom label if available)
+    // Then activity (what comes after next)
     if (tick.thenPhase && tick.thenPhase !== 'idle') {
       const thenPhaseName = tick.thenPhaseLabel || PHASE_DISPLAY_NAMES[tick.thenPhase] || tick.thenPhase;
       const thenDuration = tick.thenPhaseDurationMs ? formatDurationHuman(tick.thenPhaseDurationMs) : '';
-      lines.push(`Then: ${thenPhaseName}${thenDuration ? ` (${thenDuration})` : ''}`);
+      const thenEmoji = getPhaseEmoji(tick.thenPhase);
+      lines.push(`${thenEmoji} Then: ${thenPhaseName}${thenDuration ? ` (${thenDuration})` : ''}`);
     }
     
-    // Next break info
+    // Next break info (when is the next scheduled break)
     const bp = tick.breakProgress;
-    if (bp.nextBreakType) {
+    if (bp.nextBreakType && bp.nextBreakInMs > 0) {
       const nextBreakName = bp.nextBreakType === 'short-break' ? 'Short Break' : 'Long Break';
-      const nextBreakIn = formatDurationHuman(bp.nextBreakInMs);
-      lines.push(`Next Break: ${nextBreakName} in ${nextBreakIn}`);
+      const nextBreakIn = formatMinutesOnly(bp.nextBreakInMs);
+      lines.push(`☕ ${nextBreakName} in ${nextBreakIn}`);
+    }
+    
+    // Cumulative work time
+    if (tick.cumulativeWorkTimeMs > 0) {
+      const workTime = formatDurationHuman(tick.cumulativeWorkTimeMs);
+      lines.push(`📊 Work time: ${workTime}`);
     }
   } else {
     // No active schedule
+    lines.push('RhythmDesk');
     lines.push('No active schedule');
-    // Could add "Next schedule: X at HH:MM" here if we have that info
   }
 
   tray.setToolTip(lines.join('\n'));
+}
+
+/**
+ * Get emoji for phase type for visual distinction in tooltip
+ */
+function getPhaseEmoji(phase: PhaseType): string {
+  switch (phase) {
+    case 'sit': return '🪑';
+    case 'stand': return '🧍';
+    case 'sit-to-stand-transition': return '⬆️';
+    case 'stand-to-sit-transition': return '⬇️';
+    case 'short-break': return '☕';
+    case 'long-break': return '🌴';
+    case 'idle': return '💤';
+    default: return '▶️';
+  }
 }
 
 // ============================================================================
@@ -441,20 +476,53 @@ function buildStaticTrayMenu(): Electron.Menu {
 
   const menuItems: Electron.MenuItemConstructorOptions[] = [];
   
-  // ---- Status Header (static info, no countdown) ----
+  // ---- Status Header with full info (using minutes only to avoid looking stale) ----
   if (tick?.scheduleName) {
-    const phaseName = PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
-    menuItems.push({ label: `📅 ${tick.scheduleName}`, enabled: false });
-    menuItems.push({ label: `⏱️ ${phaseName}`, enabled: false });
+    const phaseName = tick.currentPhaseLabel || PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
+    const remaining = formatMinutesOnly(tick.phaseRemainingMs);
+    const phaseEmoji = getPhaseEmoji(tick.currentPhase);
     
+    // Schedule name
+    menuItems.push({ label: `📅 ${tick.scheduleName}`, enabled: false });
+    
+    // Current activity with time remaining (in minutes)
+    menuItems.push({ label: `${phaseEmoji} ${phaseName} - ${remaining} left`, enabled: false });
+    
+    // Paused/Postponed status
     if (tick.isPaused) {
       menuItems.push({ label: '⏸ PAUSED', enabled: false });
     } else if (tick.isPostponed) {
       menuItems.push({ label: '⏳ POSTPONED', enabled: false });
     }
     
+    // Next activity
+    if (tick.nextPhase && tick.nextPhase !== 'idle') {
+      const nextPhaseName = tick.nextPhaseLabel || PHASE_DISPLAY_NAMES[tick.nextPhase] || tick.nextPhase;
+      const nextDuration = tick.nextPhaseDurationMs ? formatDurationHuman(tick.nextPhaseDurationMs) : '';
+      const nextEmoji = getPhaseEmoji(tick.nextPhase);
+      menuItems.push({ label: `${nextEmoji} Next: ${nextPhaseName}${nextDuration ? ` (${nextDuration})` : ''}`, enabled: false });
+    }
+    
+    // Then activity (what comes after next)
+    if (tick.thenPhase && tick.thenPhase !== 'idle') {
+      const thenPhaseName = tick.thenPhaseLabel || PHASE_DISPLAY_NAMES[tick.thenPhase] || tick.thenPhase;
+      const thenDuration = tick.thenPhaseDurationMs ? formatDurationHuman(tick.thenPhaseDurationMs) : '';
+      const thenEmoji = getPhaseEmoji(tick.thenPhase);
+      menuItems.push({ label: `${thenEmoji} Then: ${thenPhaseName}${thenDuration ? ` (${thenDuration})` : ''}`, enabled: false });
+    }
+    
+    // Next break info
+    const bp = tick.breakProgress;
+    if (bp.nextBreakType && bp.nextBreakInMs > 0) {
+      const nextBreakName = bp.nextBreakType === 'short-break' ? 'Short Break' : 'Long Break';
+      const nextBreakIn = formatMinutesOnly(bp.nextBreakInMs);
+      menuItems.push({ label: `☕ ${nextBreakName} in ${nextBreakIn}`, enabled: false });
+    }
+    
+    // Focus lock status
     if (tick.officeFocusLock.isActive) {
-      menuItems.push({ label: `🔒 Focus: ${tick.officeFocusLock.label}`, enabled: false });
+      const lockRemaining = formatMinutesOnly(tick.officeFocusLock.remainingMs);
+      menuItems.push({ label: `🔒 Focus: ${tick.officeFocusLock.label} (${lockRemaining})`, enabled: false });
     }
   } else {
     menuItems.push({ label: '💤 No active schedule', enabled: false });
