@@ -1,6 +1,6 @@
 {
   "name": "rhythmdesk",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A strict sit/stand posture and break enforcement desktop app for Linux",
   "main": "dist/main/main/main.js",
   "scripts": {
