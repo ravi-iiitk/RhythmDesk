@@ -15,6 +15,7 @@ execution_log*.txt
 # IDE
 .idea/
 .vscode/
+.windsurf/
 *.swp
 *.swo
 *~

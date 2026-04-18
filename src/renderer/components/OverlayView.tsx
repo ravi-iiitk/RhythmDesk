@@ -79,7 +79,8 @@ function OverlayView({ tick }: OverlayViewProps) {
   }
   
   // Hide overlay for idle state - overlay shouldn't show during idle
-  if (tick.currentPhase === 'idle') {
+  // Exception: rest blocks should still render even with no active schedule
+  if (tick.currentPhase === 'idle' && !tick.restBlock?.isActive) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
 
