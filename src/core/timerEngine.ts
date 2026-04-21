@@ -1742,6 +1742,88 @@ export class TimerEngine extends EventEmitter {
   }
 
   /**
+   * Restart the current activity's timer back to its full configured duration.
+   * Does NOT reset session state (cumulative work time, break counters, flow index, etc.)
+   * 
+   * RESTART SEMANTICS:
+   * - Only restarts the timer for the current phase
+   * - Does not apply to transitions (sit-to-stand, stand-to-sit)
+   * - Does not apply to idle or waiting-for-next-activity states
+   * - Does not apply to strict-mode breaks (would allow extending enforced breaks)
+   * - Unpauses the timer if currently paused
+   * - Preserves: cumulative work time, break markers, flow index, postpone state
+   * 
+   * Returns true if the activity was restarted, false if blocked.
+   */
+  restartCurrentActivity(): boolean {
+    if (!this.currentSchedule) {
+      logger.warn('TimerEngine', 'Cannot restart activity - no active schedule');
+      return false;
+    }
+
+    const phase = this.state.currentPhase;
+
+    // Block: transitions
+    if (phase === 'sit-to-stand-transition' || phase === 'stand-to-sit-transition') {
+      logger.info('TimerEngine', 'Restart blocked: transitions are not restartable');
+      return false;
+    }
+
+    // Block: idle
+    if (phase === 'idle') {
+      logger.info('TimerEngine', 'Restart blocked: idle phase');
+      return false;
+    }
+
+    // Block: waiting for next activity
+    if (this.state.isWaitingForNextActivity) {
+      logger.info('TimerEngine', 'Restart blocked: waiting for next activity');
+      return false;
+    }
+
+    // Block: strict-mode breaks (don't allow extending enforced breaks)
+    if ((phase === 'short-break' || phase === 'long-break') && this.getStrictModeForCurrentPhase()) {
+      logger.info('TimerEngine', 'Restart blocked: strict-mode break', { phase });
+      return false;
+    }
+
+    const now = Date.now();
+    const duration = this.state.phaseTotalMs;
+
+    logger.info('TimerEngine', 'Restarting current activity', {
+      phase,
+      previousRemainingMs: this.state.phaseRemainingMs,
+      restoredDurationMs: duration,
+    });
+
+    // Reset phase timer
+    this.state.phaseStartedAt = now;
+    this.state.phaseEndsAt = now + duration;
+    this.state.phaseRemainingMs = duration;
+
+    // Unpause if paused
+    if (this.state.isPaused) {
+      this.state.isPaused = false;
+      this.state.pausedAt = null;
+      this.state.pauseResumeAt = null;
+      this.lastTickTime = now;
+    }
+
+    // Log event
+    logSessionEvent({
+      event: 'restartActivity',
+      phase,
+      cumulativeWorkMs: this.state.cumulativeWorkTimeMs,
+      scheduleId: this.currentSchedule?.id,
+    });
+
+    this.saveState();
+    this.emitTick();
+
+    return true;
+  }
+
+  /**
    * Reset the active session completely
    * Restarts from the beginning without changing schedule configuration
    * 

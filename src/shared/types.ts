@@ -489,6 +489,7 @@ export const IPC_CHANNELS = {
   REVERSE_FLOW: 'timer:reverseFlow',
   TRIGGER_PENDING_BREAK_NOW: 'timer:triggerPendingBreakNow',
   START_NEXT_ACTIVITY: 'timer:startNextActivity',
+  RESTART_CURRENT_ACTIVITY: 'timer:restartCurrentActivity',
   
   // Office Focus Lock controls
   START_OFFICE_FOCUS_LOCK: 'officeFocusLock:start',

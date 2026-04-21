@@ -97,6 +97,10 @@ export function registerIpcHandlers(): void {
     return timerEngine.startNextActivity();
   });
 
+  ipcMain.handle(IPC_CHANNELS.RESTART_CURRENT_ACTIVITY, () => {
+    return timerEngine.restartCurrentActivity();
+  });
+
   // Window control handlers
   ipcMain.handle(IPC_CHANNELS.OPEN_SETTINGS, () => {
     showMainWindow();

@@ -642,6 +642,103 @@ export class TestHarness {
   }
   
   /**
+   * Restart current activity timer (simulates timerEngine.restartCurrentActivity)
+   * Resets phaseRemainingMs back to phaseTotalMs without changing any session state.
+   * Returns false if blocked (transitions, idle, waiting, strict-mode breaks).
+   */
+  restartCurrentActivity(): boolean {
+    const before = this.captureState();
+    const phase = this.state.currentPhase;
+
+    // Block: transitions
+    if (phase === 'sit-to-stand-transition' || phase === 'stand-to-sit-transition') {
+      this.steps.push({
+        action: 'restartCurrentActivity',
+        before,
+        after: before,
+        passed: true,
+        assertion: 'Restart correctly blocked for transition phase',
+      });
+      return false;
+    }
+
+    // Block: idle
+    if (phase === 'idle') {
+      this.steps.push({
+        action: 'restartCurrentActivity',
+        before,
+        after: before,
+        passed: true,
+        assertion: 'Restart correctly blocked for idle phase',
+      });
+      return false;
+    }
+
+    // Block: waiting for next activity
+    if (this.state.isWaitingForNextActivity) {
+      this.steps.push({
+        action: 'restartCurrentActivity',
+        before,
+        after: before,
+        passed: true,
+        assertion: 'Restart correctly blocked for waiting-for-next-activity',
+      });
+      return false;
+    }
+
+    // Block: strict-mode breaks
+    if ((phase === 'short-break' || phase === 'long-break')) {
+      const breakConfig = phase === 'short-break' ? this.schedule.shortBreak : this.schedule.longBreak;
+      if (breakConfig?.strictModeEnabled) {
+        this.steps.push({
+          action: 'restartCurrentActivity',
+          before,
+          after: before,
+          passed: true,
+          assertion: 'Restart correctly blocked for strict-mode break',
+        });
+        return false;
+      }
+    }
+
+    const now = Date.now();
+    const duration = this.state.phaseTotalMs;
+
+    // Reset phase timer only
+    this.state.phaseStartedAt = now;
+    this.state.phaseEndsAt = now + duration;
+    this.state.phaseRemainingMs = duration;
+
+    // Unpause if paused
+    if (this.state.isPaused) {
+      this.state.isPaused = false;
+      this.state.pausedAt = null;
+      this.state.pauseResumeAt = null;
+    }
+
+    const after = this.captureState();
+    this.steps.push({
+      action: 'restartCurrentActivity',
+      before,
+      after,
+      passed: this.validateState()
+        && after.phaseRemainingMs === after.phaseTotalMs
+        && after.currentPhase === before.currentPhase
+        && after.currentFlowStepIndex === before.currentFlowStepIndex
+        && after.cumulativeWorkTimeMs === before.cumulativeWorkTimeMs,
+      assertion: after.phaseRemainingMs !== after.phaseTotalMs
+        ? 'phaseRemainingMs should equal phaseTotalMs after restart'
+        : after.currentPhase !== before.currentPhase
+          ? 'currentPhase should not change'
+          : after.cumulativeWorkTimeMs !== before.cumulativeWorkTimeMs
+            ? 'cumulativeWorkTimeMs should not change'
+            : undefined,
+    });
+
+    return true;
+  }
+
+  /**
    * Reset session
    */
   resetSession(): void {

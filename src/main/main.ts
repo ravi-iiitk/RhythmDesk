@@ -506,12 +506,13 @@ function initialize(): void {
               recoverOverlayIfNeeded(policy.strictMode, true);
             }
             
-            // Send fresh state to overlay in case it was stale
+            // Send fresh state to overlay in case it was stale during screen lock
             if (restBlockActive) {
               const restState = getRestBlockService().getState();
               sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
-              sendOverlayResyncSnapshot('screen-unlock-resync');
             }
+            // Always resync - critical for transitions that expired during lock
+            sendOverlayResyncSnapshot('screen-unlock-resync');
           }
         }
       }, 1500); // 1.5s delay for compositor to settle
@@ -541,6 +542,26 @@ function initialize(): void {
                 sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: currentPhase });
               }
             }
+          } else {
+            // Overlay exists - re-assert and resync in case renderer was throttled during suspend
+            logger.info('Main', 'Overlay exists after resume - re-asserting and resyncing');
+            try {
+              overlay.setAlwaysOnTop(true, 'screen-saver');
+              overlay.setFullScreen(true);
+              overlay.show();
+              overlay.focus();
+            } catch (e) {
+              logger.error('Main', 'Failed to re-assert overlay after resume - recreating', { error: String(e) });
+              recoverOverlayIfNeeded(policy.strictMode, true);
+            }
+            
+            // Send fresh state to overlay
+            if (restBlockActive) {
+              const restState = getRestBlockService().getState();
+              sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
+            }
+            // Always resync - critical for transitions that expired during suspend
+            sendOverlayResyncSnapshot('system-resume-resync');
           }
         }
       }, 3000); // 3s delay for system to fully wake

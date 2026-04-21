@@ -26,7 +26,8 @@ export type SessionEventType =
   | 'restartRecovery'
   | 'flowDesync'
   | 'validationError'
-  | 'stateNormalized';
+  | 'stateNormalized'
+  | 'restartActivity';
 
 // ============================================================
 // SESSION DEBUG LOGGING
@@ -79,7 +80,8 @@ export function logSessionEvent(data: SessionEventData): void {
   // Log as info for key events, debug for less important ones
   const infoEvents: SessionEventType[] = [
     'phaseTransition', 'skipPhase', 'postponeBreak', 
-    'resetSession', 'flowDesync', 'validationError'
+    'resetSession', 'flowDesync', 'validationError',
+    'restartActivity'
   ];
   
   if (infoEvents.includes(event)) {

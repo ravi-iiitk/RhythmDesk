@@ -83,6 +83,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const handleReverseFlow = () => window.rhythmDesk.reverseFlow();
   const handleTriggerPendingBreakNow = () => window.rhythmDesk.triggerPendingBreakNow();
   const handleStartNextActivity = () => window.rhythmDesk.startNextActivity();
+  const handleRestartCurrentActivity = () => window.rhythmDesk.restartCurrentActivity();
   
   const handleStartOfficeFocusLock = (minutes: number) => {
     window.rhythmDesk.startOfficeFocusLock(selectedLabel, minutes, focusStrictMode);
@@ -330,6 +331,16 @@ function DashboardPage({ tick }: DashboardPageProps) {
     : (isActiveBreakPhase && tick.canSkipCurrentBreak === false)
       ? `Break skip limit reached (${tick.breakSkipCountToday ?? 0}/${tick.maxBreakSkipsPerDay ?? 0})`
       : 'Skip to next activity';
+  
+  const isTransitionPhase = tick.currentPhase === 'sit-to-stand-transition' || tick.currentPhase === 'stand-to-sit-transition';
+  const restartDisabled = isTransitionPhase || tick.isWaitingForNextActivity || (isActiveBreakPhase && tick.isStrictMode);
+  const restartTitle = isTransitionPhase
+    ? 'Cannot restart transitions'
+    : tick.isWaitingForNextActivity
+      ? 'Cannot restart - waiting for next activity'
+      : (isActiveBreakPhase && tick.isStrictMode)
+        ? 'Cannot restart strict-mode breaks'
+        : 'Restart current activity timer (keeps session progress)';
 
   return (
     <div className="page" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', height: '100%' }}>
@@ -591,6 +602,15 @@ function DashboardPage({ tick }: DashboardPageProps) {
               style={skipDisabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
             >
               ⏭️ Skip
+            </button>
+            <button 
+              className="btn btn-secondary" 
+              onClick={handleRestartCurrentActivity}
+              disabled={restartDisabled}
+              title={restartTitle}
+              style={restartDisabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+            >
+              🔁 Restart
             </button>
             <button className="btn btn-secondary" onClick={handleResetSession} title="Reset Session">🔄 Reset</button>
             <button className="btn btn-secondary" onClick={handleResetTodayCounters} title="Reset Counters">📊</button>

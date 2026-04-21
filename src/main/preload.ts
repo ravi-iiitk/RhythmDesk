@@ -30,6 +30,7 @@ export interface RhythmDeskAPI {
   reverseFlow: () => Promise<void>;
   triggerPendingBreakNow: () => Promise<boolean>;
   startNextActivity: () => Promise<boolean>;
+  restartCurrentActivity: () => Promise<boolean>;
   
   // Office Focus Lock controls
   startOfficeFocusLock: (label: string, durationMinutes: number, isStrictMode?: boolean) => Promise<any>;
@@ -95,6 +96,7 @@ const api: RhythmDeskAPI = {
   reverseFlow: () => ipcRenderer.invoke(IPC_CHANNELS.REVERSE_FLOW),
   triggerPendingBreakNow: () => ipcRenderer.invoke(IPC_CHANNELS.TRIGGER_PENDING_BREAK_NOW),
   startNextActivity: () => ipcRenderer.invoke(IPC_CHANNELS.START_NEXT_ACTIVITY),
+  restartCurrentActivity: () => ipcRenderer.invoke(IPC_CHANNELS.RESTART_CURRENT_ACTIVITY),
 
   // Office Focus Lock controls
   startOfficeFocusLock: (label, durationMinutes, isStrictMode = false) => ipcRenderer.invoke(IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes, isStrictMode),
