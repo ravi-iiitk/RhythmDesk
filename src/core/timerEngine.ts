@@ -724,6 +724,8 @@ export class TimerEngine extends EventEmitter {
     
     // Store current phase to resume after break
     this.preBreakPhase = this.state.currentPhase;
+    this.state.interruptedPhase = this.state.currentPhase;
+    this.state.interruptedPhaseRemainingMs = this.state.phaseRemainingMs;
     
     // PHASE 1.5: Track interrupted flow index for flow-based schedules
     // This ensures we can restore the correct flow position after break/postpone
@@ -1431,15 +1433,43 @@ export class TimerEngine extends EventEmitter {
       workPhaseToRestore = 'sit';
     }
     
-    const workPhaseRemainingMs = this.state.interruptedPhaseRemainingMs || this.getPhaseDurationMs(workPhaseToRestore);
+    let workPhaseRemainingMs = this.state.interruptedPhaseRemainingMs || this.getPhaseDurationMs(workPhaseToRestore);
     
     // CRITICAL FIX: Find the correct flow index for the work phase we're restoring to
     // Don't rely on interruptedFlowIndex which might point to a transition
     let flowIndexToRestore: number | undefined;
     if (isFlowBasedSchedule(this.currentSchedule) && this.currentSchedule.flowSteps) {
-      flowIndexToRestore = findPhaseIndex(this.currentSchedule.flowSteps, workPhaseToRestore);
-      if (flowIndexToRestore === -1) {
-        flowIndexToRestore = this.state.interruptedFlowIndex; // Fallback
+      // Flow-step break (interruptedPhaseRemainingMs === 0): the previous work phase
+      // completed naturally before the break. Advance the flow FORWARD past the break
+      // instead of going backward to the already-completed work phase.
+      if (this.state.interruptedPhaseRemainingMs === 0) {
+        const flowSteps = this.currentSchedule.flowSteps;
+        const breakStepIndex = this.state.currentFlowStepIndex ?? 0;
+        let result = computeNextFlowPhase(breakStepIndex, flowSteps, false);
+        
+        // Skip consecutive break steps
+        let attempts = 0;
+        while (isBreakPhaseType(result.nextPhase) && attempts < flowSteps.length) {
+          result = computeNextFlowPhase(result.nextIndex, flowSteps, false);
+          attempts++;
+        }
+        
+        workPhaseToRestore = result.nextPhase;
+        flowIndexToRestore = result.nextIndex;
+        workPhaseRemainingMs = getFlowStepDurationMs(flowSteps[result.nextIndex]);
+        
+        logger.info('TimerEngine', 'Postpone: advancing flow past break step', {
+          breakStepIndex,
+          nextPhase: workPhaseToRestore,
+          nextIndex: flowIndexToRestore,
+          duration: workPhaseRemainingMs,
+        });
+      } else {
+        // Triggered break (interrupted a work phase mid-execution) — restore it
+        flowIndexToRestore = findPhaseIndex(this.currentSchedule.flowSteps, workPhaseToRestore);
+        if (flowIndexToRestore === -1) {
+          flowIndexToRestore = this.state.interruptedFlowIndex; // Fallback
+        }
       }
     }
     
@@ -1448,18 +1478,18 @@ export class TimerEngine extends EventEmitter {
     this.state.prePostponeWorkPhaseRemainingMs = workPhaseRemainingMs;
     this.state.prePostponeFlowIndex = flowIndexToRestore;
     
+    // CRITICAL FIX: Always restore flow index BEFORE phase setup
+    // so getPhaseDurationMs uses the correct flow step for phaseTotalMs
+    if (isFlowBasedSchedule(this.currentSchedule) && flowIndexToRestore !== undefined && flowIndexToRestore !== -1) {
+      this.state.currentFlowStepIndex = flowIndexToRestore;
+    }
+    
     // Restore work phase as current phase
     this.state.currentPhase = workPhaseToRestore;
     this.state.phaseRemainingMs = workPhaseRemainingMs;
     this.state.phaseTotalMs = this.getPhaseDurationMs(workPhaseToRestore);
     this.state.phaseStartedAt = Date.now();
     this.state.phaseEndsAt = Date.now() + workPhaseRemainingMs;
-    
-    // CRITICAL FIX: Always restore flow index to match restored work phase
-    // This ensures currentPhase and currentFlowStepIndex are consistent
-    if (isFlowBasedSchedule(this.currentSchedule) && flowIndexToRestore !== undefined && flowIndexToRestore !== -1) {
-      this.state.currentFlowStepIndex = flowIndexToRestore;
-    }
     
     // Phase 1.5: Structured postpone logging
     logSessionEvent({
@@ -1800,6 +1830,10 @@ export class TimerEngine extends EventEmitter {
     this.state.phaseStartedAt = now;
     this.state.phaseEndsAt = now + duration;
     this.state.phaseRemainingMs = duration;
+
+    // Reset short break marker so break progress re-aligns with the restarted phase.
+    // Long break marker is intentionally NOT reset — prevents gaming via repeated restarts.
+    this.state.lastShortBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
 
     // Unpause if paused
     if (this.state.isPaused) {
