@@ -19,41 +19,44 @@ interface SoundConfig {
 }
 
 const SOUND_EVENTS = [
-  { key: 'break_start', label: 'Break Starting' },
-  { key: 'break_end', label: 'Break Ending' },
-  { key: 'transition_start', label: 'Transition Starting' },
-  { key: 'postpone', label: 'Break Postponed' },
-  { key: 'session_reset', label: 'Session Reset' },
-  { key: 'focus_lock_start', label: 'Focus Lock Started' },
-  { key: 'focus_lock_end', label: 'Focus Lock Ended' },
-  { key: 'rest_block_start', label: 'Rest Block Started' },
-  { key: 'rest_block_end', label: 'Rest Block Ended' },
+  { key: 'break_start', label: 'Break Starting', defaultFile: 'chime.wav' },
+  { key: 'break_end', label: 'Break Ending', defaultFile: 'bell.wav' },
+  { key: 'transition_start', label: 'Transition Starting', defaultFile: 'ding.wav' },
+  { key: 'postpone', label: 'Break Postponed', defaultFile: 'swoosh.wav' },
+  { key: 'session_reset', label: 'Session Reset', defaultFile: 'reset.wav' },
+  { key: 'focus_lock_start', label: 'Focus Lock Started', defaultFile: 'lock.wav' },
+  { key: 'focus_lock_end', label: 'Focus Lock Ended', defaultFile: 'unlock.wav' },
+  { key: 'rest_block_start', label: 'Rest Block Started', defaultFile: 'rest.wav' },
+  { key: 'rest_block_end', label: 'Rest Block Ended', defaultFile: 'bell.wav' },
 ] as const;
 
 const DEFAULT_SOUND_CONFIG: SoundConfig = {
   enabled: true,
   volume: 50,
   sounds: {
-    break_start: { enabled: true, file: 'default' },
-    break_end: { enabled: true, file: 'default' },
-    transition_start: { enabled: true, file: 'default' },
-    postpone: { enabled: true, file: 'default' },
-    session_reset: { enabled: true, file: 'default' },
-    focus_lock_start: { enabled: true, file: 'default' },
-    focus_lock_end: { enabled: true, file: 'default' },
-    rest_block_start: { enabled: true, file: 'default' },
-    rest_block_end: { enabled: true, file: 'default' },
+    break_start: { enabled: true, file: 'chime.wav' },
+    break_end: { enabled: true, file: 'bell.wav' },
+    transition_start: { enabled: true, file: 'ding.wav' },
+    postpone: { enabled: true, file: 'swoosh.wav' },
+    session_reset: { enabled: true, file: 'reset.wav' },
+    focus_lock_start: { enabled: true, file: 'lock.wav' },
+    focus_lock_end: { enabled: true, file: 'unlock.wav' },
+    rest_block_start: { enabled: true, file: 'rest.wav' },
+    rest_block_end: { enabled: true, file: 'bell.wav' },
   },
 };
 
 function SettingsPage() {
   const [settings, setSettings] = useState<GeneralSettings>(DEFAULT_GENERAL_SETTINGS);
   const [soundConfig, setSoundConfig] = useState<SoundConfig>(DEFAULT_SOUND_CONFIG);
+  const [availableSounds, setAvailableSounds] = useState<string[]>([]);
+  const [playingEvent, setPlayingEvent] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showSoundDetails, setShowSoundDetails] = useState(false);
 
   useEffect(() => {
     loadSettings();
+    loadAvailableSounds();
   }, []);
 
   // Auto-hide save message
@@ -74,6 +77,15 @@ function SettingsPage() {
     }
   };
 
+  const loadAvailableSounds = async () => {
+    try {
+      const sounds = await window.rhythmDesk.getAvailableSounds();
+      setAvailableSounds(sounds);
+    } catch {
+      setAvailableSounds(['none']);
+    }
+  };
+
   const handleSoundEventToggle = (eventKey: string, enabled: boolean) => {
     setSoundConfig(prev => ({
       ...prev,
@@ -83,6 +95,26 @@ function SettingsPage() {
       },
     }));
     setSaveMessage(null);
+  };
+
+  const handleSoundFileChange = (eventKey: string, file: string) => {
+    setSoundConfig(prev => ({
+      ...prev,
+      sounds: {
+        ...prev.sounds,
+        [eventKey]: { ...prev.sounds[eventKey], file },
+      },
+    }));
+    setSaveMessage(null);
+  };
+
+  const handlePreviewSound = async (eventKey: string, filename: string) => {
+    if (filename === 'none') return;
+    setPlayingEvent(eventKey);
+    try {
+      await window.rhythmDesk.playTestSound(filename, soundConfig.volume ?? settings.soundVolume ?? 50);
+    } catch { /* ignore */ }
+    setTimeout(() => setPlayingEvent(null), 1500);
   };
 
   const handleChange = (field: keyof GeneralSettings, value: any) => {
@@ -175,23 +207,79 @@ function SettingsPage() {
                 marginTop: '0.5rem', 
                 padding: '0.75rem', 
                 background: 'rgba(255,255,255,0.05)', 
-                borderRadius: '4px' 
+                borderRadius: '6px' 
               }}>
-                <p className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>
-                  Enable/disable sounds for specific events:
+                <p className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '0.75rem' }}>
+                  Configure sounds for each event type:
                 </p>
-                {SOUND_EVENTS.map(event => (
-                  <div key={event.key} style={{ marginBottom: '0.25rem' }}>
-                    <label className="form-checkbox" style={{ fontSize: '0.875rem' }}>
-                      <input
-                        type="checkbox"
-                        checked={soundConfig.sounds[event.key]?.enabled ?? true}
-                        onChange={(e) => handleSoundEventToggle(event.key, e.target.checked)}
-                      />
-                      {event.label}
-                    </label>
-                  </div>
-                ))}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {SOUND_EVENTS.map(event => {
+                    const eventConfig = soundConfig.sounds[event.key];
+                    const isEnabled = eventConfig?.enabled ?? true;
+                    const currentFile = eventConfig?.file || event.defaultFile;
+                    return (
+                      <div key={event.key} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.4rem 0.5rem',
+                        background: 'rgba(255,255,255,0.03)',
+                        borderRadius: '4px',
+                        opacity: isEnabled ? 1 : 0.5,
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={isEnabled}
+                          onChange={(e) => handleSoundEventToggle(event.key, e.target.checked)}
+                          style={{ margin: 0, flexShrink: 0 }}
+                        />
+                        <span style={{ fontSize: '0.85rem', minWidth: '140px', flexShrink: 0 }}>
+                          {event.label}
+                        </span>
+                        <select
+                          value={currentFile}
+                          onChange={(e) => handleSoundFileChange(event.key, e.target.value)}
+                          disabled={!isEnabled}
+                          style={{
+                            flex: 1,
+                            minWidth: '120px',
+                            padding: '0.25rem 0.4rem',
+                            fontSize: '0.8rem',
+                            borderRadius: '4px',
+                            border: '1px solid #444',
+                            background: '#1e1e2e',
+                            color: '#cdd6f4',
+                            cursor: isEnabled ? 'pointer' : 'not-allowed',
+                          }}
+                        >
+                          {availableSounds.filter(s => s !== 'none').map(sound => (
+                            <option key={sound} value={sound}>{sound}</option>
+                          ))}
+                          <option value="none">None (silent)</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => handlePreviewSound(event.key, currentFile)}
+                          disabled={!isEnabled || currentFile === 'none'}
+                          title="Preview sound"
+                          style={{
+                            padding: '0.2rem 0.5rem',
+                            fontSize: '0.8rem',
+                            borderRadius: '4px',
+                            border: '1px solid #444',
+                            background: playingEvent === event.key ? '#3b82f6' : '#2a2a3e',
+                            color: '#cdd6f4',
+                            cursor: isEnabled && currentFile !== 'none' ? 'pointer' : 'not-allowed',
+                            flexShrink: 0,
+                            opacity: isEnabled && currentFile !== 'none' ? 1 : 0.4,
+                          }}
+                        >
+                          {playingEvent === event.key ? '🔊' : '▶'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </>

@@ -30,7 +30,7 @@ import { getHealthMonitor } from '../core/healthMonitor';
 import { getTimerWatchdog } from '../core/watchdog';
 import { initDebugMode } from '../core/debugMode';
 // Sound service
-import { playSound } from '../core/soundService';
+import { playSound, getSoundService } from '../core/soundService';
 
 /**
  * Get overlay policy for current state
@@ -143,6 +143,9 @@ function initialize(): void {
     // This detects zombie states after system suspend/resume
     startMainWindowHealthCheck();
     logger.info('Main', 'Main window health check watchdog started');
+
+    // Initialize sound service before wiring timer events
+    getSoundService().initialize();
 
     // Initialize and start timer engine
     const timerEngine = getTimerEngine();

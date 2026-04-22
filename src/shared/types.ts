@@ -511,6 +511,10 @@ export const IPC_CHANNELS = {
   MINIMIZE_TO_TRAY: 'window:minimizeToTray',
   QUIT_APP: 'app:quit',
   
+  // Sound management
+  GET_AVAILABLE_SOUNDS: 'sound:getAvailable',
+  PLAY_TEST_SOUND: 'sound:playTest',
+  
   // Dev mode only
   DEV_CLEAR_ALL_DATA: 'dev:clearAllData',
 } as const;

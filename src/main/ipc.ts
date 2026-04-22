@@ -207,6 +207,17 @@ export function registerIpcHandlers(): void {
     onMainWindowHealthCheckResponse();
   });
 
+  // Sound management
+  ipcMain.handle(IPC_CHANNELS.GET_AVAILABLE_SOUNDS, () => {
+    const { getSoundService } = require('../core/soundService');
+    return getSoundService().getAvailableSounds();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PLAY_TEST_SOUND, (_event: any, filename: string, volume: number) => {
+    const { getSoundService } = require('../core/soundService');
+    return getSoundService().playTestSound(filename, volume);
+  });
+
   // Dev mode: Clear all data (config + session)
   ipcMain.handle(IPC_CHANNELS.DEV_CLEAR_ALL_DATA, () => {
     if (process.env.NODE_ENV !== 'development') {

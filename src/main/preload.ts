@@ -51,6 +51,10 @@ export interface RhythmDeskAPI {
   minimizeToTray: () => Promise<void>;
   quitApp: () => Promise<void>;
   
+  // Sound management
+  getAvailableSounds: () => Promise<string[]>;
+  playTestSound: (filename: string, volume: number) => Promise<void>;
+  
   // Dev mode only
   devClearAllData: () => Promise<{ success: boolean; message: string }>;
   
@@ -116,6 +120,10 @@ const api: RhythmDeskAPI = {
   closeOverlay: () => ipcRenderer.invoke(IPC_CHANNELS.CLOSE_OVERLAY),
   minimizeToTray: () => ipcRenderer.invoke(IPC_CHANNELS.MINIMIZE_TO_TRAY),
   quitApp: () => ipcRenderer.invoke(IPC_CHANNELS.QUIT_APP),
+
+  // Sound management
+  getAvailableSounds: () => ipcRenderer.invoke(IPC_CHANNELS.GET_AVAILABLE_SOUNDS),
+  playTestSound: (filename, volume) => ipcRenderer.invoke(IPC_CHANNELS.PLAY_TEST_SOUND, filename, volume),
 
   // Dev mode only
   devClearAllData: () => ipcRenderer.invoke(IPC_CHANNELS.DEV_CLEAR_ALL_DATA),
