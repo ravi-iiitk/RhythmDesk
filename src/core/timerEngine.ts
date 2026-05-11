@@ -1487,7 +1487,19 @@ export class TimerEngine extends EventEmitter {
     // Restore work phase as current phase
     this.state.currentPhase = workPhaseToRestore;
     this.state.phaseRemainingMs = workPhaseRemainingMs;
-    this.state.phaseTotalMs = this.getPhaseDurationMs(workPhaseToRestore);
+    
+    // CRITICAL FIX: Calculate phaseTotalMs correctly for the work phase being restored
+    // For flow-based schedules, we need to get the duration from the flow step itself,
+    // not from getPhaseDurationMs() which uses the current flow index
+    if (isFlowBasedSchedule(this.currentSchedule) && flowIndexToRestore !== undefined && flowIndexToRestore !== -1) {
+      const flowSteps = this.currentSchedule.flowSteps!;
+      const restoredStep = flowSteps[flowIndexToRestore];
+      this.state.phaseTotalMs = restoredStep ? getFlowStepDurationMs(restoredStep) : this.getPhaseDurationMs(workPhaseToRestore);
+    } else {
+      // Rule-based schedule or fallback
+      this.state.phaseTotalMs = this.getPhaseDurationMs(workPhaseToRestore);
+    }
+    
     this.state.phaseStartedAt = Date.now();
     this.state.phaseEndsAt = Date.now() + workPhaseRemainingMs;
     
