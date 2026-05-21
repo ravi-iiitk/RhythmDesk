@@ -410,7 +410,7 @@ function SettingsPage() {
           <span className="card-title">About</span>
         </div>
         <p className="text-muted">
-          <strong>RhythmDesk</strong> v1.0.0<br />
+          <strong>RhythmDesk</strong> v2.0.0<br />
           A strict work posture and break scheduler for users with back pain / sciatica.<br />
           Linux-first desktop application.
         </p>
