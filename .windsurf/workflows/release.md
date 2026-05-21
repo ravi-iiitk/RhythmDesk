@@ -43,7 +43,7 @@ git push origin main --tags
 
 ## 5. Create GitHub Release
 
-1. Go to: https://github.com/YOUR_USERNAME/rhythmdesk/releases/new
+1. Go to: https://github.com/ravi-iiitk/RhythmDesk/releases/new
 2. Select the tag (e.g., `v0.2.0`)
 3. Release title: `RhythmDesk v0.2.0`
 4. Write release notes:
