@@ -602,18 +602,24 @@ export class TimerEngine extends EventEmitter {
           newSteps.every((s, i) => sessionSteps[i]?.type === s.type);
 
         if (orderUnchanged) {
-          // Safe to apply duration/label changes in-place without resetting the session.
-          // runtimeFlowSnapshot drives phase transitions (index/type lookups only),
-          // NOT durations — those are read from this.currentSchedule.flowSteps
-          // via getPhaseDurationMs, so patching curSteps here takes effect immediately.
-          newSteps.forEach((newStep, i) => { curSteps[i] = { ...curSteps[i], ...newStep }; });
-          // Rebuild currentSchedule with updated steps + any changed non-flow fields
-          this.currentSchedule = { ...activeSchedule, flowSteps: curSteps };
-          // Update hash so isFlowSessionStale() returns false (no stale banner needed)
-          this.state.flowConfigHash = computeFlowConfigHash(curSteps);
-          logger.info('TimerEngine', 'Flow step durations/labels updated in-place', {
-            hash: this.state.flowConfigHash,
-          });
+          // Only do work when the live config hash actually differs from the session hash.
+          // Without this guard, this block runs on every tick even when nothing changed,
+          // creating new objects and emitting log noise each second.
+          const incomingHash = computeFlowConfigHash(newSteps);
+          if (incomingHash !== this.state.flowConfigHash) {
+            // Safe to apply duration/label changes in-place without resetting the session.
+            // runtimeFlowSnapshot drives phase transitions (index/type lookups only),
+            // NOT durations — those are read from this.currentSchedule.flowSteps
+            // via getPhaseDurationMs, so patching curSteps here takes effect immediately.
+            newSteps.forEach((newStep, i) => { curSteps[i] = { ...curSteps[i], ...newStep }; });
+            // Rebuild currentSchedule with updated steps + any changed non-flow fields
+            this.currentSchedule = { ...activeSchedule, flowSteps: curSteps };
+            // Update hash so isFlowSessionStale() returns false (no stale banner needed)
+            this.state.flowConfigHash = incomingHash;
+            logger.info('TimerEngine', 'Flow step durations/labels updated in-place', {
+              hash: incomingHash,
+            });
+          }
         }
         // If order changed: keep frozen runtime state; isFlowSessionStale() returns true
         // and the dashboard shows the "Reset Now" banner as before.
