@@ -589,11 +589,17 @@ export class TimerEngine extends EventEmitter {
       ) {
         const newSteps = activeSchedule.flowSteps;
         const curSteps = this.currentSchedule.flowSteps;
+        // Compare against the FROZEN SESSION SNAPSHOT, not curSteps.
+        // shuffleFlow() mutates this.currentSchedule in-place before checkScheduleChange
+        // runs, so comparing newSteps vs curSteps would incorrectly see them as matching
+        // and clear the stale banner. The snapshot always holds the session-start order.
+        const sessionSteps = this.runtimeFlowSnapshot;
 
         // Check if step ORDER is unchanged (only durations/labels were edited)
         const orderUnchanged =
-          newSteps.length === curSteps.length &&
-          newSteps.every((s, i) => curSteps[i]?.type === s.type);
+          sessionSteps !== null &&
+          newSteps.length === sessionSteps.length &&
+          newSteps.every((s, i) => sessionSteps[i]?.type === s.type);
 
         if (orderUnchanged) {
           // Safe to apply duration/label changes in-place without resetting the session.
