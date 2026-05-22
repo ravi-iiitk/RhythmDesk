@@ -25,8 +25,8 @@ Thank you for your interest in contributing to RhythmDesk! This document provide
 ### Installing Dependencies
 
 ```bash
-git clone https://github.com/yourusername/rhythmdesk.git
-cd rhythmdesk
+git clone https://github.com/ravi-iiitk/RhythmDesk.git
+cd RhythmDesk
 npm install
 ```
 
@@ -150,7 +150,7 @@ chore(deps): update electron to v28
 
 ### Before Submitting
 
-1. **Fork the repository** and create your branch from `main`
+1. **Fork the repository** and create your branch from `develop`
 2. **Run the app** to verify your changes work
 3. **Run linting**: `npm run lint`
 4. **Run type checking**: `npm run typecheck`

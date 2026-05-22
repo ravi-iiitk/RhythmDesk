@@ -11,11 +11,11 @@ release/
 logs/
 *_log*.txt
 execution_log*.txt
+ryhemdesk_execution_log*.txt
 
 # IDE
 .idea/
 .vscode/
-.windsurf/
 *.swp
 *.swo
 *~

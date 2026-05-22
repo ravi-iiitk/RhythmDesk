@@ -54,18 +54,18 @@ _Coming soon_
 
 ### Option 1: Download Pre-built Package (Recommended)
 
-1. Go to the [Releases](https://github.com/YOUR_USERNAME/rhythmdesk/releases) page
+1. Go to the [Releases](https://github.com/ravi-iiitk/RhythmDesk/releases) page
 2. Download the latest `.deb` file for Debian/Ubuntu or `.AppImage` for other distros
 
 **For Debian/Ubuntu:**
 ```bash
-sudo dpkg -i RhythmDesk-0.1.0-amd64.deb
+sudo dpkg -i RhythmDesk-2.0.0-amd64.deb
 ```
 
 **For AppImage:**
 ```bash
-chmod +x RhythmDesk-0.1.0-x86_64.AppImage
-./RhythmDesk-0.1.0-x86_64.AppImage
+chmod +x RhythmDesk-2.0.0-x86_64.AppImage
+./RhythmDesk-2.0.0-x86_64.AppImage
 ```
 
 **Note:** AppImage requires FUSE. Install it if needed:
@@ -115,8 +115,8 @@ Feel free to edit or delete these and create your own!
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/YOUR_USERNAME/rhythmdesk.git
-cd rhythmdesk
+git clone https://github.com/ravi-iiitk/RhythmDesk.git
+cd RhythmDesk
 ```
 
 2. **Install dependencies:**
@@ -285,11 +285,12 @@ tail -f ~/.config/rhythmdesk/logs/app.log
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+2. Create your feature branch (`git checkout -b feature/my-feature`)
+3. Commit your changes using [Conventional Commits](https://www.conventionalcommits.org/)
+4. Push to the branch and open a Pull Request against `develop`
 
 ## 📄 License
 
@@ -304,7 +305,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 💬 Support
 
 If you encounter any issues or have questions:
-- Open an [issue](https://github.com/YOUR_USERNAME/rhythmdesk/issues)
+- Open an [issue](https://github.com/ravi-iiitk/RhythmDesk/issues)
 - Check existing issues for solutions
 
 ---
