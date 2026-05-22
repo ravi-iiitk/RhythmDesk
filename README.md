@@ -11,7 +11,19 @@ Designed for users with back pain, sciatica, or anyone who needs to maintain hea
 ## 📸 Screenshots
 
 <!-- TODO: Add screenshots here -->
-_Coming soon_
+<img width="2794" height="1764" alt="2026-04-19_00-55" src="https://github.com/user-attachments/assets/74cf20c8-fdbb-4d20-99d5-974f35320813" />
+
+<img width="2794" height="1764" alt="2026-04-19_00-55_1" src="https://github.com/user-attachments/assets/75762004-a9ce-4c03-82c5-748328f65b55" />
+
+<img width="2794" height="1764" alt="2026-04-19_00-55_2" src="https://github.com/user-attachments/assets/9ad4ebbe-678a-4482-b2a7-6e1724c1806f" />
+
+<img width="2794" height="1764" alt="2026-04-19_00-55_3" src="https://github.com/user-attachments/assets/1f26153d-6a46-45dd-add7-14b3c1312698" />
+<img width="2794" height="1764" alt="2026-04-19_00-56" src="https://github.com/user-attachments/assets/88723dda-d98d-42af-b13b-86c147e3b5d1" />
+<img width="2794" height="1764" alt="2026-04-19_00-56_1" src="https://github.com/user-attachments/assets/fcf10ccd-166c-4b54-b071-3aa750438c53" />
+<img width="2794" height="1688" alt="2026-04-19_00-56_2" src="https://github.com/user-attachments/assets/dbb34690-353f-461e-a6a4-854028d5f284" />
+<img width="2794" height="1688" alt="2026-04-19_00-56_3" src="https://github.com/user-attachments/assets/9c608e1e-ebbf-47a6-b4c8-bf7844785c8a" />
+![Uploading 2026-04-19_01-06.png…]()
+
 
 ## ✨ Features
 
