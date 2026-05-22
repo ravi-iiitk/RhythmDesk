@@ -581,17 +581,40 @@ export class TimerEngine extends EventEmitter {
       this.emit('scheduleChange', this.currentSchedule);
     } else if (activeSchedule && this.currentSchedule) {
       // Same schedule ID - config might have been edited
-      // PHASE 1.5 FIX: Do NOT refresh runtime schedule from config
-      // Keep using the frozen snapshot until explicit reset
-      // Only update non-flow settings that are safe to change mid-session
-      // (e.g., strictMode, sound settings, but NOT flowSteps or durations)
-      // 
-      // The isFlowSessionStale() check will detect config changes
-      // and dashboard will show "flow stale" notification
-      // User must explicitly reset to apply changes
-      //
-      // NOTE: We intentionally do NOT do: this.currentSchedule = activeSchedule
-      // This prevents config edits from leaking into active runtime
+      if (
+        isFlowBasedSchedule(activeSchedule) &&
+        isFlowBasedSchedule(this.currentSchedule) &&
+        activeSchedule.flowSteps &&
+        this.currentSchedule.flowSteps
+      ) {
+        const newSteps = activeSchedule.flowSteps;
+        const curSteps = this.currentSchedule.flowSteps;
+
+        // Check if step ORDER is unchanged (only durations/labels were edited)
+        const orderUnchanged =
+          newSteps.length === curSteps.length &&
+          newSteps.every((s, i) => curSteps[i]?.type === s.type);
+
+        if (orderUnchanged) {
+          // Safe to apply duration/label changes in-place without resetting the session.
+          // runtimeFlowSnapshot drives phase transitions (index/type lookups only),
+          // NOT durations — those are read from this.currentSchedule.flowSteps
+          // via getPhaseDurationMs, so patching curSteps here takes effect immediately.
+          newSteps.forEach((newStep, i) => { curSteps[i] = { ...curSteps[i], ...newStep }; });
+          // Rebuild currentSchedule with updated steps + any changed non-flow fields
+          this.currentSchedule = { ...activeSchedule, flowSteps: curSteps };
+          // Update hash so isFlowSessionStale() returns false (no stale banner needed)
+          this.state.flowConfigHash = computeFlowConfigHash(curSteps);
+          logger.info('TimerEngine', 'Flow step durations/labels updated in-place', {
+            hash: this.state.flowConfigHash,
+          });
+        }
+        // If order changed: keep frozen runtime state; isFlowSessionStale() returns true
+        // and the dashboard shows the "Reset Now" banner as before.
+      } else if (!isFlowBasedSchedule(activeSchedule)) {
+        // Rule-based: no flow snapshot is involved, safe to always apply live config
+        this.currentSchedule = activeSchedule;
+      }
     }
   }
   
