@@ -489,6 +489,7 @@ export const IPC_CHANNELS = {
   REVERSE_FLOW: 'timer:reverseFlow',
   TRIGGER_PENDING_BREAK_NOW: 'timer:triggerPendingBreakNow',
   START_NEXT_ACTIVITY: 'timer:startNextActivity',
+  RESTART_CURRENT_ACTIVITY: 'timer:restartCurrentActivity',
   
   // Office Focus Lock controls
   START_OFFICE_FOCUS_LOCK: 'officeFocusLock:start',
@@ -509,6 +510,10 @@ export const IPC_CHANNELS = {
   CLOSE_OVERLAY: 'overlay:close',
   MINIMIZE_TO_TRAY: 'window:minimizeToTray',
   QUIT_APP: 'app:quit',
+  
+  // Sound management
+  GET_AVAILABLE_SOUNDS: 'sound:getAvailable',
+  PLAY_TEST_SOUND: 'sound:playTest',
   
   // Dev mode only
   DEV_CLEAR_ALL_DATA: 'dev:clearAllData',

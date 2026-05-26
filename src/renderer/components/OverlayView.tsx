@@ -79,7 +79,8 @@ function OverlayView({ tick }: OverlayViewProps) {
   }
   
   // Hide overlay for idle state - overlay shouldn't show during idle
-  if (tick.currentPhase === 'idle') {
+  // Exception: rest blocks should still render even with no active schedule
+  if (tick.currentPhase === 'idle' && !tick.restBlock?.isActive) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
 
@@ -115,19 +116,24 @@ function OverlayView({ tick }: OverlayViewProps) {
   
   const isWorkPhase = tick.currentPhase === 'sit' || tick.currentPhase === 'stand';
   const isActiveBreakPhase = tick.currentPhase === 'short-break' || tick.currentPhase === 'long-break';
+  const isTransitionPhase = tick.currentPhase === 'sit-to-stand-transition' || tick.currentPhase === 'stand-to-sit-transition';
   const breakSkipCountToday = tick.breakSkipCountToday ?? 0;
   const maxBreakSkipsPerDay = tick.maxBreakSkipsPerDay ?? 0;
   const breakSkipsLeftToday = Math.max(0, maxBreakSkipsPerDay - breakSkipCountToday);
   const isOfficeFocusLockActive = tick.officeFocusLock.isActive;
+  const noSkipEnabled = tick.noSkipEnabled ?? false;
 
   // Determine which actions to show based on phase and settings
   // Hide Done button in strict mode - user must wait for timer to complete
   const showDoneButton = isTransitionOrBreak && !tick.isStrictMode;
   const showPostponeButtons = tick.canPostpone && isTransitionOrBreak;
-  const showSkipButton = isTransitionOrBreak && (
-    // Active break skip is allowed (with configured daily limits), even in strict mode
+  
+  // Skip button logic:
+  // - If noSkipEnabled is true, no skipping allowed at all
+  // - For breaks: allowed if canSkipCurrentBreak is true (respects daily limits)
+  // - For transitions: allowed only if not in strict mode
+  const showSkipButton = isTransitionOrBreak && !noSkipEnabled && (
     (isActiveBreakPhase && tick.canSkipCurrentBreak !== false)
-    // Transition skip remains disabled in strict mode
     || (!isActiveBreakPhase && !tick.isStrictMode)
   );
   const showSkipPendingBreakButton = tick.isPostponed && !!tick.pendingBreakPhase;
@@ -259,14 +265,6 @@ function OverlayView({ tick }: OverlayViewProps) {
           </div>
         )}
 
-        {isActiveBreakPhase && (
-          <div className="overlay-postpone-info" style={{ marginTop: '0.75rem' }}>
-            {tick.canSkipCurrentBreak === false
-              ? `Break skip limit reached for today (${breakSkipCountToday}/${maxBreakSkipsPerDay})`
-              : `Break skips left today: ${breakSkipsLeftToday} (${breakSkipCountToday}/${maxBreakSkipsPerDay} used)`}
-          </div>
-        )}
-
         {/* Actions */}
         <div className="overlay-actions">
           {showSkipPendingBreakButton && (
@@ -319,6 +317,23 @@ function OverlayView({ tick }: OverlayViewProps) {
             </button>
           )}
         </div>
+
+        {/* Skip info - shown below action buttons */}
+        {isActiveBreakPhase && (
+          <div className="overlay-postpone-info" style={{ marginTop: '0.75rem' }}>
+            {noSkipEnabled
+              ? '🚫 Skip not allowed (disabled in schedule settings)'
+              : tick.canSkipCurrentBreak === false
+                ? `Break skip limit reached for today (${breakSkipCountToday}/${maxBreakSkipsPerDay})`
+                : `Break skips left today: ${breakSkipsLeftToday} (${breakSkipCountToday}/${maxBreakSkipsPerDay} used)`}
+          </div>
+        )}
+        
+        {isTransitionPhase && noSkipEnabled && (
+          <div className="overlay-postpone-info" style={{ marginTop: '0.75rem' }}>
+            🚫 Skip not allowed (disabled in schedule settings)
+          </div>
+        )}
 
         {/* Postpone Options */}
         {showPostponeButtons && tick.postponeOptions.length > 0 && (

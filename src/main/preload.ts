@@ -30,6 +30,7 @@ export interface RhythmDeskAPI {
   reverseFlow: () => Promise<void>;
   triggerPendingBreakNow: () => Promise<boolean>;
   startNextActivity: () => Promise<boolean>;
+  restartCurrentActivity: () => Promise<boolean>;
   
   // Office Focus Lock controls
   startOfficeFocusLock: (label: string, durationMinutes: number, isStrictMode?: boolean) => Promise<any>;
@@ -49,6 +50,10 @@ export interface RhythmDeskAPI {
   closeOverlay: () => Promise<void>;
   minimizeToTray: () => Promise<void>;
   quitApp: () => Promise<void>;
+  
+  // Sound management
+  getAvailableSounds: () => Promise<string[]>;
+  playTestSound: (filename: string, volume: number) => Promise<void>;
   
   // Dev mode only
   devClearAllData: () => Promise<{ success: boolean; message: string }>;
@@ -95,6 +100,7 @@ const api: RhythmDeskAPI = {
   reverseFlow: () => ipcRenderer.invoke(IPC_CHANNELS.REVERSE_FLOW),
   triggerPendingBreakNow: () => ipcRenderer.invoke(IPC_CHANNELS.TRIGGER_PENDING_BREAK_NOW),
   startNextActivity: () => ipcRenderer.invoke(IPC_CHANNELS.START_NEXT_ACTIVITY),
+  restartCurrentActivity: () => ipcRenderer.invoke(IPC_CHANNELS.RESTART_CURRENT_ACTIVITY),
 
   // Office Focus Lock controls
   startOfficeFocusLock: (label, durationMinutes, isStrictMode = false) => ipcRenderer.invoke(IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes, isStrictMode),
@@ -114,6 +120,10 @@ const api: RhythmDeskAPI = {
   closeOverlay: () => ipcRenderer.invoke(IPC_CHANNELS.CLOSE_OVERLAY),
   minimizeToTray: () => ipcRenderer.invoke(IPC_CHANNELS.MINIMIZE_TO_TRAY),
   quitApp: () => ipcRenderer.invoke(IPC_CHANNELS.QUIT_APP),
+
+  // Sound management
+  getAvailableSounds: () => ipcRenderer.invoke(IPC_CHANNELS.GET_AVAILABLE_SOUNDS),
+  playTestSound: (filename, volume) => ipcRenderer.invoke(IPC_CHANNELS.PLAY_TEST_SOUND, filename, volume),
 
   // Dev mode only
   devClearAllData: () => ipcRenderer.invoke(IPC_CHANNELS.DEV_CLEAR_ALL_DATA),

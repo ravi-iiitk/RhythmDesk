@@ -90,7 +90,8 @@ class SoundService {
     if (app.isPackaged) {
       this.soundsDir = path.join(process.resourcesPath, 'resources/sounds');
     } else {
-      this.soundsDir = path.join(__dirname, '../../resources/sounds');
+      // In dev mode, app.getAppPath() points to project root reliably
+      this.soundsDir = path.join(app.getAppPath(), 'resources/sounds');
     }
   }
 
@@ -212,8 +213,9 @@ class SoundService {
     // Use shell command to play sound (cross-platform approach for Electron main process)
     const { exec } = require('child_process');
     
-    // Linux: use paplay (PulseAudio) or aplay (ALSA)
-    const command = `paplay "${soundPath}" --volume=${Math.floor(volume * 65536)} 2>/dev/null || aplay "${soundPath}" 2>/dev/null`;
+    // Linux: try pw-play (PipeWire), then paplay (PulseAudio), then aplay (ALSA)
+    const paVolume = Math.floor(volume * 65536);
+    const command = `pw-play --volume=${volume.toFixed(2)} "${soundPath}" 2>/dev/null || paplay "${soundPath}" --volume=${paVolume} 2>/dev/null || aplay "${soundPath}" 2>/dev/null`;
     
     exec(command, (error: Error | null) => {
       if (error) {

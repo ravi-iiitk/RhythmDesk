@@ -581,31 +581,43 @@ export class TimerEngine extends EventEmitter {
       this.emit('scheduleChange', this.currentSchedule);
     } else if (activeSchedule && this.currentSchedule) {
       // Same schedule ID - config might have been edited
-      // PHASE 1.5 FIX: Do NOT refresh runtime schedule from config
-      // Keep using the frozen snapshot until explicit reset
-      // Only update non-flow settings that are safe to change mid-session
-      // (e.g., strictMode, sound settings, but NOT flowSteps or durations)
-      // 
-      // The isFlowSessionStale() check will detect config changes
-      // and dashboard will show "flow stale" notification
-      // User must explicitly reset to apply changes
-      //
-      // NOTE: We intentionally do NOT do: this.currentSchedule = activeSchedule
-      // This prevents config edits from leaking into active runtime
+      if (
+        isFlowBasedSchedule(activeSchedule) &&
+        isFlowBasedSchedule(this.currentSchedule) &&
+        activeSchedule.flowSteps &&
+        this.currentSchedule.flowSteps
+      ) {
+        // ALL config changes (duration or order) require Reset to apply.
+        // We intentionally do NOT update this.currentSchedule here — keeping it frozen
+        // ensures the dashboard shows consistent values (both total and countdown from state).
+        // isFlowSessionStale() compares against live disk config to detect changes and show banner.
+      } else if (!isFlowBasedSchedule(activeSchedule)) {
+        // Rule-based: no flow snapshot is involved, safe to always apply live config
+        this.currentSchedule = activeSchedule;
+      }
     }
   }
   
   /**
    * Check if the current flow-based session is stale (flow config changed since session started)
+   * Compares the frozen session hash against the LIVE DISK CONFIG to detect any changes.
    */
   isFlowSessionStale(): boolean {
     if (!this.currentSchedule || !isFlowBasedSchedule(this.currentSchedule)) {
       return false;
     }
-    const currentHash = computeFlowConfigHash(this.currentSchedule.flowSteps);
     const sessionHash = this.state.flowConfigHash;
-    // Stale if we have a session hash that doesn't match current config
-    return sessionHash !== undefined && sessionHash !== currentHash;
+    if (sessionHash === undefined) {
+      return false;
+    }
+    // Compare against live config from disk, not frozen this.currentSchedule
+    const schedules = configService.getSchedules();
+    const activeSchedule = resolveActiveSchedule(schedules);
+    if (!activeSchedule || !isFlowBasedSchedule(activeSchedule) || !activeSchedule.flowSteps) {
+      return false;
+    }
+    const diskHash = computeFlowConfigHash(activeSchedule.flowSteps);
+    return sessionHash !== diskHash;
   }
 
   /**
@@ -724,6 +736,8 @@ export class TimerEngine extends EventEmitter {
     
     // Store current phase to resume after break
     this.preBreakPhase = this.state.currentPhase;
+    this.state.interruptedPhase = this.state.currentPhase;
+    this.state.interruptedPhaseRemainingMs = this.state.phaseRemainingMs;
     
     // PHASE 1.5: Track interrupted flow index for flow-based schedules
     // This ensures we can restore the correct flow position after break/postpone
@@ -1431,15 +1445,43 @@ export class TimerEngine extends EventEmitter {
       workPhaseToRestore = 'sit';
     }
     
-    const workPhaseRemainingMs = this.state.interruptedPhaseRemainingMs || this.getPhaseDurationMs(workPhaseToRestore);
+    let workPhaseRemainingMs = this.state.interruptedPhaseRemainingMs || this.getPhaseDurationMs(workPhaseToRestore);
     
     // CRITICAL FIX: Find the correct flow index for the work phase we're restoring to
     // Don't rely on interruptedFlowIndex which might point to a transition
     let flowIndexToRestore: number | undefined;
     if (isFlowBasedSchedule(this.currentSchedule) && this.currentSchedule.flowSteps) {
-      flowIndexToRestore = findPhaseIndex(this.currentSchedule.flowSteps, workPhaseToRestore);
-      if (flowIndexToRestore === -1) {
-        flowIndexToRestore = this.state.interruptedFlowIndex; // Fallback
+      // Flow-step break (interruptedPhaseRemainingMs === 0): the previous work phase
+      // completed naturally before the break. Advance the flow FORWARD past the break
+      // instead of going backward to the already-completed work phase.
+      if (this.state.interruptedPhaseRemainingMs === 0) {
+        const flowSteps = this.currentSchedule.flowSteps;
+        const breakStepIndex = this.state.currentFlowStepIndex ?? 0;
+        let result = computeNextFlowPhase(breakStepIndex, flowSteps, false);
+        
+        // Skip consecutive break steps
+        let attempts = 0;
+        while (isBreakPhaseType(result.nextPhase) && attempts < flowSteps.length) {
+          result = computeNextFlowPhase(result.nextIndex, flowSteps, false);
+          attempts++;
+        }
+        
+        workPhaseToRestore = result.nextPhase;
+        flowIndexToRestore = result.nextIndex;
+        workPhaseRemainingMs = getFlowStepDurationMs(flowSteps[result.nextIndex]);
+        
+        logger.info('TimerEngine', 'Postpone: advancing flow past break step', {
+          breakStepIndex,
+          nextPhase: workPhaseToRestore,
+          nextIndex: flowIndexToRestore,
+          duration: workPhaseRemainingMs,
+        });
+      } else {
+        // Triggered break (interrupted a work phase mid-execution) — restore it
+        flowIndexToRestore = findPhaseIndex(this.currentSchedule.flowSteps, workPhaseToRestore);
+        if (flowIndexToRestore === -1) {
+          flowIndexToRestore = this.state.interruptedFlowIndex; // Fallback
+        }
       }
     }
     
@@ -1448,18 +1490,30 @@ export class TimerEngine extends EventEmitter {
     this.state.prePostponeWorkPhaseRemainingMs = workPhaseRemainingMs;
     this.state.prePostponeFlowIndex = flowIndexToRestore;
     
-    // Restore work phase as current phase
-    this.state.currentPhase = workPhaseToRestore;
-    this.state.phaseRemainingMs = workPhaseRemainingMs;
-    this.state.phaseTotalMs = this.getPhaseDurationMs(workPhaseToRestore);
-    this.state.phaseStartedAt = Date.now();
-    this.state.phaseEndsAt = Date.now() + workPhaseRemainingMs;
-    
-    // CRITICAL FIX: Always restore flow index to match restored work phase
-    // This ensures currentPhase and currentFlowStepIndex are consistent
+    // CRITICAL FIX: Always restore flow index BEFORE phase setup
+    // so getPhaseDurationMs uses the correct flow step for phaseTotalMs
     if (isFlowBasedSchedule(this.currentSchedule) && flowIndexToRestore !== undefined && flowIndexToRestore !== -1) {
       this.state.currentFlowStepIndex = flowIndexToRestore;
     }
+    
+    // Restore work phase as current phase
+    this.state.currentPhase = workPhaseToRestore;
+    this.state.phaseRemainingMs = workPhaseRemainingMs;
+    
+    // CRITICAL FIX: Calculate phaseTotalMs correctly for the work phase being restored
+    // For flow-based schedules, we need to get the duration from the flow step itself,
+    // not from getPhaseDurationMs() which uses the current flow index
+    if (isFlowBasedSchedule(this.currentSchedule) && flowIndexToRestore !== undefined && flowIndexToRestore !== -1) {
+      const flowSteps = this.currentSchedule.flowSteps!;
+      const restoredStep = flowSteps[flowIndexToRestore];
+      this.state.phaseTotalMs = restoredStep ? getFlowStepDurationMs(restoredStep) : this.getPhaseDurationMs(workPhaseToRestore);
+    } else {
+      // Rule-based schedule or fallback
+      this.state.phaseTotalMs = this.getPhaseDurationMs(workPhaseToRestore);
+    }
+    
+    this.state.phaseStartedAt = Date.now();
+    this.state.phaseEndsAt = Date.now() + workPhaseRemainingMs;
     
     // Phase 1.5: Structured postpone logging
     logSessionEvent({
@@ -1739,6 +1793,92 @@ export class TimerEngine extends EventEmitter {
    */
   completePhase(): void {
     this.advancePhase();
+  }
+
+  /**
+   * Restart the current activity's timer back to its full configured duration.
+   * Does NOT reset session state (cumulative work time, break counters, flow index, etc.)
+   * 
+   * RESTART SEMANTICS:
+   * - Only restarts the timer for the current phase
+   * - Does not apply to transitions (sit-to-stand, stand-to-sit)
+   * - Does not apply to idle or waiting-for-next-activity states
+   * - Does not apply to strict-mode breaks (would allow extending enforced breaks)
+   * - Unpauses the timer if currently paused
+   * - Preserves: cumulative work time, break markers, flow index, postpone state
+   * 
+   * Returns true if the activity was restarted, false if blocked.
+   */
+  restartCurrentActivity(): boolean {
+    if (!this.currentSchedule) {
+      logger.warn('TimerEngine', 'Cannot restart activity - no active schedule');
+      return false;
+    }
+
+    const phase = this.state.currentPhase;
+
+    // Block: transitions
+    if (phase === 'sit-to-stand-transition' || phase === 'stand-to-sit-transition') {
+      logger.info('TimerEngine', 'Restart blocked: transitions are not restartable');
+      return false;
+    }
+
+    // Block: idle
+    if (phase === 'idle') {
+      logger.info('TimerEngine', 'Restart blocked: idle phase');
+      return false;
+    }
+
+    // Block: waiting for next activity
+    if (this.state.isWaitingForNextActivity) {
+      logger.info('TimerEngine', 'Restart blocked: waiting for next activity');
+      return false;
+    }
+
+    // Block: strict-mode breaks (don't allow extending enforced breaks)
+    if ((phase === 'short-break' || phase === 'long-break') && this.getStrictModeForCurrentPhase()) {
+      logger.info('TimerEngine', 'Restart blocked: strict-mode break', { phase });
+      return false;
+    }
+
+    const now = Date.now();
+    const duration = this.state.phaseTotalMs;
+
+    logger.info('TimerEngine', 'Restarting current activity', {
+      phase,
+      previousRemainingMs: this.state.phaseRemainingMs,
+      restoredDurationMs: duration,
+    });
+
+    // Reset phase timer
+    this.state.phaseStartedAt = now;
+    this.state.phaseEndsAt = now + duration;
+    this.state.phaseRemainingMs = duration;
+
+    // Reset short break marker so break progress re-aligns with the restarted phase.
+    // Long break marker is intentionally NOT reset — prevents gaming via repeated restarts.
+    this.state.lastShortBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
+
+    // Unpause if paused
+    if (this.state.isPaused) {
+      this.state.isPaused = false;
+      this.state.pausedAt = null;
+      this.state.pauseResumeAt = null;
+      this.lastTickTime = now;
+    }
+
+    // Log event
+    logSessionEvent({
+      event: 'restartActivity',
+      phase,
+      cumulativeWorkMs: this.state.cumulativeWorkTimeMs,
+      scheduleId: this.currentSchedule?.id,
+    });
+
+    this.saveState();
+    this.emitTick();
+
+    return true;
   }
 
   /**

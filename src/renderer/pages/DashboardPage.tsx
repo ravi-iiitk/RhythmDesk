@@ -83,6 +83,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const handleReverseFlow = () => window.rhythmDesk.reverseFlow();
   const handleTriggerPendingBreakNow = () => window.rhythmDesk.triggerPendingBreakNow();
   const handleStartNextActivity = () => window.rhythmDesk.startNextActivity();
+  const handleRestartCurrentActivity = () => window.rhythmDesk.restartCurrentActivity();
   
   const handleStartOfficeFocusLock = (minutes: number) => {
     window.rhythmDesk.startOfficeFocusLock(selectedLabel, minutes, focusStrictMode);
@@ -330,6 +331,16 @@ function DashboardPage({ tick }: DashboardPageProps) {
     : (isActiveBreakPhase && tick.canSkipCurrentBreak === false)
       ? `Break skip limit reached (${tick.breakSkipCountToday ?? 0}/${tick.maxBreakSkipsPerDay ?? 0})`
       : 'Skip to next activity';
+  
+  const isTransitionPhase = tick.currentPhase === 'sit-to-stand-transition' || tick.currentPhase === 'stand-to-sit-transition';
+  const restartDisabled = isTransitionPhase || tick.isWaitingForNextActivity || (isActiveBreakPhase && tick.isStrictMode);
+  const restartTitle = isTransitionPhase
+    ? 'Cannot restart transitions'
+    : tick.isWaitingForNextActivity
+      ? 'Cannot restart - waiting for next activity'
+      : (isActiveBreakPhase && tick.isStrictMode)
+        ? 'Cannot restart strict-mode breaks'
+        : 'Restart current activity timer (keeps session progress)';
 
   return (
     <div className="page" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', height: '100%' }}>
@@ -549,7 +560,16 @@ function DashboardPage({ tick }: DashboardPageProps) {
           </span>
           
           {/* Controls - right aligned, wraps on smaller screens */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', marginLeft: 'auto' }}>
+            <button 
+              className="btn btn-secondary" 
+              onClick={handleRestartCurrentActivity}
+              disabled={restartDisabled}
+              title={restartTitle}
+              style={restartDisabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+            >
+              <span style={{ display: 'inline-block', filter: 'hue-rotate(90deg) saturate(1.5) brightness(1.05)' }}>🔁</span> Restart
+            </button>
             {tick.isWaitingForNextActivity && tick.waitingNextPhase ? (
               <button
                 className="btn btn-success"
@@ -562,7 +582,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
             ) : tick.isPaused ? (
               <button className="btn btn-success" onClick={handleResume}>▶️ Resume</button>
             ) : (
-              <button className="btn btn-secondary" onClick={handlePause}>⏸️ Pause</button>
+              <button className="btn btn-secondary" onClick={handlePause}><span style={{ display: 'inline-block', filter: 'hue-rotate(190deg) saturate(2) brightness(1.1)' }}>⏸️</span> Pause</button>
             )}
             {tick.isPostponed && tick.pendingBreakPhase && (
               <>
@@ -579,7 +599,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
                   onClick={handleSkip}
                   title="Skip the pending break and continue with current flow"
                 >
-                  ⏭️ Skip Pending Break
+                  <span style={{ display: 'inline-block', filter: 'hue-rotate(280deg) saturate(1.5) brightness(1.1)' }}>⏭️</span> Skip Pending Break
                 </button>
               </>
             )}
@@ -590,7 +610,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
               title={skipTitle}
               style={skipDisabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
             >
-              ⏭️ Skip
+              <span style={{ display: 'inline-block', filter: 'hue-rotate(280deg) saturate(1.5) brightness(1.1)' }}>⏭️</span> Skip
             </button>
             <button className="btn btn-secondary" onClick={handleResetSession} title="Reset Session">🔄 Reset</button>
             <button className="btn btn-secondary" onClick={handleResetTodayCounters} title="Reset Counters">📊</button>

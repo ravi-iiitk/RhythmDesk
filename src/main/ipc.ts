@@ -97,6 +97,10 @@ export function registerIpcHandlers(): void {
     return timerEngine.startNextActivity();
   });
 
+  ipcMain.handle(IPC_CHANNELS.RESTART_CURRENT_ACTIVITY, () => {
+    return timerEngine.restartCurrentActivity();
+  });
+
   // Window control handlers
   ipcMain.handle(IPC_CHANNELS.OPEN_SETTINGS, () => {
     showMainWindow();
@@ -201,6 +205,17 @@ export function registerIpcHandlers(): void {
   // Main window health check response handler
   ipcMain.on('main-window:health-check-response', () => {
     onMainWindowHealthCheckResponse();
+  });
+
+  // Sound management
+  ipcMain.handle(IPC_CHANNELS.GET_AVAILABLE_SOUNDS, () => {
+    const { getSoundService } = require('../core/soundService');
+    return getSoundService().getAvailableSounds();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PLAY_TEST_SOUND, (_event: any, filename: string, volume: number) => {
+    const { getSoundService } = require('../core/soundService');
+    return getSoundService().playTestSound(filename, volume);
   });
 
   // Dev mode: Clear all data (config + session)

@@ -106,7 +106,22 @@ function App() {
   useEffect(() => {
     // Subscribe to timer ticks
     const unsubscribeTick = window.rhythmDesk.onTimerTick((tick) => {
-      setCurrentTick(tick);
+      setCurrentTick((prevTick) => {
+        // When a rest block is active and the incoming tick is idle (no schedule),
+        // preserve the existing fallback rest block tick so the overlay doesn't
+        // render a frozen blank screen.
+        if (
+          tick.currentPhase === 'idle' &&
+          prevTick?.restBlock?.isActive
+        ) {
+          return {
+            ...prevTick,
+            // Merge any updated fields from the tick but keep rest block overlay working
+            isPaused: tick.isPaused,
+          };
+        }
+        return tick;
+      });
     });
 
     return () => {
@@ -129,17 +144,30 @@ function App() {
     };
   }, [isOverlay]);
 
-  // CRITICAL: Subscribe to REST_BLOCK_CHANGED for overlay
-  // This ensures the overlay gets updates even during long rest blocks
-  // when TimerEngine tick updates might be insufficient
+  // Subscribe to REST_BLOCK_CHANGED for ALL windows (dashboard + overlay)
+  // Dashboard needs this to show live rest block countdown when no schedule is active.
+  // Overlay needs this to keep its countdown in sync for long rest blocks.
+  useEffect(() => {
+    const unsubscribeRestBlock = window.rhythmDesk.onRestBlockChanged((state: RestBlockState) => {
+      if (state.isActive) {
+        updateTickWithRestBlock(state);
+      } else {
+        // Rest block stopped — update tick so UI reflects the stopped state
+        setCurrentTick((prevTick) => {
+          if (!prevTick) return null;
+          return { ...prevTick, restBlock: state };
+        });
+      }
+    });
+
+    return () => {
+      unsubscribeRestBlock();
+    };
+  }, [updateTickWithRestBlock]);
+
+  // Overlay-specific: Subscribe to resync data and request initial state
   useEffect(() => {
     if (!isOverlay) return;
-
-    const unsubscribeRestBlock = window.rhythmDesk.onRestBlockChanged((state: RestBlockState) => {
-      // Update the tick's restBlock state directly
-      // This is essential for keeping the overlay countdown in sync
-      updateTickWithRestBlock(state);
-    });
 
     const unsubscribeResyncData = window.rhythmDesk.onOverlayResyncData((data: {
       tick?: TimerTick | null;
@@ -164,7 +192,6 @@ function App() {
     });
 
     // Request current rest block state immediately on mount
-    // This handles the case where the overlay reloads/recovers
     window.rhythmDesk.getRestBlockState().then((state: RestBlockState) => {
       if (state.isActive) {
         console.log('[Overlay] Syncing rest block state on mount:', state.name, state.remainingMs);
@@ -178,7 +205,6 @@ function App() {
     window.rhythmDesk.requestOverlayResync();
 
     return () => {
-      unsubscribeRestBlock();
       unsubscribeResyncData();
     };
   }, [isOverlay, updateTickWithRestBlock]);
