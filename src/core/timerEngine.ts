@@ -587,42 +587,10 @@ export class TimerEngine extends EventEmitter {
         activeSchedule.flowSteps &&
         this.currentSchedule.flowSteps
       ) {
-        const newSteps = activeSchedule.flowSteps;
-        const curSteps = this.currentSchedule.flowSteps;
-        // Compare against the FROZEN SESSION SNAPSHOT, not curSteps.
-        // shuffleFlow() mutates this.currentSchedule in-place before checkScheduleChange
-        // runs, so comparing newSteps vs curSteps would incorrectly see them as matching
-        // and clear the stale banner. The snapshot always holds the session-start order.
-        const sessionSteps = this.runtimeFlowSnapshot;
-
-        // Check if step ORDER is unchanged (only durations/labels were edited)
-        const orderUnchanged =
-          sessionSteps !== null &&
-          newSteps.length === sessionSteps.length &&
-          newSteps.every((s, i) => sessionSteps[i]?.type === s.type);
-
-        if (orderUnchanged) {
-          // Only do work when the live config hash actually differs from the session hash.
-          // Without this guard, this block runs on every tick even when nothing changed,
-          // creating new objects and emitting log noise each second.
-          const incomingHash = computeFlowConfigHash(newSteps);
-          if (incomingHash !== this.state.flowConfigHash) {
-            // Safe to apply duration/label changes in-place without resetting the session.
-            // runtimeFlowSnapshot drives phase transitions (index/type lookups only),
-            // NOT durations — those are read from this.currentSchedule.flowSteps
-            // via getPhaseDurationMs, so patching curSteps here takes effect immediately.
-            newSteps.forEach((newStep, i) => { curSteps[i] = { ...curSteps[i], ...newStep }; });
-            // Rebuild currentSchedule with updated steps + any changed non-flow fields
-            this.currentSchedule = { ...activeSchedule, flowSteps: curSteps };
-            // Update hash so isFlowSessionStale() returns false (no stale banner needed)
-            this.state.flowConfigHash = incomingHash;
-            logger.info('TimerEngine', 'Flow step durations/labels updated in-place', {
-              hash: incomingHash,
-            });
-          }
-        }
-        // If order changed: keep frozen runtime state; isFlowSessionStale() returns true
-        // and the dashboard shows the "Reset Now" banner as before.
+        // ALL config changes (duration or order) require Reset to apply.
+        // We intentionally do NOT update this.currentSchedule here — keeping it frozen
+        // ensures the dashboard shows consistent values (both total and countdown from state).
+        // isFlowSessionStale() compares against live disk config to detect changes and show banner.
       } else if (!isFlowBasedSchedule(activeSchedule)) {
         // Rule-based: no flow snapshot is involved, safe to always apply live config
         this.currentSchedule = activeSchedule;
@@ -632,15 +600,24 @@ export class TimerEngine extends EventEmitter {
   
   /**
    * Check if the current flow-based session is stale (flow config changed since session started)
+   * Compares the frozen session hash against the LIVE DISK CONFIG to detect any changes.
    */
   isFlowSessionStale(): boolean {
     if (!this.currentSchedule || !isFlowBasedSchedule(this.currentSchedule)) {
       return false;
     }
-    const currentHash = computeFlowConfigHash(this.currentSchedule.flowSteps);
     const sessionHash = this.state.flowConfigHash;
-    // Stale if we have a session hash that doesn't match current config
-    return sessionHash !== undefined && sessionHash !== currentHash;
+    if (sessionHash === undefined) {
+      return false;
+    }
+    // Compare against live config from disk, not frozen this.currentSchedule
+    const schedules = configService.getSchedules();
+    const activeSchedule = resolveActiveSchedule(schedules);
+    if (!activeSchedule || !isFlowBasedSchedule(activeSchedule) || !activeSchedule.flowSteps) {
+      return false;
+    }
+    const diskHash = computeFlowConfigHash(activeSchedule.flowSteps);
+    return sessionHash !== diskHash;
   }
 
   /**
