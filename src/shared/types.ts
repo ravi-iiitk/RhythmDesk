@@ -354,10 +354,10 @@ export const INITIAL_REST_BLOCK_STATE: RestBlockState = {
 
 // Default rest block presets
 export const DEFAULT_REST_BLOCK_PRESETS: RestBlockPreset[] = [
+  { id: 'bio-break', name: 'Bio Break', durationMinutes: 2, strictMode: false },
   { id: 'quick-rest', name: 'Quick Rest', durationMinutes: 5, strictMode: false },
-  { id: 'meditation', name: 'Meditation', durationMinutes: 10, strictMode: true },
-  { id: 'lunch-break', name: 'Lunch Break', durationMinutes: 30, strictMode: false },
-  { id: '1-hour', name: '1 Hour', durationMinutes: 60, strictMode: false },
+  { id: 'dinner', name: 'Dinner', durationMinutes: 30, strictMode: false },
+  { id: 'lunch-break', name: 'Lunch Break', durationMinutes: 60, strictMode: false },
   { id: '2-hours', name: '2 Hours', durationMinutes: 120, strictMode: false },
 ];
 
