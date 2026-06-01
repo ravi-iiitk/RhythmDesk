@@ -505,6 +505,15 @@ export class TimerEngine extends EventEmitter {
         
         if (pendingBreak) {
           logger.info('TimerEngine', `Postponed break triggering: ${pendingBreak}`);
+          // FIX: Restore flow index to the break step BEFORE startPhase so that
+          // getPhaseDurationMs reads the correct duration from the flow step,
+          // not the rule-based fallback (which defaults to 5 min).
+          if (isFlowBasedSchedule(this.currentSchedule!) && this.currentSchedule!.flowSteps) {
+            const breakIndex = findPhaseIndex(this.currentSchedule!.flowSteps, pendingBreak);
+            if (breakIndex !== -1) {
+              this.state.currentFlowStepIndex = breakIndex;
+            }
+          }
           // Start the break - this will trigger phaseChange event which shows overlay
           this.startPhase(pendingBreak);
           this.emitTick();
