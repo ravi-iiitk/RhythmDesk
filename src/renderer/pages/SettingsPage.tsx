@@ -356,6 +356,44 @@ function SettingsPage() {
 
       <div className="card">
         <div className="card-header">
+          <span className="card-title">Idle Detection</span>
+        </div>
+
+        <div className="form-group">
+          <label className="form-checkbox">
+            <input
+              type="checkbox"
+              checked={settings.autoIdlePause ?? false}
+              onChange={(e) => handleChange('autoIdlePause', e.target.checked)}
+            />
+            Auto-pause when system is idle
+          </label>
+          <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+            Automatically pauses the schedule when no keyboard/mouse activity is detected, and resumes when you return.
+          </p>
+        </div>
+
+        {settings.autoIdlePause && (
+          <div className="form-group">
+            <label className="form-label">Idle threshold: {settings.idleThresholdMinutes ?? 3} minute{(settings.idleThresholdMinutes ?? 3) !== 1 ? 's' : ''}</label>
+            <input
+              type="range"
+              className="form-input"
+              min="1"
+              max="15"
+              value={settings.idleThresholdMinutes ?? 3}
+              onChange={(e) => handleChange('idleThresholdMinutes', parseInt(e.target.value, 10))}
+              style={{ cursor: 'pointer' }}
+            />
+            <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+              Minutes of inactivity before auto-pause kicks in.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-header">
           <span className="card-title">Developer</span>
         </div>
 

@@ -305,6 +305,8 @@ export interface GeneralSettings {
   startOnLogin: boolean;
   showNotifications: boolean;
   simulateMode: boolean;      // Speed up timers for testing (1 min = 2 sec)
+  autoIdlePause: boolean;     // Auto-pause schedule when system is idle
+  idleThresholdMinutes: number; // Minutes of idle before auto-pause (default: 3)
 }
 
 // Office Focus Lock state - runtime only, not persisted across restarts
@@ -505,6 +507,10 @@ export const IPC_CHANNELS = {
   DELETE_REST_BLOCK_PRESET: 'restBlock:deletePreset',
   REST_BLOCK_CHANGED: 'restBlock:changed',
   
+  // Pause reminder
+  SHOW_PAUSE_REMINDER: 'overlay:showPauseReminder',
+  DISMISS_PAUSE_REMINDER: 'overlay:dismissPauseReminder',
+  
   // Window controls
   OPEN_SETTINGS: 'window:openSettings',
   CLOSE_OVERLAY: 'overlay:close',
@@ -641,6 +647,8 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   startOnLogin: false,
   showNotifications: true,
   simulateMode: false,
+  autoIdlePause: false,
+  idleThresholdMinutes: 3,
 };
 
 // Initial Office Focus Lock state (inactive)

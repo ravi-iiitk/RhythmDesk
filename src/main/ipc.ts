@@ -28,6 +28,8 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.SAVE_CONFIG, (_event, config) => {
     configService.saveConfig(config);
+    // Notify timer engine so idle detection and other features can re-init
+    timerEngine.emit('configSaved');
   });
 
   ipcMain.handle(IPC_CHANNELS.GET_SCHEDULES, () => {
@@ -51,14 +53,20 @@ export function registerIpcHandlers(): void {
   // Timer control handlers
   ipcMain.handle(IPC_CHANNELS.PAUSE, () => {
     timerEngine.pause();
+    // Close overlay when user pauses - they shouldn't be trapped
+    closeOverlay();
   });
 
   ipcMain.handle(IPC_CHANNELS.RESUME, () => {
     timerEngine.resume();
+    // Close pause reminder overlay if it was showing
+    closeOverlay();
   });
 
   ipcMain.handle(IPC_CHANNELS.PAUSE_FOR_DURATION, (_event, minutes: number) => {
     timerEngine.pauseForDuration(minutes);
+    // Close overlay when user pauses
+    closeOverlay();
   });
 
   ipcMain.handle(IPC_CHANNELS.POSTPONE, (_event, minutes: number) => {
@@ -107,6 +115,10 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.CLOSE_OVERLAY, () => {
+    closeOverlay();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DISMISS_PAUSE_REMINDER, () => {
     closeOverlay();
   });
 

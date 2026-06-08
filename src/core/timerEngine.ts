@@ -101,6 +101,10 @@ export class TimerEngine extends EventEmitter {
   // This prevents config edits from leaking into active session
   // Only updated on session start or explicit reset
   private runtimeFlowSnapshot: FlowStep[] | null = null;
+  
+  // Pause reminder: tracks when the last pause reminder was shown
+  private pauseReminderLastShownAt: number = 0;
+  private static readonly PAUSE_REMINDER_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
   /**
    * PHASE 1.5: Get the runtime flow steps (frozen snapshot)
@@ -469,6 +473,13 @@ export class TimerEngine extends EventEmitter {
       if (this.state.pauseResumeAt && now >= this.state.pauseResumeAt) {
         this.resume();
       } else {
+        // Check if it's time to show a pause reminder (every 5 minutes)
+        if (this.state.pausedAt && now - this.pauseReminderLastShownAt >= TimerEngine.PAUSE_REMINDER_INTERVAL_MS) {
+          this.pauseReminderLastShownAt = now;
+          const pausedForMs = now - this.state.pausedAt;
+          logger.info('TimerEngine', 'Pause reminder triggered', { pausedForMs });
+          this.emit('pauseReminder', { pausedForMs, pausedAt: this.state.pausedAt });
+        }
         // Timer is paused - emit tick for UI updates but don't process any timers
         this.emitTick();
         return;
@@ -1309,6 +1320,7 @@ export class TimerEngine extends EventEmitter {
     this.state.isPaused = true;
     this.state.pausedAt = Date.now();
     this.state.pauseResumeAt = null;
+    this.pauseReminderLastShownAt = Date.now(); // First reminder in 5 min
     this.saveState();
   }
 
@@ -1320,6 +1332,7 @@ export class TimerEngine extends EventEmitter {
     this.state.isPaused = true;
     this.state.pausedAt = Date.now();
     this.state.pauseResumeAt = Date.now() + minutesToMs(minutes);
+    this.pauseReminderLastShownAt = Date.now(); // First reminder in 5 min
     this.saveState();
   }
 

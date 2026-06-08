@@ -58,6 +58,9 @@ export interface RhythmDeskAPI {
   // Dev mode only
   devClearAllData: () => Promise<{ success: boolean; message: string }>;
   
+  // Pause reminder
+  dismissPauseReminder: () => Promise<void>;
+  
   // Event listeners
   onTimerTick: (callback: (tick: any) => void) => () => void;
   onPhaseChange: (callback: (data: any) => void) => () => void;
@@ -66,6 +69,7 @@ export interface RhythmDeskAPI {
   onConfigUpdated: (callback: (config: any) => void) => () => void;
   onOfficeFocusLockChanged: (callback: (state: any) => void) => () => void;
   onRestBlockChanged: (callback: (state: any) => void) => () => void;
+  onShowPauseReminder: (callback: (data: any) => void) => () => void;
   
   // Phase 2: Overlay sync (heartbeat)
   sendHeartbeatResponse: () => void;
@@ -114,6 +118,9 @@ const api: RhythmDeskAPI = {
   getRestBlockPresets: () => ipcRenderer.invoke(IPC_CHANNELS.GET_REST_BLOCK_PRESETS),
   saveRestBlockPreset: (preset) => ipcRenderer.invoke(IPC_CHANNELS.SAVE_REST_BLOCK_PRESET, preset),
   deleteRestBlockPreset: (presetId) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_REST_BLOCK_PRESET, presetId),
+
+  // Pause reminder
+  dismissPauseReminder: () => ipcRenderer.invoke(IPC_CHANNELS.DISMISS_PAUSE_REMINDER),
 
   // Window controls
   openSettings: () => ipcRenderer.invoke(IPC_CHANNELS.OPEN_SETTINGS),
@@ -169,6 +176,12 @@ const api: RhythmDeskAPI = {
     const handler = (_event: any, state: any) => callback(state);
     ipcRenderer.on(IPC_CHANNELS.REST_BLOCK_CHANGED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.REST_BLOCK_CHANGED, handler);
+  },
+
+  onShowPauseReminder: (callback) => {
+    const handler = (_event: any, data: any) => callback(data);
+    ipcRenderer.on(IPC_CHANNELS.SHOW_PAUSE_REMINDER, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.SHOW_PAUSE_REMINDER, handler);
   },
 
   // Phase 2: Overlay sync (heartbeat)

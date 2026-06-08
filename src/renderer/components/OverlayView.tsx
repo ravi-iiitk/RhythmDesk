@@ -53,6 +53,8 @@ const PHASE_MESSAGES: Record<PhaseType, string> = {
 function OverlayView({ tick }: OverlayViewProps) {
   // Current time state - updates every second
   const [currentTime, setCurrentTime] = useState(formatCurrentTime());
+  // Pause reminder state
+  const [pauseReminderData, setPauseReminderData] = useState<{ pausedForMs: number; pausedAt: number } | null>(null);
   
   // Update current time every second
   useEffect(() => {
@@ -61,6 +63,21 @@ function OverlayView({ tick }: OverlayViewProps) {
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Listen for pause reminder events
+  useEffect(() => {
+    const cleanup = window.rhythmDesk.onShowPauseReminder((data) => {
+      setPauseReminderData(data);
+    });
+    return cleanup;
+  }, []);
+
+  // Clear pause reminder when timer resumes
+  useEffect(() => {
+    if (tick && !tick.isPaused && pauseReminderData) {
+      setPauseReminderData(null);
+    }
+  }, [tick?.isPaused]);
 
   // Phase 2: Respond to heartbeat requests from main process
   // CRITICAL: Must be before ALL early returns — if tick is null this still needs to fire
@@ -74,10 +91,87 @@ function OverlayView({ tick }: OverlayViewProps) {
 
   // Show nothing while waiting for first tick - prevents idle flash
   // NOTE: heartbeat useEffect above must stay before this return
+  if (!tick && !pauseReminderData) {
+    return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
+  }
+
+  // Pause reminder overlay (can render even without tick data)
+  if (pauseReminderData) {
+    const pausedMinutes = Math.floor((Date.now() - pauseReminderData.pausedAt) / 60000);
+    return (
+      <div className="overlay">
+        <div className="overlay-content">
+          <div style={{
+            textAlign: 'center',
+            marginBottom: '0.5rem',
+          }}>
+            <div style={{
+              fontSize: '5rem',
+              fontWeight: 600,
+              color: 'rgba(148, 163, 184, 0.9)',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              fontVariantNumeric: 'tabular-nums',
+              letterSpacing: '0.02em',
+              textShadow: '0 2px 20px rgba(148, 163, 184, 0.15)',
+            }}>{currentTime}</div>
+          </div>
+
+          <div style={{
+            fontSize: '4rem',
+            marginBottom: '0.5rem',
+          }}>⏸️</div>
+
+          <div className="overlay-phase" style={{ color: '#fbbf24' }}>
+            Schedule is Paused
+          </div>
+
+          <div className="overlay-message" style={{ fontSize: '1.5rem', marginTop: '1rem' }}>
+            Paused for {pausedMinutes} minute{pausedMinutes !== 1 ? 's' : ''}
+          </div>
+
+          <div className="overlay-message" style={{ opacity: 0.6, marginTop: '0.5rem' }}>
+            Your posture schedule is not running. Resume to continue tracking.
+          </div>
+
+          <div className="overlay-actions" style={{ marginTop: '2rem', gap: '1rem' }}>
+            <button
+              className="btn btn-success"
+              style={{
+                fontSize: '1.2rem',
+                padding: '0.75rem 2rem',
+              }}
+              onClick={() => {
+                window.rhythmDesk.resume();
+                setPauseReminderData(null);
+                window.rhythmDesk.dismissPauseReminder();
+              }}
+            >
+              ▶ Resume Schedule
+            </button>
+            <button
+              className="btn btn-secondary"
+              style={{
+                fontSize: '1rem',
+                padding: '0.5rem 1.5rem',
+              }}
+              onClick={() => {
+                setPauseReminderData(null);
+                window.rhythmDesk.dismissPauseReminder();
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  // After pause reminder, tick must exist for normal rendering
   if (!tick) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
-  
+
   // Hide overlay for idle state - overlay shouldn't show during idle
   // Exception: rest blocks should still render even with no active schedule
   if (tick.currentPhase === 'idle' && !tick.restBlock?.isActive) {
@@ -139,7 +233,8 @@ function OverlayView({ tick }: OverlayViewProps) {
   const showSkipPendingBreakButton = tick.isPostponed && !!tick.pendingBreakPhase;
   // In Office Focus Lock during work phase, show stop button instead of close
   // But hide stop button if Focus Mode strict mode is enabled
-  const showCloseButton = !tick.isStrictMode && !isOfficeFocusLockActive;
+  // ALWAYS show close button when paused - user should never be trapped while paused
+  const showCloseButton = tick.isPaused || (!tick.isStrictMode && !isOfficeFocusLockActive);
   const showStopLockButton = isOfficeFocusLockActive && isWorkPhase && !tick.officeFocusLock.isStrictMode;
 
   // Current time display style - readable from distance, ~65% of main countdown (8rem)

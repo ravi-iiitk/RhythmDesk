@@ -31,6 +31,8 @@ import { getTimerWatchdog } from '../core/watchdog';
 import { initDebugMode } from '../core/debugMode';
 // Sound service
 import { playSound, getSoundService } from '../core/soundService';
+// Idle detection
+import { getIdleDetector } from '../core/idleDetector';
 
 /**
  * Get overlay policy for current state
@@ -284,6 +286,70 @@ function initialize(): void {
     // Handle session reset
     timerEngine.on('sessionReset', () => {
       playSound('session_reset');
+    });
+
+    // Handle pause reminder - show overlay every 5 min when paused
+    timerEngine.on('pauseReminder', (data: { pausedForMs: number; pausedAt: number }) => {
+      logger.info('Main', 'Showing pause reminder overlay', { pausedForMs: data.pausedForMs });
+      showOverlay(false); // Non-strict, dismissible overlay
+      // Delay sending the event to ensure the overlay renderer has loaded
+      // (handles case where overlay was destroyed and recreated)
+      setTimeout(() => {
+        sendToAll(IPC_CHANNELS.SHOW_PAUSE_REMINDER, data);
+      }, 500);
+    });
+
+    // ========================================
+    // System Idle Detection
+    // ========================================
+    const idleDetector = getIdleDetector();
+    let idleAutoPaused = false; // Track if WE paused it (vs user manually paused)
+
+    const initIdleDetection = () => {
+      const settings = configService.getGeneralSettings();
+      if (settings.autoIdlePause) {
+        if (!idleDetector.isRunning()) {
+          idleDetector.start(settings.idleThresholdMinutes ?? 3);
+        } else {
+          idleDetector.setThreshold(settings.idleThresholdMinutes ?? 3);
+        }
+      } else {
+        idleDetector.stop();
+        idleAutoPaused = false;
+      }
+    };
+
+    // Initialize on startup
+    initIdleDetection();
+
+    // Re-initialize when config changes (schedule or settings saved)
+    timerEngine.on('scheduleChange', () => {
+      initIdleDetection();
+    });
+    timerEngine.on('configSaved', () => {
+      initIdleDetection();
+    });
+
+    idleDetector.on('idle', () => {
+      const state = timerEngine.getState();
+      if (!state.isPaused && state.currentPhase !== 'idle') {
+        logger.info('Main', 'System idle detected - auto-pausing schedule');
+        timerEngine.pause();
+        idleAutoPaused = true;
+      }
+    });
+
+    idleDetector.on('active', () => {
+      if (idleAutoPaused) {
+        logger.info('Main', 'System activity resumed - auto-resuming schedule');
+        timerEngine.resume();
+        idleAutoPaused = false;
+        // Close pause reminder overlay if it was shown
+        const overlay = getOverlayWindow();
+        if (overlay && !overlay.isDestroyed()) {
+          safeCloseOverlay();
+        }
+      }
     });
 
     // Initialize Office Focus Lock service and handle its events
