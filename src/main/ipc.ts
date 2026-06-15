@@ -9,9 +9,11 @@ import configService from '../core/configService';
 import { getTimerEngine } from '../core/timerEngine';
 import { getOfficeFocusLockService } from '../core/officeFocusLockService';
 import { getRestBlockService } from '../core/restBlockService';
-import { showMainWindow, closeOverlay, hideMainWindow, onMainWindowHealthCheckResponse } from './windowManager';
+import { showMainWindow, closeOverlay, showOverlay, hideMainWindow, onMainWindowHealthCheckResponse } from './windowManager';
+import { getOverlayPolicy, OverlayPolicyInput } from '../core/overlayPolicy';
 import { app } from 'electron';
 import { getOverlaySyncService, OVERLAY_SYNC_CHANNELS } from '../core/overlaySync';
+import { syncLoginItemWithSettings } from './autostart';
 import { getOverlayWatchdog } from '../core/watchdog';
 import logger from '../core/logger';
 
@@ -28,6 +30,11 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.SAVE_CONFIG, (_event, config) => {
     configService.saveConfig(config);
+    // Apply autostart immediately when settings are saved
+    const generalSettings = config?.generalSettings;
+    if (generalSettings !== undefined) {
+      syncLoginItemWithSettings(generalSettings.startOnLogin ?? false);
+    }
     // Notify timer engine so idle detection and other features can re-init
     timerEngine.emit('configSaved');
   });
@@ -52,15 +59,45 @@ export function registerIpcHandlers(): void {
 
   // Timer control handlers
   ipcMain.handle(IPC_CHANNELS.PAUSE, () => {
+    const state = timerEngine.getState();
     timerEngine.pause();
-    // Close overlay when user pauses - they shouldn't be trapped
-    closeOverlay();
+    // Only close overlay during work phases (sit/stand) - user shouldn't be trapped
+    // Keep overlay open during transitions/breaks so user sees the paused state
+    const workPhases = ['sit', 'stand', 'idle'];
+    if (workPhases.includes(state.currentPhase)) {
+      closeOverlay();
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.RESUME, () => {
     timerEngine.resume();
-    // Close pause reminder overlay if it was showing
-    closeOverlay();
+    // After resume, check if the current phase still needs an overlay
+    // (e.g. if a break was paused mid-way, reopen the break overlay)
+    const state = timerEngine.getState();
+    const schedule = timerEngine.getCurrentSchedule();
+    const officeFocusLockService = getOfficeFocusLockService();
+    const currentFlowStep = schedule?.mode === 'flow-based' && schedule.flowSteps
+      && state.currentFlowStepIndex !== undefined
+      ? schedule.flowSteps[state.currentFlowStepIndex]
+      : undefined;
+    const input: OverlayPolicyInput = {
+      phase: state.currentPhase,
+      schedule,
+      focusLockActive: officeFocusLockService.isActive(),
+      focusLockState: officeFocusLockService.getState(),
+      isPaused: false,
+      isPostponed: state.isPostponed,
+      isWaitingForNextActivity: state.isWaitingForNextActivity,
+      currentFlowStep,
+    };
+    const policy = getOverlayPolicy(input);
+    if (policy.showOverlay) {
+      // Phase needs overlay — reopen it
+      showOverlay(policy.strictMode);
+    } else {
+      // Phase does not need overlay — close any open one (pause reminder)
+      closeOverlay();
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.PAUSE_FOR_DURATION, (_event, minutes: number) => {
@@ -109,6 +146,10 @@ export function registerIpcHandlers(): void {
     return timerEngine.restartCurrentActivity();
   });
 
+  ipcMain.handle(IPC_CHANNELS.EXTEND_BREAK, (_event, minutes: number) => {
+    return timerEngine.extendBreak(minutes);
+  });
+
   // Window control handlers
   ipcMain.handle(IPC_CHANNELS.OPEN_SETTINGS, () => {
     showMainWindow();
@@ -119,6 +160,11 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.DISMISS_PAUSE_REMINDER, () => {
+    closeOverlay();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DISMISS_WATER_REMINDER, () => {
+    timerEngine.dismissWaterReminder();
     closeOverlay();
   });
 

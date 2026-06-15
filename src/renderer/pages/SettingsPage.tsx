@@ -332,7 +332,30 @@ function SettingsPage() {
             Start on System Login
           </label>
           <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
-            Requires manual setup on Linux - add to your desktop autostart
+            Automatically launches RhythmDesk when you log in (creates a desktop autostart entry). Only works with the installed app, not in dev mode.
+          </p>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <span className="card-title">⏱️ Break Extension</span>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Extend break by: {settings.breakExtendMinutes ?? 2} minute{(settings.breakExtendMinutes ?? 2) !== 1 ? 's' : ''}</label>
+          <input
+            type="range"
+            className="form-input"
+            min="1"
+            max="10"
+            step="1"
+            value={settings.breakExtendMinutes ?? 2}
+            onChange={(e) => handleChange('breakExtendMinutes', parseInt(e.target.value, 10))}
+            style={{ cursor: 'pointer' }}
+          />
+          <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+            Amount of time added when you click "+X min" during a break or transition.
           </p>
         </div>
       </div>
@@ -387,6 +410,45 @@ function SettingsPage() {
             />
             <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
               Minutes of inactivity before auto-pause kicks in.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <span className="card-title">💧 Water Reminder</span>
+        </div>
+
+        <div className="form-group">
+          <label className="form-checkbox">
+            <input
+              type="checkbox"
+              checked={settings.waterReminderEnabled ?? false}
+              onChange={(e) => handleChange('waterReminderEnabled', e.target.checked)}
+            />
+            Enable water reminder
+          </label>
+          <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+            Shows a fullscreen reminder to drink water at regular intervals. You must confirm to dismiss.
+          </p>
+        </div>
+
+        {settings.waterReminderEnabled && (
+          <div className="form-group">
+            <label className="form-label">Reminder interval: {settings.waterReminderIntervalMinutes ?? 10} minute{(settings.waterReminderIntervalMinutes ?? 10) !== 1 ? 's' : ''}</label>
+            <input
+              type="range"
+              className="form-input"
+              min="5"
+              max="60"
+              step="5"
+              value={settings.waterReminderIntervalMinutes ?? 10}
+              onChange={(e) => handleChange('waterReminderIntervalMinutes', parseInt(e.target.value, 10))}
+              style={{ cursor: 'pointer' }}
+            />
+            <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+              How often to remind you to drink water (5-60 minutes).
             </p>
           </div>
         )}

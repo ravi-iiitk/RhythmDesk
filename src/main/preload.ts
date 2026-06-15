@@ -31,6 +31,7 @@ export interface RhythmDeskAPI {
   triggerPendingBreakNow: () => Promise<boolean>;
   startNextActivity: () => Promise<boolean>;
   restartCurrentActivity: () => Promise<boolean>;
+  extendBreak: (minutes: number) => Promise<boolean>;
   
   // Office Focus Lock controls
   startOfficeFocusLock: (label: string, durationMinutes: number, isStrictMode?: boolean) => Promise<any>;
@@ -61,6 +62,9 @@ export interface RhythmDeskAPI {
   // Pause reminder
   dismissPauseReminder: () => Promise<void>;
   
+  // Water reminder
+  dismissWaterReminder: () => Promise<void>;
+  
   // Event listeners
   onTimerTick: (callback: (tick: any) => void) => () => void;
   onPhaseChange: (callback: (data: any) => void) => () => void;
@@ -70,6 +74,7 @@ export interface RhythmDeskAPI {
   onOfficeFocusLockChanged: (callback: (state: any) => void) => () => void;
   onRestBlockChanged: (callback: (state: any) => void) => () => void;
   onShowPauseReminder: (callback: (data: any) => void) => () => void;
+  onShowWaterReminder: (callback: (data: any) => void) => () => void;
   
   // Phase 2: Overlay sync (heartbeat)
   sendHeartbeatResponse: () => void;
@@ -105,6 +110,7 @@ const api: RhythmDeskAPI = {
   triggerPendingBreakNow: () => ipcRenderer.invoke(IPC_CHANNELS.TRIGGER_PENDING_BREAK_NOW),
   startNextActivity: () => ipcRenderer.invoke(IPC_CHANNELS.START_NEXT_ACTIVITY),
   restartCurrentActivity: () => ipcRenderer.invoke(IPC_CHANNELS.RESTART_CURRENT_ACTIVITY),
+  extendBreak: (minutes) => ipcRenderer.invoke(IPC_CHANNELS.EXTEND_BREAK, minutes),
 
   // Office Focus Lock controls
   startOfficeFocusLock: (label, durationMinutes, isStrictMode = false) => ipcRenderer.invoke(IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes, isStrictMode),
@@ -121,6 +127,9 @@ const api: RhythmDeskAPI = {
 
   // Pause reminder
   dismissPauseReminder: () => ipcRenderer.invoke(IPC_CHANNELS.DISMISS_PAUSE_REMINDER),
+
+  // Water reminder
+  dismissWaterReminder: () => ipcRenderer.invoke(IPC_CHANNELS.DISMISS_WATER_REMINDER),
 
   // Window controls
   openSettings: () => ipcRenderer.invoke(IPC_CHANNELS.OPEN_SETTINGS),
@@ -182,6 +191,12 @@ const api: RhythmDeskAPI = {
     const handler = (_event: any, data: any) => callback(data);
     ipcRenderer.on(IPC_CHANNELS.SHOW_PAUSE_REMINDER, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.SHOW_PAUSE_REMINDER, handler);
+  },
+
+  onShowWaterReminder: (callback) => {
+    const handler = (_event: any, data: any) => callback(data);
+    ipcRenderer.on(IPC_CHANNELS.SHOW_WATER_REMINDER, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.SHOW_WATER_REMINDER, handler);
   },
 
   // Phase 2: Overlay sync (heartbeat)

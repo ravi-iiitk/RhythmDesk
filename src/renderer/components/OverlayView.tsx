@@ -55,6 +55,10 @@ function OverlayView({ tick }: OverlayViewProps) {
   const [currentTime, setCurrentTime] = useState(formatCurrentTime());
   // Pause reminder state
   const [pauseReminderData, setPauseReminderData] = useState<{ pausedForMs: number; pausedAt: number } | null>(null);
+  // Water reminder state
+  const [waterReminderActive, setWaterReminderActive] = useState(false);
+  // Break extend minutes from settings
+  const [breakExtendMinutes, setBreakExtendMinutes] = useState(2);
   
   // Update current time every second
   useEffect(() => {
@@ -70,6 +74,23 @@ function OverlayView({ tick }: OverlayViewProps) {
       setPauseReminderData(data);
     });
     return cleanup;
+  }, []);
+
+  // Listen for water reminder events
+  useEffect(() => {
+    const cleanup = window.rhythmDesk.onShowWaterReminder(() => {
+      setWaterReminderActive(true);
+    });
+    return cleanup;
+  }, []);
+
+  // Fetch break extend minutes from settings
+  useEffect(() => {
+    window.rhythmDesk.getConfig().then((config) => {
+      if (config?.generalSettings?.breakExtendMinutes) {
+        setBreakExtendMinutes(config.generalSettings.breakExtendMinutes);
+      }
+    });
   }, []);
 
   // Clear pause reminder when timer resumes
@@ -91,7 +112,7 @@ function OverlayView({ tick }: OverlayViewProps) {
 
   // Show nothing while waiting for first tick - prevents idle flash
   // NOTE: heartbeat useEffect above must stay before this return
-  if (!tick && !pauseReminderData) {
+  if (!tick && !pauseReminderData && !waterReminderActive) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
 
@@ -166,8 +187,87 @@ function OverlayView({ tick }: OverlayViewProps) {
       </div>
     );
   }
+
+  // Water reminder overlay - hydration reminder with water-themed colors
+  if (waterReminderActive) {
+    return (
+      <div className="overlay" style={{ 
+        background: 'linear-gradient(135deg, #0077b6 0%, #00b4d8 50%, #90e0ef 100%)',
+      }}>
+        <div className="overlay-content">
+          <div style={{
+            textAlign: 'center',
+            marginBottom: '0.5rem',
+          }}>
+            <div style={{
+              fontSize: '5rem',
+              fontWeight: 600,
+              color: 'rgba(255, 255, 255, 0.9)',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              fontVariantNumeric: 'tabular-nums',
+              letterSpacing: '0.02em',
+              textShadow: '0 2px 20px rgba(0, 0, 0, 0.2)',
+            }}>{currentTime}</div>
+          </div>
+
+          <div style={{
+            fontSize: '6rem',
+            marginBottom: '0.5rem',
+          }}>💧</div>
+
+          <div className="overlay-phase" style={{ 
+            color: '#ffffff',
+            fontSize: '2.5rem',
+            fontWeight: 700,
+            textShadow: '0 2px 10px rgba(0, 0, 0, 0.3)',
+          }}>
+            Time to Hydrate!
+          </div>
+
+          <div className="overlay-message" style={{ 
+            fontSize: '1.5rem', 
+            marginTop: '1rem',
+            color: 'rgba(255, 255, 255, 0.9)',
+          }}>
+            Take a moment to drink some water
+          </div>
+
+          <div className="overlay-message" style={{ 
+            opacity: 0.8, 
+            marginTop: '0.5rem',
+            color: 'rgba(255, 255, 255, 0.8)',
+          }}>
+            Staying hydrated improves focus and energy
+          </div>
+
+          <div className="overlay-actions" style={{ marginTop: '2rem' }}>
+            <button
+              className="btn"
+              style={{
+                fontSize: '1.3rem',
+                padding: '1rem 3rem',
+                backgroundColor: '#ffffff',
+                color: '#0077b6',
+                fontWeight: 700,
+                border: 'none',
+                borderRadius: '12px',
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)',
+                cursor: 'pointer',
+              }}
+              onClick={() => {
+                setWaterReminderActive(false);
+                window.rhythmDesk.dismissWaterReminder();
+              }}
+            >
+              ✓ I Drank Water
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   
-  // After pause reminder, tick must exist for normal rendering
+  // After pause/water reminder, tick must exist for normal rendering
   if (!tick) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
@@ -196,6 +296,7 @@ function OverlayView({ tick }: OverlayViewProps) {
   const handleStopRestBlock = () => window.rhythmDesk.stopRestBlock();
   const handlePause = () => window.rhythmDesk.pause();
   const handleResume = () => window.rhythmDesk.resume();
+  const handleExtendBreak = () => window.rhythmDesk.extendBreak(breakExtendMinutes);
 
   // Check if rest block is active - takes priority over normal phases
   const isRestBlockActive = tick.restBlock.isActive;
@@ -371,6 +472,20 @@ function OverlayView({ tick }: OverlayViewProps) {
           {showDoneButton && (
             <button className="btn btn-success" onClick={handleComplete}>
               ✓ Done
+            </button>
+          )}
+
+          {isTransitionOrBreak && (
+            <button 
+              className="btn btn-secondary" 
+              onClick={handleExtendBreak}
+              style={{
+                backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                borderColor: 'rgba(59, 130, 246, 0.3)',
+                color: '#3b82f6',
+              }}
+            >
+              +{breakExtendMinutes} min
             </button>
           )}
 

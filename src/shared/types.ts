@@ -307,6 +307,9 @@ export interface GeneralSettings {
   simulateMode: boolean;      // Speed up timers for testing (1 min = 2 sec)
   autoIdlePause: boolean;     // Auto-pause schedule when system is idle
   idleThresholdMinutes: number; // Minutes of idle before auto-pause (default: 3)
+  waterReminderEnabled: boolean;  // Show water reminder overlay
+  waterReminderIntervalMinutes: number; // Minutes between water reminders (default: 10)
+  breakExtendMinutes: number; // Minutes to extend a break by (default: 2)
 }
 
 // Office Focus Lock state - runtime only, not persisted across restarts
@@ -492,6 +495,7 @@ export const IPC_CHANNELS = {
   TRIGGER_PENDING_BREAK_NOW: 'timer:triggerPendingBreakNow',
   START_NEXT_ACTIVITY: 'timer:startNextActivity',
   RESTART_CURRENT_ACTIVITY: 'timer:restartCurrentActivity',
+  EXTEND_BREAK: 'timer:extendBreak',
   
   // Office Focus Lock controls
   START_OFFICE_FOCUS_LOCK: 'officeFocusLock:start',
@@ -510,6 +514,10 @@ export const IPC_CHANNELS = {
   // Pause reminder
   SHOW_PAUSE_REMINDER: 'overlay:showPauseReminder',
   DISMISS_PAUSE_REMINDER: 'overlay:dismissPauseReminder',
+  
+  // Water reminder
+  SHOW_WATER_REMINDER: 'overlay:showWaterReminder',
+  DISMISS_WATER_REMINDER: 'overlay:dismissWaterReminder',
   
   // Window controls
   OPEN_SETTINGS: 'window:openSettings',
@@ -649,6 +657,9 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   simulateMode: false,
   autoIdlePause: false,
   idleThresholdMinutes: 3,
+  waterReminderEnabled: false,
+  waterReminderIntervalMinutes: 10,
+  breakExtendMinutes: 2,
 };
 
 // Initial Office Focus Lock state (inactive)

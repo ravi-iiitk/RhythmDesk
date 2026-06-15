@@ -105,6 +105,10 @@ export class TimerEngine extends EventEmitter {
   // Pause reminder: tracks when the last pause reminder was shown
   private pauseReminderLastShownAt: number = 0;
   private static readonly PAUSE_REMINDER_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+  
+  // Water reminder: tracks when the last water reminder was shown
+  private waterReminderLastShownAt: number = 0;
+  private waterReminderActive: boolean = false; // True when water overlay is showing
 
   /**
    * PHASE 1.5: Get the runtime flow steps (frozen snapshot)
@@ -387,6 +391,13 @@ export class TimerEngine extends EventEmitter {
     logger.info('TimerEngine', 'Starting timer engine');
     this.lastTickTime = Date.now();
     this.lastStateSaveTime = Date.now();
+    // If session is restored in a paused state, reset the reminder clock
+    // so the first reminder comes 5 minutes from NOW (not from epoch 0).
+    if (this.state.isPaused) {
+      this.pauseReminderLastShownAt = Date.now();
+    }
+    // Initialize water reminder timer
+    this.waterReminderLastShownAt = Date.now();
     this.tickInterval = setInterval(() => this.tick(), TIMER_TICK_INTERVAL_MS);
     this.tick(); // Initial tick
   }
@@ -466,6 +477,21 @@ export class TimerEngine extends EventEmitter {
       return;
     }
 
+    // Water reminder check - fires every N minutes when enabled
+    // Can interrupt any phase (work, break, transition) but not when already showing
+    const settings = configService.getGeneralSettings();
+    if (settings.waterReminderEnabled && !this.waterReminderActive) {
+      const intervalMs = (settings.waterReminderIntervalMinutes ?? 10) * 60 * 1000;
+      if (now - this.waterReminderLastShownAt >= intervalMs) {
+        this.waterReminderLastShownAt = now;
+        this.waterReminderActive = true;
+        logger.info('TimerEngine', 'Water reminder triggered', { 
+          intervalMinutes: settings.waterReminderIntervalMinutes ?? 10 
+        });
+        this.emit('waterReminder', { triggeredAt: now });
+      }
+    }
+
     // CRITICAL: Handle paused state FIRST - before any other logic
     // This prevents postponed breaks from triggering during Rest Blocks
     // which caused flow state desync and renderer crashes
@@ -474,7 +500,10 @@ export class TimerEngine extends EventEmitter {
         this.resume();
       } else {
         // Check if it's time to show a pause reminder (every 5 minutes)
-        if (this.state.pausedAt && now - this.pauseReminderLastShownAt >= TimerEngine.PAUSE_REMINDER_INTERVAL_MS) {
+        // Only show during work phases (sit/stand) - not during breaks/transitions
+        // which already have their own overlay visible
+        const isWorkPhase = this.state.currentPhase === 'sit' || this.state.currentPhase === 'stand';
+        if (isWorkPhase && this.state.pausedAt && now - this.pauseReminderLastShownAt >= TimerEngine.PAUSE_REMINDER_INTERVAL_MS) {
           this.pauseReminderLastShownAt = now;
           const pausedForMs = now - this.state.pausedAt;
           logger.info('TimerEngine', 'Pause reminder triggered', { pausedForMs });
@@ -1334,6 +1363,45 @@ export class TimerEngine extends EventEmitter {
     this.state.pauseResumeAt = Date.now() + minutesToMs(minutes);
     this.pauseReminderLastShownAt = Date.now(); // First reminder in 5 min
     this.saveState();
+  }
+
+  /**
+   * Dismiss the water reminder overlay
+   * Called when user confirms they drank water
+   */
+  dismissWaterReminder(): void {
+    this.waterReminderActive = false;
+    logger.info('TimerEngine', 'Water reminder dismissed');
+  }
+
+  /**
+   * Extend the current break by a specified number of minutes.
+   * Only works during break phases (short-break, long-break, transition).
+   * Returns true if break was extended, false if not in a break phase.
+   */
+  extendBreak(minutes: number): boolean {
+    const breakPhases = ['short-break', 'long-break', 'transition'];
+    if (!breakPhases.includes(this.state.currentPhase)) {
+      logger.debug('TimerEngine', 'extendBreak: not in a break phase', { 
+        currentPhase: this.state.currentPhase 
+      });
+      return false;
+    }
+
+    const extensionMs = minutes * 60 * 1000;
+    this.state.phaseRemainingMs += extensionMs;
+    this.state.phaseTotalMs += extensionMs;
+
+    logger.info('TimerEngine', 'Break extended', {
+      phase: this.state.currentPhase,
+      extensionMinutes: minutes,
+      newRemainingMs: this.state.phaseRemainingMs,
+      newTotalMs: this.state.phaseTotalMs,
+    });
+
+    this.saveState();
+    this.emitTick();
+    return true;
   }
 
   /**

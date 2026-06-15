@@ -33,6 +33,8 @@ import { initDebugMode } from '../core/debugMode';
 import { playSound, getSoundService } from '../core/soundService';
 // Idle detection
 import { getIdleDetector } from '../core/idleDetector';
+// Autostart
+import { syncLoginItemWithSettings } from './autostart';
 
 /**
  * Get overlay policy for current state
@@ -134,6 +136,10 @@ function initialize(): void {
 
     // Register IPC handlers
     registerIpcHandlers();
+
+    // Sync autostart .desktop file with saved setting
+    const startupSettings = configService.getGeneralSettings();
+    syncLoginItemWithSettings(startupSettings.startOnLogin ?? false);
 
     // Create tray first (app stays running even when window is closed)
     createTray();
@@ -299,6 +305,15 @@ function initialize(): void {
       }, 500);
     });
 
+    // Handle water reminder - show hydration overlay every N minutes
+    timerEngine.on('waterReminder', (data: { triggeredAt: number }) => {
+      logger.info('Main', 'Showing water reminder overlay');
+      showOverlay(true); // Strict overlay - must confirm drinking water
+      setTimeout(() => {
+        sendToAll(IPC_CHANNELS.SHOW_WATER_REMINDER, data);
+      }, 500);
+    });
+
     // ========================================
     // System Idle Detection
     // ========================================
@@ -332,7 +347,9 @@ function initialize(): void {
 
     idleDetector.on('idle', () => {
       const state = timerEngine.getState();
-      if (!state.isPaused && state.currentPhase !== 'idle') {
+      const restBlockActive = getRestBlockService().isActive();
+      // Don't auto-pause during rest blocks (user is on a manual break)
+      if (!state.isPaused && state.currentPhase !== 'idle' && !restBlockActive) {
         logger.info('Main', 'System idle detected - auto-pausing schedule');
         timerEngine.pause();
         idleAutoPaused = true;
@@ -344,10 +361,18 @@ function initialize(): void {
         logger.info('Main', 'System activity resumed - auto-resuming schedule');
         timerEngine.resume();
         idleAutoPaused = false;
-        // Close pause reminder overlay if it was shown
-        const overlay = getOverlayWindow();
-        if (overlay && !overlay.isDestroyed()) {
-          safeCloseOverlay();
+        // After auto-resume, reopen overlay if current phase needs it (e.g. break)
+        const resumedPhase = timerEngine.getState().currentPhase;
+        const policy = getOverlayPolicyForState(resumedPhase);
+        if (policy.showOverlay) {
+          showOverlay(policy.strictMode);
+          sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: resumedPhase });
+        } else {
+          // Close any open overlay (e.g. pause reminder)
+          const overlay = getOverlayWindow();
+          if (overlay && !overlay.isDestroyed()) {
+            safeCloseOverlay();
+          }
         }
       }
     });
