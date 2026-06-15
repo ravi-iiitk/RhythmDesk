@@ -200,8 +200,13 @@ export function getOverlayPolicy(input: OverlayPolicyInput): OverlayPolicy {
     return { ...DEFAULT_POLICY };
   }
 
-  // Focus Lock overrides strictMode to true
-  const strictMode = focusLockActive || phaseConfig.strictModeEnabled;
+  // CRITICAL: Transitions must NEVER use strict/kiosk mode.
+  // They are 30-60 seconds — too short for kiosk mode. Kiosk causes:
+  // 1. Heartbeat watchdog false-positive → destroy/recreate cycle → frozen appearance
+  // 2. User lockout if overlay fails to render
+  // 3. No escape mechanism during the brief transition period
+  const isTransition = phase === 'sit-to-stand-transition' || phase === 'stand-to-sit-transition';
+  const strictMode = isTransition ? false : (focusLockActive || phaseConfig.strictModeEnabled);
 
   return {
     showOverlay: true,

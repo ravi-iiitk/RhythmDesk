@@ -540,7 +540,7 @@ export const IPC_CHANNELS = {
 // Default transition config
 export const DEFAULT_TRANSITION_CONFIG: TransitionConfig = {
   durationSeconds: 60,
-  strictModeEnabled: true,
+  strictModeEnabled: false,
   allowPostpone: true,
   allowPause: true,
   postponeOptionsMinutes: [2, 5, 10],

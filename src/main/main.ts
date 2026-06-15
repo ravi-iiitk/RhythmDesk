@@ -269,21 +269,36 @@ function initialize(): void {
         showOverlay(newPolicy.strictMode);
         sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: data.newPhase });
         
-        // Start overlay heartbeat watchdog for ALL overlay phases (breaks, transitions)
-        // This detects frozen overlays during long breaks when screensaver/screen-lock
-        // throttles the renderer process. Only start if not already running for a rest block.
-        if (!isRestBlockActive && !overlaySyncService.getState().isOverlayActive) {
+        // CRITICAL FIX: Send tick to overlay after delay to ensure React has mounted.
+        // In dev mode, did-finish-load fires when HTML loads but before Vite's JS bundle
+        // executes. The first regular tick (sent immediately) arrives before React registers
+        // its onTimerTick listener and is lost. This delayed send ensures overlay gets data.
+        setTimeout(() => {
+          const latestTick = timerEngine.getLastEmittedTick();
+          if (latestTick) {
+            sendToOverlay(IPC_CHANNELS.TIMER_TICK, latestTick);
+          }
+        }, 500);
+        setTimeout(() => {
+          const latestTick = timerEngine.getLastEmittedTick();
+          if (latestTick) {
+            sendToOverlay(IPC_CHANNELS.TIMER_TICK, latestTick);
+          }
+        }, 1500);
+
+        // Start overlay heartbeat watchdog ONLY for long phases (breaks).
+        // DO NOT start for transitions — they are too short (30s) and the watchdog's
+        // grace period (8s) + detection time (10s) causes false-positive "stale" detection
+        // that destroys and recreates the overlay mid-transition, making it look frozen.
+        const isLongPhase = data.newPhase === 'short-break' || data.newPhase === 'long-break' || data.newPhase === 'custom';
+        if (isLongPhase && !isRestBlockActive && !overlaySyncService.getState().isOverlayActive) {
           overlaySyncService.start(
             () => sendToOverlay(OVERLAY_SYNC_CHANNELS.HEARTBEAT_REQUEST, {}),
             () => {
               // CRITICAL: Use CURRENT state, not stale closure values.
-              // Recovery can fire long after the phaseChange event (e.g., after
-              // postpone changed the phase). Using stale values would recreate
-              // an overlay for the wrong phase.
               const currentPhase = timerEngine.getState().currentPhase;
               const currentPolicy = getOverlayPolicyForState(currentPhase);
               if (!currentPolicy.showOverlay) {
-                // Phase no longer needs overlay (e.g., user postponed) — just stop
                 logger.info('Main', 'Heartbeat recovery skipped — overlay no longer needed', { currentPhase });
                 overlaySyncService.stop();
                 return;

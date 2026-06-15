@@ -5,7 +5,7 @@
  * Phase 2: Added heartbeat response for overlay sync watchdog
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { TimerTick, PhaseType } from '../../shared/types';
 import { PHASE_DISPLAY_NAMES, PHASE_COLORS } from '../../shared/constants';
 import { formatDuration, formatDurationHuman } from '../../shared/timeUtils';
@@ -60,18 +60,6 @@ function OverlayView({ tick }: OverlayViewProps) {
   // Break extend minutes from settings (use first option)
   const [breakExtendMinutes, setBreakExtendMinutes] = useState(2);
   
-  // Fetch extend options from settings
-  useEffect(() => {
-    window.rhythmDesk.getConfig().then((config) => {
-      const options = config?.generalSettings?.extendOptions;
-      if (options && options.length > 0) {
-        setBreakExtendMinutes(options[0]);
-      } else if (config?.generalSettings?.breakExtendMinutes) {
-        // Fallback to old setting
-        setBreakExtendMinutes(config.generalSettings.breakExtendMinutes);
-      }
-    });
-  }, []);
   
   // Update current time every second
   useEffect(() => {
@@ -172,8 +160,70 @@ function OverlayView({ tick }: OverlayViewProps) {
     return cleanup;
   }, []);
 
+  // Keyboard shortcuts for overlay
+  // CRITICAL: Must be before ALL early returns — hooks must always be called in the same order
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (!tick) return; // No tick data yet, ignore keys
+    const isBreakOrTransition = [
+      'sit-to-stand-transition', 'stand-to-sit-transition', 
+      'short-break', 'long-break'
+    ].includes(tick.currentPhase);
+    const canClose = !tick.isStrictMode && !tick.officeFocusLock.isActive;
+    const canSkip = isBreakOrTransition && !(tick.noSkipEnabled ?? false) && tick.canSkipCurrentBreak !== false;
+
+    switch (e.key) {
+      case ' ': // Space - pause/resume
+        e.preventDefault();
+        if (tick.isPaused) {
+          window.rhythmDesk.resume();
+        } else {
+          window.rhythmDesk.pause();
+        }
+        break;
+      case 'Enter': // Enter - complete/done
+        if (isBreakOrTransition && !tick.isStrictMode) {
+          window.rhythmDesk.completePhase();
+        }
+        break;
+      case 's': // S - skip
+      case 'S':
+        if (canSkip) {
+          window.rhythmDesk.skipPhase();
+        }
+        break;
+      case 'e': // E - extend break (only on breaks, not transitions)
+      case 'E':
+        if (tick.currentPhase === 'short-break' || tick.currentPhase === 'long-break') {
+          window.rhythmDesk.extendBreak(breakExtendMinutes);
+        }
+        break;
+      case 'Escape': // Escape - close overlay
+        if (canClose) {
+          window.rhythmDesk.closeOverlay();
+        }
+        break;
+      case '1': // 1-5 - postpone options
+      case '2':
+      case '3':
+      case '4':
+      case '5':
+        if (tick.canPostpone && tick.postponeOptions && tick.postponeOptions.length > 0) {
+          const index = parseInt(e.key) - 1;
+          if (index < tick.postponeOptions.length) {
+            window.rhythmDesk.postpone(tick.postponeOptions[index]);
+          }
+        }
+        break;
+    }
+  }, [tick, breakExtendMinutes]);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
   // Show nothing while waiting for first tick - prevents idle flash
-  // NOTE: heartbeat useEffect above must stay before this return
+  // NOTE: all hooks above must stay before this return
   if (!tick && !pauseReminderData && !waterReminderActive) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
@@ -359,67 +409,6 @@ function OverlayView({ tick }: OverlayViewProps) {
   const handlePause = () => window.rhythmDesk.pause();
   const handleResume = () => window.rhythmDesk.resume();
   const handleExtendBreak = () => window.rhythmDesk.extendBreak(breakExtendMinutes);
-
-  // Keyboard shortcuts for overlay
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    // Determine what actions are available
-    const isBreakOrTransition = [
-      'sit-to-stand-transition', 'stand-to-sit-transition', 
-      'short-break', 'long-break'
-    ].includes(tick.currentPhase);
-    const canClose = !tick.isStrictMode && !tick.officeFocusLock.isActive;
-    const canSkip = isBreakOrTransition && !(tick.noSkipEnabled ?? false) && tick.canSkipCurrentBreak !== false;
-
-    switch (e.key) {
-      case ' ': // Space - pause/resume
-        e.preventDefault();
-        if (tick.isPaused) {
-          window.rhythmDesk.resume();
-        } else {
-          window.rhythmDesk.pause();
-        }
-        break;
-      case 'Enter': // Enter - complete/done
-        if (isBreakOrTransition && !tick.isStrictMode) {
-          window.rhythmDesk.completePhase();
-        }
-        break;
-      case 's': // S - skip
-      case 'S':
-        if (canSkip) {
-          window.rhythmDesk.skipPhase();
-        }
-        break;
-      case 'e': // E - extend break (only on breaks, not transitions)
-      case 'E':
-        if (tick.currentPhase === 'short-break' || tick.currentPhase === 'long-break') {
-          window.rhythmDesk.extendBreak(breakExtendMinutes);
-        }
-        break;
-      case 'Escape': // Escape - close overlay
-        if (canClose) {
-          window.rhythmDesk.closeOverlay();
-        }
-        break;
-      case '1': // 1-5 - postpone options
-      case '2':
-      case '3':
-      case '4':
-      case '5':
-        if (tick.canPostpone && tick.postponeOptions && tick.postponeOptions.length > 0) {
-          const index = parseInt(e.key) - 1;
-          if (index < tick.postponeOptions.length) {
-            window.rhythmDesk.postpone(tick.postponeOptions[index]);
-          }
-        }
-        break;
-    }
-  }, [tick, breakExtendMinutes]);
-
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
 
   // Check if rest block is active - takes priority over normal phases
   const isRestBlockActive = tick.restBlock.isActive;
@@ -707,4 +696,35 @@ function OverlayView({ tick }: OverlayViewProps) {
   );
 }
 
-export default OverlayView;
+// Error boundary wrapper to catch render crashes
+
+class OverlayErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[OverlayView] RENDER CRASH:', error, info.componentStack);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="overlay" style={{ color: '#ef4444', padding: '2rem', textAlign: 'center' }}>
+          <h1>Overlay Render Error</h1>
+          <pre style={{ fontSize: '1rem', whiteSpace: 'pre-wrap' }}>{this.state.error.message}</pre>
+          <pre style={{ fontSize: '0.8rem', opacity: 0.7, whiteSpace: 'pre-wrap' }}>{this.state.error.stack}</pre>
+          <button className="btn" onClick={() => window.rhythmDesk.closeOverlay()} style={{ marginTop: '1rem' }}>Close</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function OverlayViewWithErrorBoundary(props: OverlayViewProps) {
+  return (
+    <OverlayErrorBoundary>
+      <OverlayView {...props} />
+    </OverlayErrorBoundary>
+  );
+}
+
+export default OverlayViewWithErrorBoundary;

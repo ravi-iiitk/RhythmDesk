@@ -19,6 +19,7 @@ import { BrowserWindow, screen, app } from 'electron';
 import * as path from 'path';
 import logger from '../core/logger';
 import { logOverlayShow, logOverlayHide, logOverlayCrash, logOverlayRecovered, logOverlayEvent } from '../core/overlayDebug';
+import { getOverlaySyncService } from '../core/overlaySync';
 
 let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
@@ -329,6 +330,14 @@ export function createOverlayWindow(strictMode: boolean = false): BrowserWindow 
     logger.info('WindowManager', 'Overlay renderer loaded');
   });
 
+  // Forward overlay console messages to main process stdout for debugging
+  if (isDev()) {
+    overlayWebContents.on('console-message', (_event, level, message) => {
+      const prefix = ['LOG', 'WARN', 'ERR'][level] || 'LOG';
+      console.log(`[OVERLAY:${prefix}] ${message}`);
+    });
+  }
+
   overlayWebContents.on('render-process-gone', (_event, details) => {
     logOverlayCrash(`render-process-gone:${details.reason}`);
     logger.error('WindowManager', 'Overlay render process gone', {
@@ -488,6 +497,11 @@ export function hideOverlay(): void {
 export function closeOverlay(): void {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     logOverlayHide('close requested');
+    // Stop heartbeat watchdog to prevent stale recovery on dead overlay
+    const syncService = getOverlaySyncService();
+    if (syncService.getState().isOverlayActive) {
+      syncService.stop();
+    }
     // Remove close prevention handler for strict mode
     overlayWindow.removeAllListeners('close');
     overlayWindow.destroy();

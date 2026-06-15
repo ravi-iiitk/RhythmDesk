@@ -160,10 +160,18 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.CLOSE_OVERLAY, () => {
+    const syncService = getOverlaySyncService();
+    if (syncService.getState().isOverlayActive) {
+      syncService.stop();
+    }
     closeOverlay();
   });
 
   ipcMain.handle(IPC_CHANNELS.DISMISS_PAUSE_REMINDER, () => {
+    const syncService = getOverlaySyncService();
+    if (syncService.getState().isOverlayActive) {
+      syncService.stop();
+    }
     closeOverlay();
   });
 
