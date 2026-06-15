@@ -1375,6 +1375,13 @@ export class TimerEngine extends EventEmitter {
   }
 
   /**
+   * Check if water reminder is currently active
+   */
+  isWaterReminderActive(): boolean {
+    return this.waterReminderActive;
+  }
+
+  /**
    * Extend the current phase by a specified number of minutes.
    * Works for breaks (short-break, long-break) and work phases (sit, stand).
    * Does NOT work for transitions (they're too short to need extending).
@@ -1410,6 +1417,74 @@ export class TimerEngine extends EventEmitter {
    */
   extendBreak(minutes: number): boolean {
     return this.extendPhase(minutes);
+  }
+
+  /**
+   * Start an ad-hoc break immediately with a custom duration.
+   * Saves the current work phase state and starts a short-break.
+   * When the break completes, the timer will resume the interrupted work phase.
+   * 
+   * This is triggered by the user pressing 'B' on the dashboard or Super+Shift+B globally.
+   * 
+   * @param durationMinutes - Duration of the ad-hoc break in minutes
+   * @returns true if break was started, false if not in a valid state to take a break
+   */
+  startAdHocBreak(durationMinutes: number): boolean {
+    // Only allow ad-hoc breaks during work phases (sit/stand)
+    if (!this.isWorkPhase(this.state.currentPhase)) {
+      logger.debug('TimerEngine', 'startAdHocBreak: not in work phase', {
+        currentPhase: this.state.currentPhase,
+      });
+      return false;
+    }
+
+    // Don't allow if already paused
+    if (this.state.isPaused) {
+      logger.debug('TimerEngine', 'startAdHocBreak: timer is paused');
+      return false;
+    }
+
+    logger.info('TimerEngine', 'Starting ad-hoc break', {
+      durationMinutes,
+      currentPhase: this.state.currentPhase,
+      remainingMs: this.state.phaseRemainingMs,
+    });
+
+    // Save current work state so we can resume after break
+    this.preBreakPhase = this.state.currentPhase;
+    this.state.interruptedPhase = this.state.currentPhase;
+    this.state.interruptedPhaseRemainingMs = this.state.phaseRemainingMs;
+
+    // Track interrupted flow index for flow-based schedules
+    if (isFlowBasedSchedule(this.currentSchedule)) {
+      this.state.interruptedFlowIndex = this.state.currentFlowStepIndex;
+    }
+
+    // Increment short break count
+    this.state.shortBreakCountToday = (this.state.shortBreakCountToday ?? 0) + 1;
+    this.stateChanged = true;
+
+    // Start as short-break with custom duration
+    const prevPhase = this.state.currentPhase;
+    const durationMs = durationMinutes * 60 * 1000;
+    this.state.currentPhase = 'short-break';
+    this.state.phaseRemainingMs = durationMs;
+    this.state.phaseTotalMs = durationMs;
+
+    // Emit phase change so overlay shows
+    this.emit('phaseChange', { prevPhase, newPhase: 'short-break' });
+
+    logSessionEvent({
+      event: 'adHocBreakStart',
+      phase: 'short-break',
+      fromPhase: prevPhase,
+      durationMinutes,
+      cumulativeWorkMs: this.state.cumulativeWorkTimeMs,
+    });
+
+    this.saveState();
+    this.emitTick();
+    return true;
   }
 
   /**
@@ -2585,6 +2660,8 @@ export class TimerEngine extends EventEmitter {
         validationStatus: debugSnapshot.validationStatus,
         flowStepsCount: debugSnapshot.flowStepsCount,
       },
+      // Water reminder state - allows overlay to restore state after recreation
+      waterReminderActive: this.waterReminderActive,
     };
 
     this.lastEmittedTick = tick;

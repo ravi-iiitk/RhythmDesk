@@ -32,6 +32,7 @@ export interface RhythmDeskAPI {
   startNextActivity: () => Promise<boolean>;
   restartCurrentActivity: () => Promise<boolean>;
   extendBreak: (minutes: number) => Promise<boolean>;
+  startAdHocBreak: (durationMinutes: number) => Promise<boolean>;
   
   // Office Focus Lock controls
   startOfficeFocusLock: (label: string, durationMinutes: number, isStrictMode?: boolean) => Promise<any>;
@@ -111,6 +112,7 @@ const api: RhythmDeskAPI = {
   startNextActivity: () => ipcRenderer.invoke(IPC_CHANNELS.START_NEXT_ACTIVITY),
   restartCurrentActivity: () => ipcRenderer.invoke(IPC_CHANNELS.RESTART_CURRENT_ACTIVITY),
   extendBreak: (minutes) => ipcRenderer.invoke(IPC_CHANNELS.EXTEND_BREAK, minutes),
+  startAdHocBreak: (durationMinutes) => ipcRenderer.invoke(IPC_CHANNELS.START_AD_HOC_BREAK, durationMinutes),
 
   // Office Focus Lock controls
   startOfficeFocusLock: (label, durationMinutes, isStrictMode = false) => ipcRenderer.invoke(IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes, isStrictMode),

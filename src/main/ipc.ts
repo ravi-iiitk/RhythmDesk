@@ -150,6 +150,10 @@ export function registerIpcHandlers(): void {
     return timerEngine.extendBreak(minutes);
   });
 
+  ipcMain.handle(IPC_CHANNELS.START_AD_HOC_BREAK, (_event, durationMinutes: number) => {
+    return timerEngine.startAdHocBreak(durationMinutes);
+  });
+
   // Window control handlers
   ipcMain.handle(IPC_CHANNELS.OPEN_SETTINGS, () => {
     showMainWindow();

@@ -160,6 +160,26 @@ function initialize(): void {
     } else {
       logger.warn('Main', 'Failed to register global shortcut: Super+Shift+R');
     }
+
+    // Register global shortcut for ad-hoc break (Super+Shift+B)
+    const breakShortcutRegistered = globalShortcut.register('Super+Shift+B', () => {
+      logger.info('Main', 'Global shortcut triggered: Super+Shift+B (ad-hoc break)');
+      const timerEng = getTimerEngine();
+      const state = timerEng.getState();
+      // Only start break if in work phase
+      if (state.currentPhase === 'sit' || state.currentPhase === 'stand') {
+        // Use short break duration from current schedule (default 5 min)
+        const schedule = timerEng.getCurrentSchedule();
+        const shortBreakDuration = schedule?.shortBreak?.durationMinutes ?? 5;
+        timerEng.startAdHocBreak(shortBreakDuration);
+      }
+    });
+
+    if (breakShortcutRegistered) {
+      logger.info('Main', 'Global shortcut registered: Super+Shift+B (ad-hoc break)');
+    } else {
+      logger.warn('Main', 'Failed to register global shortcut: Super+Shift+B');
+    }
     
     // Start main window health check watchdog
     // This detects zombie states after system suspend/resume
@@ -312,20 +332,54 @@ function initialize(): void {
     timerEngine.on('pauseReminder', (data: { pausedForMs: number; pausedAt: number }) => {
       logger.info('Main', 'Showing pause reminder overlay', { pausedForMs: data.pausedForMs });
       showOverlay(false); // Non-strict, dismissible overlay
-      // Delay sending the event to ensure the overlay renderer has loaded
-      // (handles case where overlay was destroyed and recreated)
-      setTimeout(() => {
-        sendToAll(IPC_CHANNELS.SHOW_PAUSE_REMINDER, data);
-      }, 500);
+      // Wait for overlay to fully load before sending the event
+      const overlay = getOverlayWindow();
+      if (overlay && !overlay.isDestroyed()) {
+        const webContents = overlay.webContents;
+        const sendEvent = () => {
+          sendToAll(IPC_CHANNELS.SHOW_PAUSE_REMINDER, data);
+        };
+        if (!webContents.isLoading()) {
+          sendEvent();
+        } else {
+          webContents.once('did-finish-load', sendEvent);
+        }
+      }
     });
 
     // Handle water reminder - show hydration overlay every N minutes
+    // CRITICAL: Use NON-strict mode (false) — water reminder must NEVER lock the user out.
+    // Strict/kiosk mode prevents closing and refocuses on blur, which causes a frozen
+    // fullscreen overlay if the React component fails to render the dismiss button.
     timerEngine.on('waterReminder', (data: { triggeredAt: number }) => {
-      logger.info('Main', 'Showing water reminder overlay');
-      showOverlay(true); // Strict overlay - must confirm drinking water
+      logger.info('Main', 'Showing water reminder overlay (non-strict)');
+      showOverlay(false); // NON-strict — user can always escape
+      
+      // Wait for overlay to fully load before sending the event.
+      // The old 500ms delay was a race condition — overlay might not be loaded yet.
+      const overlay = getOverlayWindow();
+      if (overlay && !overlay.isDestroyed()) {
+        const webContents = overlay.webContents;
+        const sendEvent = () => {
+          sendToAll(IPC_CHANNELS.SHOW_WATER_REMINDER, data);
+        };
+        // If already loaded, send immediately; otherwise wait for load
+        if (!webContents.isLoading()) {
+          sendEvent();
+        } else {
+          webContents.once('did-finish-load', sendEvent);
+        }
+      }
+      
+      // Safety net: auto-dismiss water reminder after 2 minutes if user doesn't interact
+      // This prevents any scenario where the overlay gets stuck
       setTimeout(() => {
-        sendToAll(IPC_CHANNELS.SHOW_WATER_REMINDER, data);
-      }, 500);
+        if (timerEngine.isWaterReminderActive()) {
+          logger.warn('Main', 'Water reminder auto-dismissed after 2 minute timeout');
+          timerEngine.dismissWaterReminder();
+          safeCloseOverlay();
+        }
+      }, 120000);
     });
 
     // ========================================

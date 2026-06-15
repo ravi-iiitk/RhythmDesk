@@ -63,6 +63,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const [restCustomMinutes, setRestCustomMinutes] = useState<number>(15);
   const [restCustomName, setRestCustomName] = useState<string>('My Break');
   const [extendOptions, setExtendOptions] = useState<number[]>([2, 5, 10]);
+  const [showBreakOptions, setShowBreakOptions] = useState(false);
 
   // Fetch extend options from settings
   useEffect(() => {
@@ -128,6 +129,14 @@ function DashboardPage({ tick }: DashboardPageProps) {
         if (!e.ctrlKey && !e.altKey && !e.metaKey) {
           if (tick.currentPhase === 'sit' || tick.currentPhase === 'stand') {
             window.rhythmDesk.extendBreak(extendOptions[0] || 2);
+          }
+        }
+        break;
+      case 'b': // B - toggle ad-hoc break options
+      case 'B':
+        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+          if (tick.currentPhase === 'sit' || tick.currentPhase === 'stand') {
+            setShowBreakOptions(prev => !prev);
           }
         }
         break;
@@ -695,13 +704,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
               <span style={{ display: 'inline-block', filter: 'hue-rotate(280deg) saturate(1.5) brightness(1.1)' }}>⏭️</span> Skip
             </button>
             
-            {/* Reset Controls */}
-            <span style={{ color: '#64748b', margin: '0 0.25rem' }}>|</span>
-            <span style={{ color: '#94a3b8', fontSize: '0.85rem', marginRight: '0.25rem' }}>Reset:</span>
-            <button className="btn btn-secondary" onClick={handleResetSession} title="Reset Session">🔄 Session</button>
-            <button className="btn btn-secondary" onClick={handleResetTodayCounters} title="Reset Counters">📊 Counters</button>
-            
-            {/* Flow shuffle controls - only for flow-based schedules */}
+            {/* Flow shuffle controls - only for flow-based schedules (before Reset) */}
             {tick.scheduleMode === 'flow-based' && (
               <>
                 <span style={{ color: '#64748b', margin: '0 0.25rem' }}>|</span>
@@ -722,6 +725,33 @@ function DashboardPage({ tick }: DashboardPageProps) {
               </>
             )}
             
+            {/* Reset Controls */}
+            <span style={{ color: '#64748b', margin: '0 0.25rem' }}>|</span>
+            <button className="btn btn-secondary" onClick={handleResetSession} title="Reset Session">🔄 Reset Session</button>
+            <button className="btn btn-secondary" onClick={handleResetTodayCounters} title="Reset Today's Counters">📊 Reset Counters</button>
+            
+            {/* Extend buttons - inline, only for work phases (after Reset) */}
+            {(tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'nowrap' }}>
+                <span style={{ color: '#e2e8f0', fontSize: '0.85rem', fontWeight: 600 }}>Extend:</span>
+                {extendOptions.map((minutes) => (
+                  <button 
+                    key={minutes}
+                    className="btn btn-secondary" 
+                    onClick={() => handleExtendPhase(minutes)}
+                    title={`Extend current ${tick.currentPhase} phase by ${minutes} minutes`}
+                    style={{
+                      backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                      borderColor: 'rgba(59, 130, 246, 0.3)',
+                      color: '#3b82f6',
+                    }}
+                  >
+                    +{minutes}
+                  </button>
+                ))}
+              </span>
+            )}
+            
             {/* Postpone inline */}
             {tick.canPostpone && tick.postponeOptions.length > 0 && (
               <>
@@ -737,34 +767,44 @@ function DashboardPage({ tick }: DashboardPageProps) {
         </div>
       </div>
 
-      {/* Row 4: Extend Phase - Only for work phases */}
-      {(tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && (
-        <div className="card" style={{ padding: '0.75rem 1rem', marginBottom: '0.75rem' }}>
+      {/* Ad-hoc Break Options - shown when B is pressed during work phase */}
+      {showBreakOptions && (tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && (
+        <div className="card" style={{ padding: '0.75rem 1rem', marginBottom: '0.75rem', border: '1px solid rgba(34, 197, 94, 0.3)', backgroundColor: 'rgba(34, 197, 94, 0.05)' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-            <span style={{ color: '#94a3b8', fontSize: '0.9rem', fontWeight: 500 }}>⏱️ Extend:</span>
-            {extendOptions.map((minutes) => (
-              <button 
-                key={minutes}
-                className="btn btn-secondary" 
-                onClick={() => handleExtendPhase(minutes)}
-                title={`Extend current ${tick.currentPhase} phase by ${minutes} minutes`}
-                style={{
-                  backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                  borderColor: 'rgba(59, 130, 246, 0.3)',
-                  color: '#3b82f6',
-                }}
-              >
-                +{minutes} min
-              </button>
-            ))}
-            <span style={{ color: '#64748b', fontSize: '0.75rem', marginLeft: '0.5rem' }}>
-              (Configure in Settings → Break Extension)
-            </span>
+            <span style={{ color: '#22c55e', fontSize: '0.9rem', fontWeight: 600 }}>☕ Take a Break:</span>
+            <button className="btn btn-secondary" onClick={() => { window.rhythmDesk.startAdHocBreak(tick.configuredDurations.shortBreakDurationMinutes || 5); setShowBreakOptions(false); }}
+              style={{ backgroundColor: 'rgba(34, 197, 94, 0.15)', borderColor: 'rgba(34, 197, 94, 0.3)', color: '#22c55e' }}
+              title="Short break from schedule"
+            >
+              ☕ Short ({tick.configuredDurations.shortBreakDurationMinutes || 5}m)
+            </button>
+            <button className="btn btn-secondary" onClick={() => { window.rhythmDesk.startAdHocBreak(tick.configuredDurations.longBreakDurationMinutes || 15); setShowBreakOptions(false); }}
+              style={{ backgroundColor: 'rgba(234, 179, 8, 0.15)', borderColor: 'rgba(234, 179, 8, 0.3)', color: '#eab308' }}
+              title="Long break from schedule"
+            >
+              🌟 Long ({tick.configuredDurations.longBreakDurationMinutes || 15}m)
+            </button>
+            <button className="btn btn-secondary" onClick={() => { window.rhythmDesk.startAdHocBreak(10); setShowBreakOptions(false); }}
+              style={{ backgroundColor: 'rgba(139, 92, 246, 0.15)', borderColor: 'rgba(139, 92, 246, 0.3)', color: '#8b5cf6' }}
+            >
+              ⏱️ 10 min
+            </button>
+            <button className="btn btn-secondary" onClick={() => { window.rhythmDesk.startAdHocBreak(20); setShowBreakOptions(false); }}
+              style={{ backgroundColor: 'rgba(139, 92, 246, 0.15)', borderColor: 'rgba(139, 92, 246, 0.3)', color: '#8b5cf6' }}
+            >
+              ⏱️ 20 min
+            </button>
+            <button className="btn btn-secondary" onClick={() => setShowBreakOptions(false)}
+              style={{ marginLeft: 'auto', opacity: 0.7 }}
+              title="Close (B)"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}
 
-      {/* Row 5: Break Progress - Full Width */}
+      {/* Row 4: Break Progress - Full Width */}
       <div className="card" style={{ padding: '1rem', marginBottom: 0 }}>
         <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.75rem' }}>Break Progress</div>
         

@@ -21,6 +21,7 @@ export type SessionEventType =
   | 'postponeBreak'
   | 'breakStart'
   | 'breakEnd'
+  | 'adHocBreakStart'
   | 'resetSession'
   | 'scheduleEditDetected'
   | 'restartRecovery'

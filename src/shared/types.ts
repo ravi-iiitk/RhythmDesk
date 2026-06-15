@@ -462,6 +462,8 @@ export interface TimerTick {
     validationStatus: 'ok' | 'warning' | 'error';
     flowStepsCount: number;
   };
+  // Water reminder state - allows overlay to restore state after recreation
+  waterReminderActive?: boolean;
 }
 
 // IPC channel names
@@ -497,6 +499,7 @@ export const IPC_CHANNELS = {
   START_NEXT_ACTIVITY: 'timer:startNextActivity',
   RESTART_CURRENT_ACTIVITY: 'timer:restartCurrentActivity',
   EXTEND_BREAK: 'timer:extendBreak',
+  START_AD_HOC_BREAK: 'timer:startAdHocBreak',
   
   // Office Focus Lock controls
   START_OFFICE_FOCUS_LOCK: 'officeFocusLock:start',

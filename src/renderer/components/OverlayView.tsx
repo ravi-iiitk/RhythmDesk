@@ -97,13 +97,62 @@ function OverlayView({ tick }: OverlayViewProps) {
     return cleanup;
   }, []);
 
+  // Sync water reminder state from tick data (handles overlay recreation)
+  // If tick says water reminder is active but our local state doesn't know, sync it
+  useEffect(() => {
+    if (tick?.waterReminderActive && !waterReminderActive) {
+      console.log('[OverlayView] Restoring water reminder state from tick');
+      setWaterReminderActive(true);
+    }
+  }, [tick?.waterReminderActive]);
+
+  // Emergency escape key - ALWAYS works to close overlay (even for water/pause reminders)
+  // This prevents users from being locked out of their system
+  useEffect(() => {
+    const handleEmergencyEscape = (e: KeyboardEvent) => {
+      // Ctrl+Shift+Escape = emergency close (works even in strict mode)
+      if (e.ctrlKey && e.shiftKey && e.key === 'Escape') {
+        console.log('[OverlayView] Emergency escape triggered');
+        // Dismiss any active reminders
+        if (waterReminderActive) {
+          setWaterReminderActive(false);
+          window.rhythmDesk.dismissWaterReminder();
+        }
+        if (pauseReminderData) {
+          setPauseReminderData(null);
+        }
+        // Close overlay
+        window.rhythmDesk.closeOverlay();
+      }
+      // Regular Escape for water reminder (since it has no strict mode)
+      if (e.key === 'Escape' && waterReminderActive) {
+        setWaterReminderActive(false);
+        window.rhythmDesk.dismissWaterReminder();
+      }
+      // Regular Escape for pause reminder
+      if (e.key === 'Escape' && pauseReminderData) {
+        setPauseReminderData(null);
+        window.rhythmDesk.closeOverlay();
+      }
+    };
+    window.addEventListener('keydown', handleEmergencyEscape);
+    return () => window.removeEventListener('keydown', handleEmergencyEscape);
+  }, [waterReminderActive, pauseReminderData]);
+
   // Fetch break extend minutes from settings
   useEffect(() => {
-    window.rhythmDesk.getConfig().then((config) => {
-      if (config?.generalSettings?.breakExtendMinutes) {
-        setBreakExtendMinutes(config.generalSettings.breakExtendMinutes);
-      }
-    });
+    window.rhythmDesk.getConfig()
+      .then((config) => {
+        const options = config?.generalSettings?.extendOptions;
+        if (options && options.length > 0) {
+          setBreakExtendMinutes(options[0]);
+        } else if (config?.generalSettings?.breakExtendMinutes) {
+          setBreakExtendMinutes(config.generalSettings.breakExtendMinutes);
+        }
+      })
+      .catch((err) => {
+        console.error('[OverlayView] Failed to fetch config:', err);
+      });
   }, []);
 
   // Clear pause reminder when timer resumes

@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 export const KEYBOARD_SHORTCUTS = {
   global: [
     { keys: 'Super+Shift+R', action: 'Bring app to front (maximize & focus)', context: 'System-wide' },
+    { keys: 'Super+Shift+B', action: 'Take ad-hoc break (short break from schedule)', context: 'System-wide' },
   ],
   dashboard: [
     { keys: 'Space', action: 'Pause / Resume schedule', context: 'Dashboard' },
@@ -17,6 +18,7 @@ export const KEYBOARD_SHORTCUTS = {
     { keys: 'R', action: 'Reset session', context: 'Dashboard' },
     { keys: 'N', action: 'Start next activity (when waiting)', context: 'Dashboard' },
     { keys: 'E', action: 'Extend current work phase (sit/stand)', context: 'Dashboard' },
+    { keys: 'B', action: 'Toggle ad-hoc break options (short, long, custom)', context: 'Dashboard' },
   ],
   overlay: [
     { keys: 'Space', action: 'Pause / Resume schedule', context: 'Overlay' },
@@ -24,6 +26,7 @@ export const KEYBOARD_SHORTCUTS = {
     { keys: 'S', action: 'Skip current break/transition', context: 'Overlay' },
     { keys: 'E', action: 'Extend break (+X minutes, breaks only)', context: 'Overlay' },
     { keys: 'Escape', action: 'Close overlay (if not strict mode)', context: 'Overlay' },
+    { keys: 'Ctrl+Shift+Escape', action: '🚨 Emergency close (works even in strict mode)', context: 'Overlay' },
     { keys: '1-5', action: 'Postpone break (1=5min, 2=10min, etc.)', context: 'Overlay' },
   ],
   navigation: [
