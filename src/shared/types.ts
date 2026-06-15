@@ -309,7 +309,8 @@ export interface GeneralSettings {
   idleThresholdMinutes: number; // Minutes of idle before auto-pause (default: 3)
   waterReminderEnabled: boolean;  // Show water reminder overlay
   waterReminderIntervalMinutes: number; // Minutes between water reminders (default: 10)
-  breakExtendMinutes: number; // Minutes to extend a break by (default: 2)
+  breakExtendMinutes: number; // Minutes to extend a break by (default: 2) - deprecated, use extendOptions
+  extendOptions: number[]; // Array of extend duration options in minutes (default: [2, 5, 10])
 }
 
 // Office Focus Lock state - runtime only, not persisted across restarts
@@ -660,6 +661,7 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   waterReminderEnabled: false,
   waterReminderIntervalMinutes: 10,
   breakExtendMinutes: 2,
+  extendOptions: [2, 5, 10],
 };
 
 // Initial Office Focus Lock state (inactive)

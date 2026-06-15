@@ -5,7 +5,7 @@
  * Phase 2: Added heartbeat response for overlay sync watchdog
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { TimerTick, PhaseType } from '../../shared/types';
 import { PHASE_DISPLAY_NAMES, PHASE_COLORS } from '../../shared/constants';
 import { formatDuration, formatDurationHuman } from '../../shared/timeUtils';
@@ -57,8 +57,21 @@ function OverlayView({ tick }: OverlayViewProps) {
   const [pauseReminderData, setPauseReminderData] = useState<{ pausedForMs: number; pausedAt: number } | null>(null);
   // Water reminder state
   const [waterReminderActive, setWaterReminderActive] = useState(false);
-  // Break extend minutes from settings
+  // Break extend minutes from settings (use first option)
   const [breakExtendMinutes, setBreakExtendMinutes] = useState(2);
+  
+  // Fetch extend options from settings
+  useEffect(() => {
+    window.rhythmDesk.getConfig().then((config) => {
+      const options = config?.generalSettings?.extendOptions;
+      if (options && options.length > 0) {
+        setBreakExtendMinutes(options[0]);
+      } else if (config?.generalSettings?.breakExtendMinutes) {
+        // Fallback to old setting
+        setBreakExtendMinutes(config.generalSettings.breakExtendMinutes);
+      }
+    });
+  }, []);
   
   // Update current time every second
   useEffect(() => {
@@ -298,6 +311,67 @@ function OverlayView({ tick }: OverlayViewProps) {
   const handleResume = () => window.rhythmDesk.resume();
   const handleExtendBreak = () => window.rhythmDesk.extendBreak(breakExtendMinutes);
 
+  // Keyboard shortcuts for overlay
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // Determine what actions are available
+    const isBreakOrTransition = [
+      'sit-to-stand-transition', 'stand-to-sit-transition', 
+      'short-break', 'long-break'
+    ].includes(tick.currentPhase);
+    const canClose = !tick.isStrictMode && !tick.officeFocusLock.isActive;
+    const canSkip = isBreakOrTransition && !(tick.noSkipEnabled ?? false) && tick.canSkipCurrentBreak !== false;
+
+    switch (e.key) {
+      case ' ': // Space - pause/resume
+        e.preventDefault();
+        if (tick.isPaused) {
+          window.rhythmDesk.resume();
+        } else {
+          window.rhythmDesk.pause();
+        }
+        break;
+      case 'Enter': // Enter - complete/done
+        if (isBreakOrTransition && !tick.isStrictMode) {
+          window.rhythmDesk.completePhase();
+        }
+        break;
+      case 's': // S - skip
+      case 'S':
+        if (canSkip) {
+          window.rhythmDesk.skipPhase();
+        }
+        break;
+      case 'e': // E - extend break (only on breaks, not transitions)
+      case 'E':
+        if (tick.currentPhase === 'short-break' || tick.currentPhase === 'long-break') {
+          window.rhythmDesk.extendBreak(breakExtendMinutes);
+        }
+        break;
+      case 'Escape': // Escape - close overlay
+        if (canClose) {
+          window.rhythmDesk.closeOverlay();
+        }
+        break;
+      case '1': // 1-5 - postpone options
+      case '2':
+      case '3':
+      case '4':
+      case '5':
+        if (tick.canPostpone && tick.postponeOptions && tick.postponeOptions.length > 0) {
+          const index = parseInt(e.key) - 1;
+          if (index < tick.postponeOptions.length) {
+            window.rhythmDesk.postpone(tick.postponeOptions[index]);
+          }
+        }
+        break;
+    }
+  }, [tick, breakExtendMinutes]);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
   // Check if rest block is active - takes priority over normal phases
   const isRestBlockActive = tick.restBlock.isActive;
 
@@ -475,7 +549,7 @@ function OverlayView({ tick }: OverlayViewProps) {
             </button>
           )}
 
-          {isTransitionOrBreak && (
+          {isActiveBreakPhase && (
             <button 
               className="btn btn-secondary" 
               onClick={handleExtendBreak}

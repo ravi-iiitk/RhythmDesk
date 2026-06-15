@@ -1375,14 +1375,15 @@ export class TimerEngine extends EventEmitter {
   }
 
   /**
-   * Extend the current break by a specified number of minutes.
-   * Only works during break phases (short-break, long-break, transition).
-   * Returns true if break was extended, false if not in a break phase.
+   * Extend the current phase by a specified number of minutes.
+   * Works for breaks (short-break, long-break) and work phases (sit, stand).
+   * Does NOT work for transitions (they're too short to need extending).
+   * Returns true if phase was extended, false if not in an extendable phase.
    */
-  extendBreak(minutes: number): boolean {
-    const breakPhases = ['short-break', 'long-break', 'transition'];
-    if (!breakPhases.includes(this.state.currentPhase)) {
-      logger.debug('TimerEngine', 'extendBreak: not in a break phase', { 
+  extendPhase(minutes: number): boolean {
+    const extendablePhases = ['short-break', 'long-break', 'sit', 'stand', 'custom'];
+    if (!extendablePhases.includes(this.state.currentPhase)) {
+      logger.debug('TimerEngine', 'extendPhase: not in an extendable phase', { 
         currentPhase: this.state.currentPhase 
       });
       return false;
@@ -1392,7 +1393,7 @@ export class TimerEngine extends EventEmitter {
     this.state.phaseRemainingMs += extensionMs;
     this.state.phaseTotalMs += extensionMs;
 
-    logger.info('TimerEngine', 'Break extended', {
+    logger.info('TimerEngine', 'Phase extended', {
       phase: this.state.currentPhase,
       extensionMinutes: minutes,
       newRemainingMs: this.state.phaseRemainingMs,
@@ -1402,6 +1403,13 @@ export class TimerEngine extends EventEmitter {
     this.saveState();
     this.emitTick();
     return true;
+  }
+
+  /**
+   * Alias for extendPhase - kept for backward compatibility
+   */
+  extendBreak(minutes: number): boolean {
+    return this.extendPhase(minutes);
   }
 
   /**

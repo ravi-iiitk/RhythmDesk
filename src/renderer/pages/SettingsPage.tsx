@@ -339,23 +339,33 @@ function SettingsPage() {
 
       <div className="card">
         <div className="card-header">
-          <span className="card-title">⏱️ Break Extension</span>
+          <span className="card-title">⏱️ Extend Options</span>
         </div>
 
         <div className="form-group">
-          <label className="form-label">Extend break by: {settings.breakExtendMinutes ?? 2} minute{(settings.breakExtendMinutes ?? 2) !== 1 ? 's' : ''}</label>
+          <label className="form-label">Extend duration options (minutes)</label>
+          <p className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>
+            Configure the extend duration buttons shown on Dashboard (for work phases) and Overlay (for breaks).
+            Enter comma-separated values (e.g., "2, 5, 10, 15").
+          </p>
           <input
-            type="range"
+            type="text"
             className="form-input"
-            min="1"
-            max="10"
-            step="1"
-            value={settings.breakExtendMinutes ?? 2}
-            onChange={(e) => handleChange('breakExtendMinutes', parseInt(e.target.value, 10))}
-            style={{ cursor: 'pointer' }}
+            value={(settings.extendOptions ?? [2, 5, 10]).join(', ')}
+            onChange={(e) => {
+              const values = e.target.value
+                .split(',')
+                .map(v => parseInt(v.trim(), 10))
+                .filter(v => !isNaN(v) && v > 0 && v <= 60);
+              if (values.length > 0) {
+                handleChange('extendOptions', values);
+              }
+            }}
+            placeholder="2, 5, 10"
+            style={{ fontFamily: 'monospace' }}
           />
-          <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
-            Amount of time added when you click "+X min" during a break or transition.
+          <p className="text-muted" style={{ fontSize: '0.7rem', marginTop: '0.25rem' }}>
+            Current: {(settings.extendOptions ?? [2, 5, 10]).map(m => `+${m} min`).join(', ')}
           </p>
         </div>
       </div>

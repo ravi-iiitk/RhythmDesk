@@ -3,7 +3,8 @@
  * Shows current timer state and quick controls
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { TimerTick, OFFICE_FOCUS_LOCK_DURATIONS, PhaseType, ConfiguredDurations, DEFAULT_REST_BLOCK_PRESETS, Schedule } from '../../shared/types';
 import { PHASE_DISPLAY_NAMES, PHASE_COLORS } from '../../shared/constants';
 import { formatDurationHuman, formatDuration } from '../../shared/timeUtils';
@@ -50,6 +51,7 @@ function getConfiguredDurationForPhase(phase: PhaseType, durations: ConfiguredDu
 }
 
 function DashboardPage({ tick }: DashboardPageProps) {
+  const navigate = useNavigate();
   const [showLockOptions, setShowLockOptions] = useState(false);
   const [scheduleNames, setScheduleNames] = useState<string[]>([]);
   const [selectedLabel, setSelectedLabel] = useState<string>('');
@@ -60,6 +62,82 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const [restCustomHours, setRestCustomHours] = useState<number>(0);
   const [restCustomMinutes, setRestCustomMinutes] = useState<number>(15);
   const [restCustomName, setRestCustomName] = useState<string>('My Break');
+  const [extendOptions, setExtendOptions] = useState<number[]>([2, 5, 10]);
+
+  // Fetch extend options from settings
+  useEffect(() => {
+    window.rhythmDesk.getConfig().then((config) => {
+      if (config?.generalSettings?.extendOptions && config.generalSettings.extendOptions.length > 0) {
+        setExtendOptions(config.generalSettings.extendOptions);
+      }
+    });
+  }, []);
+
+  // Keyboard shortcuts for dashboard
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // Ignore if typing in an input
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      return;
+    }
+
+    // Navigation shortcuts (Alt+number)
+    if (e.altKey) {
+      switch (e.key) {
+        case '1': navigate('/'); return;
+        case '2': navigate('/schedules'); return;
+        case '3': navigate('/settings'); return;
+        case '4': navigate('/help'); return;
+      }
+    }
+
+    // ? for help
+    if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      navigate('/help');
+      return;
+    }
+
+    // Dashboard action shortcuts (only when schedule is active)
+    if (!tick || tick.currentPhase === 'idle') return;
+
+    switch (e.key.toLowerCase()) {
+      case ' ': // Space - pause/resume
+        e.preventDefault();
+        if (tick.isPaused) {
+          window.rhythmDesk.resume();
+        } else {
+          window.rhythmDesk.pause();
+        }
+        break;
+      case 's': // S - skip
+        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+          window.rhythmDesk.skipPhase();
+        }
+        break;
+      case 'r': // R - reset session
+        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+          window.rhythmDesk.resetSession();
+        }
+        break;
+      case 'n': // N - start next activity
+        if (!e.ctrlKey && !e.altKey && !e.metaKey && tick.isWaitingForNextActivity) {
+          window.rhythmDesk.startNextActivity();
+        }
+        break;
+      case 'e': // E - extend current work phase
+      case 'E':
+        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+          if (tick.currentPhase === 'sit' || tick.currentPhase === 'stand') {
+            window.rhythmDesk.extendBreak(extendOptions[0] || 2);
+          }
+        }
+        break;
+    }
+  }, [tick, navigate, extendOptions]);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
   
   // Fetch schedule names for Office Focus Lock dropdown
   useEffect(() => {
@@ -101,6 +179,10 @@ function DashboardPage({ tick }: DashboardPageProps) {
 
   const handleStopRestBlock = () => {
     window.rhythmDesk.stopRestBlock();
+  };
+
+  const handleExtendPhase = (minutes: number) => {
+    window.rhythmDesk.extendBreak(minutes);
   };
 
   if (!tick || tick.currentPhase === 'idle') {
@@ -612,8 +694,12 @@ function DashboardPage({ tick }: DashboardPageProps) {
             >
               <span style={{ display: 'inline-block', filter: 'hue-rotate(280deg) saturate(1.5) brightness(1.1)' }}>⏭️</span> Skip
             </button>
-            <button className="btn btn-secondary" onClick={handleResetSession} title="Reset Session">🔄 Reset</button>
-            <button className="btn btn-secondary" onClick={handleResetTodayCounters} title="Reset Counters">📊</button>
+            
+            {/* Reset Controls */}
+            <span style={{ color: '#64748b', margin: '0 0.25rem' }}>|</span>
+            <span style={{ color: '#94a3b8', fontSize: '0.85rem', marginRight: '0.25rem' }}>Reset:</span>
+            <button className="btn btn-secondary" onClick={handleResetSession} title="Reset Session">🔄 Session</button>
+            <button className="btn btn-secondary" onClick={handleResetTodayCounters} title="Reset Counters">📊 Counters</button>
             
             {/* Flow shuffle controls - only for flow-based schedules */}
             {tick.scheduleMode === 'flow-based' && (
@@ -651,7 +737,34 @@ function DashboardPage({ tick }: DashboardPageProps) {
         </div>
       </div>
 
-      {/* Row 4: Break Progress - Full Width */}
+      {/* Row 4: Extend Phase - Only for work phases */}
+      {(tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && (
+        <div className="card" style={{ padding: '0.75rem 1rem', marginBottom: '0.75rem' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+            <span style={{ color: '#94a3b8', fontSize: '0.9rem', fontWeight: 500 }}>⏱️ Extend:</span>
+            {extendOptions.map((minutes) => (
+              <button 
+                key={minutes}
+                className="btn btn-secondary" 
+                onClick={() => handleExtendPhase(minutes)}
+                title={`Extend current ${tick.currentPhase} phase by ${minutes} minutes`}
+                style={{
+                  backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                  borderColor: 'rgba(59, 130, 246, 0.3)',
+                  color: '#3b82f6',
+                }}
+              >
+                +{minutes} min
+              </button>
+            ))}
+            <span style={{ color: '#64748b', fontSize: '0.75rem', marginLeft: '0.5rem' }}>
+              (Configure in Settings → Break Extension)
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Row 5: Break Progress - Full Width */}
       <div className="card" style={{ padding: '1rem', marginBottom: 0 }}>
         <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.75rem' }}>Break Progress</div>
         

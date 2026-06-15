@@ -7,6 +7,7 @@ import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import DashboardPage from './pages/DashboardPage';
 import SchedulesPage from './pages/SchedulesPage';
 import SettingsPage from './pages/SettingsPage';
+import HelpPage from './pages/HelpPage';
 import OverlayView from './components/OverlayView';
 import {
   TimerTick,
@@ -268,6 +269,12 @@ function App() {
               Settings
             </NavLink>
           </li>
+          <li>
+            <NavLink to="/help" className={({ isActive }) => isActive ? 'active' : ''}>
+              <span className="nav-icon">❓</span>
+              Help
+            </NavLink>
+          </li>
         </ul>
         <div className="sidebar-footer">
           <button 
@@ -283,6 +290,7 @@ function App() {
           <Route path="/" element={<DashboardPage tick={currentTick} />} />
           <Route path="/schedules" element={<SchedulesPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/help" element={<HelpPage />} />
         </Routes>
       </main>
     </div>

@@ -585,6 +585,43 @@ export function showMainWindow(): void {
 }
 
 /**
+ * Show, restore, maximize and bring main window to front
+ * Used by global shortcut to bring app to foreground
+ */
+export function showAndFocusMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createMainWindow();
+    return;
+  }
+  
+  // Restore if minimized
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  
+  // Show window
+  mainWindow.show();
+  
+  // Maximize window
+  if (!mainWindow.isMaximized()) {
+    mainWindow.maximize();
+  }
+  
+  // Bring to front and focus
+  mainWindow.moveTop();
+  mainWindow.focus();
+  mainWindow.setAlwaysOnTop(true);
+  // Remove always-on-top after a brief moment to avoid sticky behavior
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setAlwaysOnTop(false);
+    }
+  }, 100);
+  
+  logger.info('WindowManager', 'Main window brought to front via shortcut');
+}
+
+/**
  * Hide main window to tray
  */
 export function hideMainWindow(): void {

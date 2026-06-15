@@ -9,8 +9,8 @@
  * - Focus Lock resets to OFF on restart (not persisted)
  */
 
-import { app, BrowserWindow, powerMonitor } from 'electron';
-import { createMainWindow, showOverlay, closeOverlay, sendToAll, sendToOverlay, getMainWindow, getOverlayWindow, recoverOverlayIfNeeded, startMainWindowHealthCheck, setScreenLocked } from './windowManager';
+import { app, BrowserWindow, powerMonitor, globalShortcut } from 'electron';
+import { createMainWindow, showOverlay, closeOverlay, sendToAll, sendToOverlay, getMainWindow, getOverlayWindow, recoverOverlayIfNeeded, startMainWindowHealthCheck, setScreenLocked, showAndFocusMainWindow } from './windowManager';
 import logger from '../core/logger';
 import { createTray, updateTrayWithTick } from './tray';
 import { registerIpcHandlers } from './ipc';
@@ -124,6 +124,8 @@ function initialize(): void {
     timerEngine.stop();
     // Flush any pending session snapshot before quit
     configService.flushSessionSnapshot();
+    // Unregister all global shortcuts
+    globalShortcut.unregisterAll();
   });
 
   // App ready
@@ -146,6 +148,18 @@ function initialize(): void {
 
     // Create main window
     createMainWindow();
+    
+    // Register global shortcut to bring main window to front
+    const shortcutRegistered = globalShortcut.register('Super+Shift+R', () => {
+      logger.info('Main', 'Global shortcut triggered: Super+Shift+R');
+      showAndFocusMainWindow();
+    });
+    
+    if (shortcutRegistered) {
+      logger.info('Main', 'Global shortcut registered: Super+Shift+R (bring app to front)');
+    } else {
+      logger.warn('Main', 'Failed to register global shortcut: Super+Shift+R');
+    }
     
     // Start main window health check watchdog
     // This detects zombie states after system suspend/resume
