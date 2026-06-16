@@ -59,6 +59,7 @@ function migrateSessionState(state: Partial<SessionState>): SessionState {
     phaseEndsAt: state.phaseEndsAt ?? 0,
     phaseRemainingMs: state.phaseRemainingMs ?? 0,
     phaseTotalMs: state.phaseTotalMs ?? 0,
+    phaseOriginalDurationMs: state.phaseOriginalDurationMs ?? state.phaseTotalMs ?? 0,
     cumulativeWorkTimeMs: state.cumulativeWorkTimeMs ?? 0,
     lastShortBreakAtWorkTimeMs: state.lastShortBreakAtWorkTimeMs ?? 0,
     lastLongBreakAtWorkTimeMs: state.lastLongBreakAtWorkTimeMs ?? 0,

@@ -367,6 +367,7 @@ export function migrateSessionState(state: unknown): SessionState {
     phaseEndsAt: s.phaseEndsAt ?? 0,
     phaseRemainingMs: s.phaseRemainingMs ?? 0,
     phaseTotalMs: s.phaseTotalMs ?? 0,
+    phaseOriginalDurationMs: s.phaseOriginalDurationMs ?? s.phaseTotalMs ?? 0,
     currentFlowStepIndex: s.currentFlowStepIndex,
     flowConfigHash: s.flowConfigHash,
     cumulativeWorkTimeMs: s.cumulativeWorkTimeMs ?? 0,

@@ -63,13 +63,18 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const [restCustomMinutes, setRestCustomMinutes] = useState<number>(15);
   const [restCustomName, setRestCustomName] = useState<string>('My Break');
   const [extendOptions, setExtendOptions] = useState<number[]>([2, 5, 10]);
+  const [preponeOptions, setPreponeOptions] = useState<number[]>([1, 2, 5]);
   const [showBreakOptions, setShowBreakOptions] = useState(false);
+  const [breakDurationInput, setBreakDurationInput] = useState<string>('');
 
-  // Fetch extend options from settings
+  // Fetch extend/prepone options from settings
   useEffect(() => {
     window.rhythmDesk.getConfig().then((config) => {
       if (config?.generalSettings?.extendOptions && config.generalSettings.extendOptions.length > 0) {
         setExtendOptions(config.generalSettings.extendOptions);
+      }
+      if (config?.generalSettings?.preponeOptions && config.generalSettings.preponeOptions.length > 0) {
+        setPreponeOptions(config.generalSettings.preponeOptions);
       }
     });
   }, []);
@@ -132,16 +137,61 @@ function DashboardPage({ tick }: DashboardPageProps) {
           }
         }
         break;
+      case 'p': // P - prepone (reduce) current phase
+      case 'P':
+        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+          if ((tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && preponeOptions.length > 0) {
+            if (tick.phaseRemainingMs > (preponeOptions[0] * 60000) + 30000) {
+              handlePreponePhase(preponeOptions[0]);
+            }
+          }
+        }
+        break;
       case 'b': // B - toggle ad-hoc break options
       case 'B':
         if (!e.ctrlKey && !e.altKey && !e.metaKey) {
           if (tick.currentPhase === 'sit' || tick.currentPhase === 'stand') {
-            setShowBreakOptions(prev => !prev);
+            setShowBreakOptions(prev => {
+              if (!prev) setBreakDurationInput('');
+              return !prev;
+            });
           }
         }
         break;
     }
-  }, [tick, navigate, extendOptions]);
+
+    // When break options panel is open, capture digit keys for custom duration
+    if (showBreakOptions && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      if (e.key >= '0' && e.key <= '9') {
+        e.preventDefault();
+        setBreakDurationInput(prev => {
+          if (prev.length >= 2) return e.key; // Start fresh if already 2 digits
+          return prev + e.key;
+        });
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Return') {
+        e.preventDefault();
+        const mins = parseInt(breakDurationInput, 10);
+        if (mins > 0 && mins <= 99) {
+          window.rhythmDesk.startAdHocBreak(mins);
+          setShowBreakOptions(false);
+          setBreakDurationInput('');
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowBreakOptions(false);
+        setBreakDurationInput('');
+        return;
+      }
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        setBreakDurationInput(prev => prev.slice(0, -1));
+        return;
+      }
+    }
+  }, [tick, navigate, extendOptions, preponeOptions, showBreakOptions, breakDurationInput]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -192,6 +242,13 @@ function DashboardPage({ tick }: DashboardPageProps) {
 
   const handleExtendPhase = (minutes: number) => {
     window.rhythmDesk.extendBreak(minutes);
+  };
+
+  const handlePreponePhase = async (minutes: number) => {
+    const success = await window.rhythmDesk.preponePhase(minutes);
+    if (!success) {
+      alert(`Cannot reduce by ${minutes} min — not enough time remaining (need at least ${minutes} min + 30s safety margin).`);
+    }
   };
 
   if (!tick || tick.currentPhase === 'idle') {
@@ -730,7 +787,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
             <button className="btn btn-secondary" onClick={handleResetSession} title="Reset Session">🔄 Reset Session</button>
             <button className="btn btn-secondary" onClick={handleResetTodayCounters} title="Reset Today's Counters">📊 Reset Counters</button>
             
-            {/* Extend buttons - inline, only for work phases (after Reset) */}
+            {/* Extend buttons - inline, only for work phases */}
             {(tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'nowrap' }}>
                 <span style={{ color: '#e2e8f0', fontSize: '0.85rem', fontWeight: 600 }}>Extend:</span>
@@ -751,7 +808,83 @@ function DashboardPage({ tick }: DashboardPageProps) {
                 ))}
               </span>
             )}
+
+            {/* Separator between Extend and Reduce */}
+            {(tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && 
+              preponeOptions.some(m => tick.phaseRemainingMs > (m * 60000) + 30000) && (
+              <span style={{ color: '#475569', margin: '0 0.5rem', fontSize: '1.1rem' }}>|</span>
+            )}
+
+            {/* Reduce buttons - inline, only for work phases with enough remaining time */}
+            {(tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && 
+              preponeOptions.some(m => tick.phaseRemainingMs > (m * 60000) + 30000) && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'nowrap' }}>
+                <span style={{ color: '#e2e8f0', fontSize: '0.85rem', fontWeight: 600 }}>Reduce:</span>
+                {preponeOptions.filter(m => tick.phaseRemainingMs > (m * 60000) + 30000).map((minutes) => (
+                  <button 
+                    key={minutes}
+                    className="btn btn-secondary" 
+                    onClick={() => handlePreponePhase(minutes)}
+                    title={`Reduce current ${tick.currentPhase} phase by ${minutes} minutes`}
+                    style={{
+                      backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                      borderColor: 'rgba(239, 68, 68, 0.3)',
+                      color: '#ef4444',
+                    }}
+                  >
+                    -{minutes}
+                  </button>
+                ))}
+              </span>
+            )}
+
+            {/* Reset Duration button - only shown when duration has been modified (work phases) */}
+            {(tick.currentPhase === 'sit' || tick.currentPhase === 'stand') &&
+              tick.phaseTotalMs !== tick.phaseOriginalDurationMs && (
+              <>
+                <span style={{ color: '#475569', margin: '0 0.5rem', fontSize: '1.1rem' }}>|</span>
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={async () => {
+                    const success = await window.rhythmDesk.resetPhaseDuration();
+                    if (!success) {
+                      alert('Cannot reset — no modification to undo or phase already at original duration.');
+                    }
+                  }}
+                  title="Reset to original configured duration"
+                  style={{
+                    backgroundColor: 'rgba(168, 85, 247, 0.15)',
+                    borderColor: 'rgba(168, 85, 247, 0.3)',
+                    color: '#a855f7',
+                  }}
+                >
+                  ↺ Reset
+                </button>
+              </>
+            )}
             
+            {/* Reset Duration for break phases (outside work-phase block) */}
+            {(tick.currentPhase === 'short-break' || tick.currentPhase === 'long-break') &&
+              tick.phaseTotalMs !== tick.phaseOriginalDurationMs && (
+              <button 
+                className="btn btn-secondary" 
+                onClick={async () => {
+                  const success = await window.rhythmDesk.resetPhaseDuration();
+                  if (!success) {
+                    alert('Cannot reset — no modification to undo or phase already at original duration.');
+                  }
+                }}
+                title="Reset to original configured duration"
+                style={{
+                  backgroundColor: 'rgba(168, 85, 247, 0.15)',
+                  borderColor: 'rgba(168, 85, 247, 0.3)',
+                  color: '#a855f7',
+                }}
+              >
+                ↺ Reset
+              </button>
+            )}
+
             {/* Postpone inline */}
             {tick.canPostpone && tick.postponeOptions.length > 0 && (
               <>
@@ -794,9 +927,28 @@ function DashboardPage({ tick }: DashboardPageProps) {
             >
               ⏱️ 20 min
             </button>
-            <button className="btn btn-secondary" onClick={() => setShowBreakOptions(false)}
+            {/* Custom duration keyboard input */}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', marginLeft: '0.5rem', padding: '0.25rem 0.5rem', borderRadius: '6px', backgroundColor: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+              <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Type:</span>
+              <span style={{ 
+                minWidth: '2ch', 
+                fontFamily: 'monospace', 
+                fontSize: '1rem', 
+                fontWeight: 700, 
+                color: breakDurationInput ? '#22c55e' : '#475569',
+                letterSpacing: '1px',
+              }}>
+                {breakDurationInput || '··'}
+              </span>
+              <span style={{ color: '#64748b', fontSize: '0.75rem' }}>min</span>
+              {breakDurationInput && parseInt(breakDurationInput, 10) > 0 && (
+                <span style={{ color: '#475569', fontSize: '0.75rem', marginLeft: '0.25rem' }}>↵</span>
+              )}
+            </span>
+
+            <button className="btn btn-secondary" onClick={() => { setShowBreakOptions(false); setBreakDurationInput(''); }}
               style={{ marginLeft: 'auto', opacity: 0.7 }}
-              title="Close (B)"
+              title="Close (Esc/B)"
             >
               ✕
             </button>

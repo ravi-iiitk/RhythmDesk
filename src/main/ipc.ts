@@ -150,6 +150,14 @@ export function registerIpcHandlers(): void {
     return timerEngine.extendBreak(minutes);
   });
 
+  ipcMain.handle(IPC_CHANNELS.PREPONE_PHASE, (_event, minutes: number) => {
+    return timerEngine.preponePhase(minutes);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.RESET_PHASE_DURATION, () => {
+    return timerEngine.resetPhaseDuration();
+  });
+
   ipcMain.handle(IPC_CHANNELS.START_AD_HOC_BREAK, (_event, durationMinutes: number) => {
     return timerEngine.startAdHocBreak(durationMinutes);
   });

@@ -227,6 +227,7 @@ export interface SessionState {
   phaseEndsAt: number;           // timestamp when current phase should end
   phaseRemainingMs: number;      // remaining time in current phase (derived from phaseEndsAt)
   phaseTotalMs: number;          // total duration of current phase
+  phaseOriginalDurationMs: number; // original configured duration (never mutated by extend/prepone)
   
   // Flow-based mode: current step index in flowSteps array
   currentFlowStepIndex?: number;
@@ -311,6 +312,7 @@ export interface GeneralSettings {
   waterReminderIntervalMinutes: number; // Minutes between water reminders (default: 10)
   breakExtendMinutes: number; // Minutes to extend a break by (default: 2) - deprecated, use extendOptions
   extendOptions: number[]; // Array of extend duration options in minutes (default: [2, 5, 10])
+  preponeOptions: number[]; // Array of prepone (reduce) duration options in minutes (default: [1, 2, 5])
 }
 
 // Office Focus Lock state - runtime only, not persisted across restarts
@@ -416,6 +418,7 @@ export interface TimerTick {
   thenPhaseLabel: string;
   phaseRemainingMs: number;
   phaseTotalMs: number;
+  phaseOriginalDurationMs: number; // original configured duration (unmodified by extend/prepone)
   nextPhase: PhaseType;
   nextPhaseDurationMs: number;
   thenPhase: PhaseType;
@@ -499,6 +502,8 @@ export const IPC_CHANNELS = {
   START_NEXT_ACTIVITY: 'timer:startNextActivity',
   RESTART_CURRENT_ACTIVITY: 'timer:restartCurrentActivity',
   EXTEND_BREAK: 'timer:extendBreak',
+  PREPONE_PHASE: 'timer:preponePhase',
+  RESET_PHASE_DURATION: 'timer:resetPhaseDuration',
   START_AD_HOC_BREAK: 'timer:startAdHocBreak',
   
   // Office Focus Lock controls
@@ -624,6 +629,7 @@ export const INITIAL_SESSION_STATE: SessionState = {
   phaseEndsAt: 0,
   phaseRemainingMs: 0,
   phaseTotalMs: 0,
+  phaseOriginalDurationMs: 0,
   cumulativeWorkTimeMs: 0,
   lastShortBreakAtWorkTimeMs: 0,
   lastLongBreakAtWorkTimeMs: 0,
@@ -665,6 +671,7 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   waterReminderIntervalMinutes: 10,
   breakExtendMinutes: 2,
   extendOptions: [2, 5, 10],
+  preponeOptions: [1, 2, 5],
 };
 
 // Initial Office Focus Lock state (inactive)

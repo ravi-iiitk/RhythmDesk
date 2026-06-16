@@ -59,6 +59,8 @@ function OverlayView({ tick }: OverlayViewProps) {
   const [waterReminderActive, setWaterReminderActive] = useState(false);
   // Break extend minutes from settings (use first option)
   const [breakExtendMinutes, setBreakExtendMinutes] = useState(2);
+  // Prepone options from settings
+  const [preponeOptions, setPreponeOptions] = useState<number[]>([1, 2, 5]);
   
   
   // Update current time every second
@@ -127,15 +129,19 @@ function OverlayView({ tick }: OverlayViewProps) {
     return () => window.removeEventListener('keydown', handleEmergencyEscape);
   }, [waterReminderActive, pauseReminderData]);
 
-  // Fetch break extend minutes from settings
+  // Fetch break extend minutes and prepone options from settings
   useEffect(() => {
     window.rhythmDesk.getConfig()
       .then((config) => {
-        const options = config?.generalSettings?.extendOptions;
-        if (options && options.length > 0) {
-          setBreakExtendMinutes(options[0]);
+        const extOptions = config?.generalSettings?.extendOptions;
+        if (extOptions && extOptions.length > 0) {
+          setBreakExtendMinutes(extOptions[0]);
         } else if (config?.generalSettings?.breakExtendMinutes) {
           setBreakExtendMinutes(config.generalSettings.breakExtendMinutes);
+        }
+        const prepOptions = config?.generalSettings?.preponeOptions;
+        if (prepOptions && prepOptions.length > 0) {
+          setPreponeOptions(prepOptions);
         }
       })
       .catch((err) => {
@@ -197,6 +203,12 @@ function OverlayView({ tick }: OverlayViewProps) {
           window.rhythmDesk.extendBreak(breakExtendMinutes);
         }
         break;
+      case 'p': // P - prepone (reduce remaining time by first option)
+      case 'P':
+        if (preponeOptions.length > 0 && tick.phaseRemainingMs > (preponeOptions[0] * 60000) + 30000) {
+          window.rhythmDesk.preponePhase(preponeOptions[0]);
+        }
+        break;
       case 'Escape': // Escape - close overlay
         if (canClose) {
           window.rhythmDesk.closeOverlay();
@@ -215,7 +227,7 @@ function OverlayView({ tick }: OverlayViewProps) {
         }
         break;
     }
-  }, [tick, breakExtendMinutes]);
+  }, [tick, breakExtendMinutes, preponeOptions]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -598,6 +610,51 @@ function OverlayView({ tick }: OverlayViewProps) {
               }}
             >
               +{breakExtendMinutes} min
+            </button>
+          )}
+
+          {/* Prepone (reduce) buttons for breaks — only show valid options */}
+          {isActiveBreakPhase && preponeOptions.some(m => tick.phaseRemainingMs > (m * 60000) + 30000) && (
+            <>
+              {preponeOptions.filter(m => tick.phaseRemainingMs > (m * 60000) + 30000).map((minutes) => (
+                <button 
+                  key={`prepone-${minutes}`}
+                  className="btn btn-secondary" 
+                  onClick={async () => {
+                    const success = await window.rhythmDesk.preponePhase(minutes);
+                    if (!success) {
+                      alert(`Cannot reduce by ${minutes} min — not enough time remaining.`);
+                    }
+                  }}
+                  style={{
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                    borderColor: 'rgba(239, 68, 68, 0.3)',
+                    color: '#ef4444',
+                  }}
+                >
+                  -{minutes} min
+                </button>
+              ))}
+            </>
+          )}
+
+          {/* Reset Duration button - only when duration was modified */}
+          {isActiveBreakPhase && tick.phaseTotalMs !== tick.phaseOriginalDurationMs && (
+            <button 
+              className="btn btn-secondary" 
+              onClick={async () => {
+                const success = await window.rhythmDesk.resetPhaseDuration();
+                if (!success) {
+                  alert('Cannot reset — no modification to undo.');
+                }
+              }}
+              style={{
+                backgroundColor: 'rgba(168, 85, 247, 0.15)',
+                borderColor: 'rgba(168, 85, 247, 0.3)',
+                color: '#a855f7',
+              }}
+            >
+              ↺ Reset
             </button>
           )}
 

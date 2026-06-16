@@ -37,6 +37,13 @@ Designed for users with back pain, sciatica, or anyone who needs to maintain hea
 - **Sleep/Wake Recovery**: Timer survives system sleep/hibernate and recovers state from timestamps
 - **Auto-Reopen Overlay**: Break overlays automatically reopen if accidentally closed during strict mode
 - **Local Storage**: All data stored locally in JSON files - no cloud, no tracking, complete privacy
+- **Ad-hoc Break**: Take an instant short break anytime with global shortcut (Super+Shift+B)
+- **Extend Phase**: Add extra minutes to current work or break phase with multiple duration options (+2, +5, +10 min)
+- **Prepone (Reduce)**: Shorten current phase by configurable amounts (-1, -2, -5 min) with safety validation
+- **Reset Duration**: Restore original configured duration after any extend/reduce modifications (↺ Reset button)
+- **Idle Detection**: Auto-pause schedule when you step away, auto-resume when you return
+- **Pause Reminder**: Overlay reminder every 5 minutes when schedule is paused
+- **Emergency Escape**: Ctrl+Shift+Escape to force-close overlay even in strict mode (safety feature)
 
 ### Schedule Modes
 - **Rule-Based**: Traditional mode with sit/stand durations and break intervals
@@ -61,6 +68,44 @@ Designed for users with back pain, sciatica, or anyone who needs to maintain hea
 - **Event Sounds**: Different sounds for breaks, transitions, focus lock, etc.
 - **Per-Event Control**: Enable/disable sounds for specific events
 - **Volume Control**: Adjustable sound volume
+
+### Water Reminder
+- **Hydration Tracking**: Periodic fullscreen reminders to drink water
+- **Configurable Interval**: Set reminder frequency (5-60 minutes)
+- **Independent Operation**: Works even during Rest Blocks
+- **Non-dismissible**: Must confirm drinking water to dismiss
+
+## ⌨️ Keyboard Shortcuts
+
+### Global Shortcuts (System-wide)
+- **Super+Shift+R** - Bring app to front (maximize & focus)
+- **Super+Shift+B** - Take ad-hoc break (short break from schedule)
+
+### Dashboard Shortcuts
+- **Space** - Pause / Resume schedule
+- **S** - Skip current phase
+- **R** - Reset session
+- **N** - Start next activity (when waiting)
+- **E** - Extend current work phase (sit/stand)
+- **P** - Prepone/reduce current work phase (sit/stand)
+- **B** - Toggle ad-hoc break options
+
+### Overlay Shortcuts
+- **Space** - Pause / Resume schedule
+- **Enter** - Complete / Done (mark phase complete)
+- **S** - Skip current break/transition
+- **E** - Extend break (+X minutes, breaks only)
+- **P** - Prepone/reduce time (-X minutes, shortens current phase)
+- **Escape** - Close overlay (if not strict mode)
+- **Ctrl+Shift+Escape** - 🚨 Emergency close (works even in strict mode)
+- **1-5** - Postpone break (1=5min, 2=10min, etc.)
+
+### Navigation Shortcuts
+- **Alt+1** - Go to Dashboard
+- **Alt+2** - Go to Schedules
+- **Alt+3** - Go to Settings
+- **Alt+4** - Go to Help
+- **?** - Open Help page
 
 ## 📥 Installation
 

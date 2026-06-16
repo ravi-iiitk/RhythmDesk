@@ -56,6 +56,7 @@ function createFallbackTickForRestBlock(restBlockState: RestBlockState): TimerTi
     thenPhaseLabel: 'Resume',
     phaseRemainingMs: restBlockState.remainingMs,
     phaseTotalMs: restBlockState.durationMs,
+    phaseOriginalDurationMs: restBlockState.durationMs,
     nextPhase: 'sit',
     nextPhaseDurationMs: 0,
     thenPhase: 'stand',

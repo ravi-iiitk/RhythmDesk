@@ -88,6 +88,7 @@ function createMockSessionState(schedule: Schedule): SessionState {
     phaseEndsAt: now + phaseDurationMs,
     phaseRemainingMs: phaseDurationMs,
     phaseTotalMs: phaseDurationMs,
+    phaseOriginalDurationMs: phaseDurationMs,
     currentFlowStepIndex,
     flowConfigHash,
     cumulativeWorkTimeMs: 0,

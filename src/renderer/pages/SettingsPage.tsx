@@ -368,6 +368,33 @@ function SettingsPage() {
             Current: {(settings.extendOptions ?? [2, 5, 10]).map(m => `+${m} min`).join(', ')}
           </p>
         </div>
+
+        <div className="form-group">
+          <label className="form-label">Prepone (reduce) duration options (minutes)</label>
+          <p className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>
+            Configure the reduce buttons shown on Dashboard and Overlay. Buttons only appear when
+            remaining time is sufficient (remaining &gt; option + 30s safety margin).
+          </p>
+          <input
+            type="text"
+            className="form-input"
+            value={(settings.preponeOptions ?? [1, 2, 5]).join(', ')}
+            onChange={(e) => {
+              const values = e.target.value
+                .split(',')
+                .map(v => parseInt(v.trim(), 10))
+                .filter(v => !isNaN(v) && v > 0 && v <= 60);
+              if (values.length > 0) {
+                handleChange('preponeOptions', values);
+              }
+            }}
+            placeholder="1, 2, 5"
+            style={{ fontFamily: 'monospace' }}
+          />
+          <p className="text-muted" style={{ fontSize: '0.7rem', marginTop: '0.25rem' }}>
+            Current: {(settings.preponeOptions ?? [1, 2, 5]).map(m => `-${m} min`).join(', ')}
+          </p>
+        </div>
       </div>
 
       <div className="card">

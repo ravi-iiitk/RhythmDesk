@@ -18,6 +18,7 @@ export const KEYBOARD_SHORTCUTS = {
     { keys: 'R', action: 'Reset session', context: 'Dashboard' },
     { keys: 'N', action: 'Start next activity (when waiting)', context: 'Dashboard' },
     { keys: 'E', action: 'Extend current work phase (sit/stand)', context: 'Dashboard' },
+    { keys: 'P', action: 'Prepone/reduce current work phase (sit/stand)', context: 'Dashboard' },
     { keys: 'B', action: 'Toggle ad-hoc break options (short, long, custom)', context: 'Dashboard' },
   ],
   overlay: [
@@ -25,6 +26,7 @@ export const KEYBOARD_SHORTCUTS = {
     { keys: 'Enter', action: 'Complete / Done (mark phase complete)', context: 'Overlay' },
     { keys: 'S', action: 'Skip current break/transition', context: 'Overlay' },
     { keys: 'E', action: 'Extend break (+X minutes, breaks only)', context: 'Overlay' },
+    { keys: 'P', action: 'Prepone/reduce time (-X minutes, shortens current phase)', context: 'Overlay' },
     { keys: 'Escape', action: 'Close overlay (if not strict mode)', context: 'Overlay' },
     { keys: 'Ctrl+Shift+Escape', action: '🚨 Emergency close (works even in strict mode)', context: 'Overlay' },
     { keys: '1-5', action: 'Postpone break (1=5min, 2=10min, etc.)', context: 'Overlay' },
@@ -330,6 +332,37 @@ function HelpPage() {
         </ul>
       </Section>
 
+      {/* ==================== AD-HOC BREAK ==================== */}
+      <Section title="Ad-hoc Break" icon="☕">
+        <p style={{ marginBottom: '1rem' }}>
+          The Ad-hoc Break feature allows you to take an instant short break anytime, 
+          regardless of your current schedule phase. Perfect for when you need a quick rest 
+          but don't want to wait for the next scheduled break.
+        </p>
+
+        <h4 style={{ color: '#22c55e', marginBottom: '0.5rem' }}>How to Use</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><strong>Global Shortcut</strong> - Press <code style={codeStyle}>Super+Shift+B</code> from anywhere (even when app is minimized)</li>
+          <li><strong>Dashboard Button</strong> - Press <code style={codeStyle}>B</code> on Dashboard to show break options</li>
+          <li><strong>Only During Work</strong> - Ad-hoc break only works during sit/stand phases (not during existing breaks)</li>
+        </ul>
+
+        <h4 style={{ color: '#22c55e', marginBottom: '0.5rem' }}>Break Options</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><strong>Short Break</strong> - Uses the short break duration from your current schedule</li>
+          <li><strong>Long Break</strong> - Uses the long break duration from your current schedule</li>
+          <li><strong>Custom Duration</strong> - Set your own break duration (1-60 minutes)</li>
+        </ul>
+
+        <h4 style={{ color: '#22c55e', marginBottom: '0.5rem' }}>Behavior</h4>
+        <ul style={{ marginLeft: '1.5rem' }}>
+          <li>Immediately starts the break, pausing your current work phase</li>
+          <li>After the break ends, you return to where you left off</li>
+          <li>Does NOT count toward your daily break statistics</li>
+          <li>Useful for: urgent bathroom breaks, phone calls, unexpected interruptions</li>
+        </ul>
+      </Section>
+
       {/* ==================== EXTEND PHASE ==================== */}
       <Section title="Extend Phase" icon="⏱️">
         <p style={{ marginBottom: '1rem' }}>
@@ -346,17 +379,20 @@ function HelpPage() {
 
         <h4 style={{ color: '#3b82f6', marginBottom: '0.5rem' }}>How to Use</h4>
         <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
-          <li><strong>During Work (Dashboard)</strong> - Click the blue "+X min" button or press <code style={codeStyle}>E</code></li>
-          <li><strong>During Break (Overlay)</strong> - Click the blue "+X min" button or press <code style={codeStyle}>E</code></li>
-          <li>Each click adds the configured amount (default: 2 minutes)</li>
+          <li><strong>During Work (Dashboard)</strong> - Click any "+X min" button or press <code style={codeStyle}>E</code> for first option</li>
+          <li><strong>During Break (Overlay)</strong> - Click the "+X min" button or press <code style={codeStyle}>E</code></li>
+          <li>Multiple buttons available for different durations (e.g., +2 min, +5 min, +10 min)</li>
+          <li>Keyboard shortcut <code style={codeStyle}>E</code> uses the first/smallest extend option</li>
           <li>You can extend multiple times</li>
         </ul>
 
         <h4 style={{ color: '#3b82f6', marginBottom: '0.5rem' }}>Configuration</h4>
         <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
           <li>Go to <strong>Settings → Break Extension</strong></li>
-          <li>Adjust the slider to set how many minutes each extend adds (1-10 min)</li>
-          <li>This setting applies to both work phases and breaks</li>
+          <li>Configure multiple extend options as comma-separated values (e.g., "2, 5, 10")</li>
+          <li>Each value creates a button on the Dashboard for quick access</li>
+          <li>Values must be between 1-60 minutes</li>
+          <li>Default options: 2, 5, 10 minutes</li>
         </ul>
 
         <h4 style={{ color: '#3b82f6', marginBottom: '0.5rem' }}>Important Notes</h4>
@@ -365,6 +401,47 @@ function HelpPage() {
           <li>The flow continues normally after the extended phase ends</li>
           <li>Break progress timers are not affected by extensions</li>
           <li>Useful for: finishing a task, extending a relaxing break, or when you're in the zone</li>
+        </ul>
+      </Section>
+
+      {/* ==================== PREPONE (REDUCE) & RESET ==================== */}
+      <Section title="Prepone (Reduce) & Reset" icon="⏪">
+        <p style={{ marginBottom: '1rem' }}>
+          The Prepone feature lets you reduce time from your current phase — the mirror of Extend.
+          If you've extended or reduced by mistake, the Reset button restores the original configured duration.
+        </p>
+
+        <h4 style={{ color: '#ef4444', marginBottom: '0.5rem' }}>Reduce (Prepone)</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><strong>During Work (Dashboard)</strong> - Red "-X min" buttons appear when enough time remains</li>
+          <li><strong>During Break (Overlay)</strong> - Red "-X min" buttons to shorten break</li>
+          <li>Keyboard shortcut <code style={codeStyle}>P</code> in overlay uses the first/smallest reduce option</li>
+          <li>Buttons only appear when remaining time &gt; option + 30s safety margin</li>
+          <li>Cannot reduce below 30 seconds remaining (prevents accidental phase end)</li>
+        </ul>
+
+        <h4 style={{ color: '#a855f7', marginBottom: '0.5rem' }}>Reset Duration</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li>Purple "↺ Reset" button appears after any +extend or -reduce modification</li>
+          <li>Restores remaining time to: <strong>original duration − elapsed time</strong></li>
+          <li>Always resets to the schedule-configured duration, not intermediate values</li>
+          <li>Example: 10 min phase → +2 → -2 → +2 → Reset = back to 10 min schedule (minus elapsed)</li>
+        </ul>
+
+        <h4 style={{ color: '#ef4444', marginBottom: '0.5rem' }}>Configuration</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li>Go to <strong>Settings → Prepone Options</strong></li>
+          <li>Configure reduce options as comma-separated values (e.g., "1, 2, 5")</li>
+          <li>Values must be between 1-60 minutes</li>
+          <li>Default options: 1, 2, 5 minutes</li>
+        </ul>
+
+        <h4 style={{ color: '#ef4444', marginBottom: '0.5rem' }}>Important Notes</h4>
+        <ul style={{ marginLeft: '1.5rem' }}>
+          <li>Reductions are <strong>temporary</strong> - they don't change your schedule</li>
+          <li>If a reduce would leave less than 30s, the button is hidden (invalid)</li>
+          <li>An alert is shown if the reduce fails for any reason</li>
+          <li>Useful for: ending a break sooner, shortening a long work block, or adjusting on the fly</li>
         </ul>
       </Section>
 
@@ -411,7 +488,9 @@ function HelpPage() {
 
         <h4 style={{ color: '#8b5cf6', marginBottom: '0.5rem' }}>Break Extension</h4>
         <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
-          <li><strong>Extend Break By</strong> - Configure how many minutes the "+X min" button adds (1-10 min)</li>
+          <li><strong>Extend Options</strong> - Configure multiple extend durations as comma-separated values (e.g., "2, 5, 10")</li>
+          <li>Each value creates a separate "+X min" button on the Dashboard</li>
+          <li>Allows quick access to different extension durations</li>
         </ul>
 
         <h4 style={{ color: '#8b5cf6', marginBottom: '0.5rem' }}>Notifications</h4>

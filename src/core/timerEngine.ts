@@ -479,8 +479,9 @@ export class TimerEngine extends EventEmitter {
 
     // Water reminder check - fires every N minutes when enabled
     // Can interrupt any phase (work, break, transition) but not when already showing
+    // Do NOT fire during rest blocks - their overlay conflicts and dismiss logic kills the rest block overlay
     const settings = configService.getGeneralSettings();
-    if (settings.waterReminderEnabled && !this.waterReminderActive) {
+    if (settings.waterReminderEnabled && !this.waterReminderActive && !getRestBlockService().isActive()) {
       const intervalMs = (settings.waterReminderIntervalMinutes ?? 10) * 60 * 1000;
       if (now - this.waterReminderLastShownAt >= intervalMs) {
         this.waterReminderLastShownAt = now;
@@ -502,8 +503,11 @@ export class TimerEngine extends EventEmitter {
         // Check if it's time to show a pause reminder (every 5 minutes)
         // Only show during work phases (sit/stand) - not during breaks/transitions
         // which already have their own overlay visible
+        // IMPORTANT: Do NOT show pause reminders during rest blocks - the timer is paused
+        // by design and the rest block has its own overlay already showing
         const isWorkPhase = this.state.currentPhase === 'sit' || this.state.currentPhase === 'stand';
-        if (isWorkPhase && this.state.pausedAt && now - this.pauseReminderLastShownAt >= TimerEngine.PAUSE_REMINDER_INTERVAL_MS) {
+        const restBlockActive = getRestBlockService().isActive();
+        if (isWorkPhase && !restBlockActive && this.state.pausedAt && now - this.pauseReminderLastShownAt >= TimerEngine.PAUSE_REMINDER_INTERVAL_MS) {
           this.pauseReminderLastShownAt = now;
           const pausedForMs = now - this.state.pausedAt;
           logger.info('TimerEngine', 'Pause reminder triggered', { pausedForMs });
@@ -1121,6 +1125,7 @@ export class TimerEngine extends EventEmitter {
     this.state.phaseEndsAt = now + duration;
     this.state.phaseRemainingMs = duration;
     this.state.phaseTotalMs = duration;
+    this.state.phaseOriginalDurationMs = duration;
 
     logger.info('TimerEngine', `Phase started: ${phase}`, {
       duration,
@@ -1420,6 +1425,116 @@ export class TimerEngine extends EventEmitter {
   }
 
   /**
+   * Reset the current phase duration back to original configured duration.
+   * Calculates: newRemaining = originalDuration - elapsed
+   * Undoes any +extend or -prepone modifications.
+   * 
+   * Returns true if reset was applied, false if not in a resettable phase or no modification exists.
+   */
+  resetPhaseDuration(): boolean {
+    const resettablePhases = ['short-break', 'long-break', 'sit', 'stand', 'custom'];
+    if (!resettablePhases.includes(this.state.currentPhase)) {
+      logger.debug('TimerEngine', 'resetPhaseDuration: not in a resettable phase');
+      return false;
+    }
+
+    if (this.state.isPaused) {
+      logger.debug('TimerEngine', 'resetPhaseDuration: timer is paused');
+      return false;
+    }
+
+    const originalDuration = this.state.phaseOriginalDurationMs;
+    if (!originalDuration || originalDuration <= 0) {
+      logger.debug('TimerEngine', 'resetPhaseDuration: no original duration stored');
+      return false;
+    }
+
+    // Check if there's actually a modification to undo
+    if (this.state.phaseTotalMs === originalDuration) {
+      logger.debug('TimerEngine', 'resetPhaseDuration: no modification to undo (total === original)');
+      return false;
+    }
+
+    const now = Date.now();
+    const elapsedMs = now - this.state.phaseStartedAt;
+    const newRemainingMs = Math.max(30000, originalDuration - elapsedMs); // At least 30s
+
+    this.state.phaseRemainingMs = newRemainingMs;
+    this.state.phaseTotalMs = originalDuration;
+    this.state.phaseEndsAt = now + newRemainingMs;
+
+    logger.info('TimerEngine', 'Phase duration reset to original', {
+      phase: this.state.currentPhase,
+      originalDuration,
+      elapsedMs,
+      newRemainingMs,
+    });
+
+    this.saveState();
+    this.emitTick();
+    return true;
+  }
+
+  /**
+   * Prepone (reduce) current phase by the given number of minutes.
+   * Mirror of extendPhase — subtracts time from the current phase.
+   * 
+   * VALIDATION: Only valid when remaining time after reduction is >= 30 seconds.
+   * Does NOT work for transitions (too short) or idle.
+   * Works for: sit, stand, short-break, long-break, custom.
+   * 
+   * Returns true if phase was preponed, false if not valid.
+   */
+  preponePhase(minutes: number): boolean {
+    logger.info('TimerEngine', 'preponePhase called', {
+      minutes,
+      currentPhase: this.state.currentPhase,
+      phaseRemainingMs: this.state.phaseRemainingMs,
+      isPaused: this.state.isPaused,
+    });
+
+    if (this.state.isPaused) {
+      logger.debug('TimerEngine', 'preponePhase: timer is paused');
+      return false;
+    }
+
+    const preponablePhases = ['short-break', 'long-break', 'sit', 'stand', 'custom'];
+    if (!preponablePhases.includes(this.state.currentPhase)) {
+      logger.debug('TimerEngine', 'preponePhase: not in a preponable phase', { 
+        currentPhase: this.state.currentPhase 
+      });
+      return false;
+    }
+
+    const reductionMs = minutes * 60 * 1000;
+    const MIN_REMAINING_MS = 30 * 1000; // Must have at least 30s remaining after prepone
+
+    if (this.state.phaseRemainingMs - reductionMs < MIN_REMAINING_MS) {
+      logger.info('TimerEngine', 'preponePhase: would reduce below minimum', {
+        currentRemainingMs: this.state.phaseRemainingMs,
+        reductionMs,
+        minRequired: MIN_REMAINING_MS,
+        afterReduction: this.state.phaseRemainingMs - reductionMs,
+      });
+      return false;
+    }
+
+    this.state.phaseRemainingMs -= reductionMs;
+    this.state.phaseTotalMs -= reductionMs;
+    this.state.phaseEndsAt = Date.now() + this.state.phaseRemainingMs;
+
+    logger.info('TimerEngine', 'Phase preponed (reduced)', {
+      phase: this.state.currentPhase,
+      reductionMinutes: minutes,
+      newRemainingMs: this.state.phaseRemainingMs,
+    });
+
+    this.saveState();
+    this.emitTick();
+    return true;
+  }
+
+  /**
    * Start an ad-hoc break immediately with a custom duration.
    * Saves the current work phase state and starts a short-break.
    * When the break completes, the timer will resume the interrupted work phase.
@@ -1470,6 +1585,7 @@ export class TimerEngine extends EventEmitter {
     this.state.currentPhase = 'short-break';
     this.state.phaseRemainingMs = durationMs;
     this.state.phaseTotalMs = durationMs;
+    this.state.phaseOriginalDurationMs = durationMs;
 
     // Emit phase change so overlay shows
     this.emit('phaseChange', { prevPhase, newPhase: 'short-break' });
@@ -1684,6 +1800,7 @@ export class TimerEngine extends EventEmitter {
       // Rule-based schedule or fallback
       this.state.phaseTotalMs = this.getPhaseDurationMs(workPhaseToRestore);
     }
+    this.state.phaseOriginalDurationMs = this.state.phaseTotalMs;
     
     this.state.phaseStartedAt = Date.now();
     this.state.phaseEndsAt = Date.now() + workPhaseRemainingMs;
@@ -2110,6 +2227,7 @@ export class TimerEngine extends EventEmitter {
     this.state.phaseEndsAt = now + resetState.phaseDurationMs;
     this.state.phaseRemainingMs = resetState.phaseDurationMs;
     this.state.phaseTotalMs = resetState.phaseDurationMs;
+    this.state.phaseOriginalDurationMs = resetState.phaseDurationMs;
     
     // Update flow config hash for flow-based schedules
     if (isFlowBasedSchedule(this.currentSchedule)) {
@@ -2609,6 +2727,7 @@ export class TimerEngine extends EventEmitter {
       thenPhaseLabel: getPhaseDisplayLabel(thenPhase, schedule, thenIndex),
       phaseRemainingMs: this.state.phaseRemainingMs,
       phaseTotalMs: this.state.phaseTotalMs,
+      phaseOriginalDurationMs: this.state.phaseOriginalDurationMs ?? this.state.phaseTotalMs,
       nextPhase,
       nextPhaseDurationMs,
       thenPhase,
