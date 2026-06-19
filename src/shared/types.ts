@@ -313,6 +313,8 @@ export interface GeneralSettings {
   breakExtendMinutes: number; // Minutes to extend a break by (default: 2) - deprecated, use extendOptions
   extendOptions: number[]; // Array of extend duration options in minutes (default: [2, 5, 10])
   preponeOptions: number[]; // Array of prepone (reduce) duration options in minutes (default: [1, 2, 5])
+  openaiApiKey: string; // OpenAI API key for voice commands (Whisper STT)
+  voiceMode: 'off' | 'local' | 'cloud'; // Voice command backend: off, local whisper.cpp, or cloud Whisper API
 }
 
 // Office Focus Lock state - runtime only, not persisted across restarts
@@ -538,6 +540,10 @@ export const IPC_CHANNELS = {
   GET_AVAILABLE_SOUNDS: 'sound:getAvailable',
   PLAY_TEST_SOUND: 'sound:playTest',
   
+  // Voice commands
+  VOICE_TRANSCRIBE: 'voice:transcribe',
+  VOICE_TRANSCRIBE_LOCAL: 'voice:transcribeLocal',
+  
   // Dev mode only
   DEV_CLEAR_ALL_DATA: 'dev:clearAllData',
 } as const;
@@ -672,6 +678,8 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   breakExtendMinutes: 2,
   extendOptions: [2, 5, 10],
   preponeOptions: [1, 2, 5],
+  openaiApiKey: '',
+  voiceMode: 'off' as const,
 };
 
 // Initial Office Focus Lock state (inactive)

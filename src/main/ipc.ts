@@ -296,6 +296,139 @@ export function registerIpcHandlers(): void {
     return getSoundService().playTestSound(filename, volume);
   });
 
+  // Voice commands: Transcribe audio via OpenAI Whisper API
+  ipcMain.handle(IPC_CHANNELS.VOICE_TRANSCRIBE, async (_event, audioBuffer: ArrayBuffer) => {
+    const settings = configService.getGeneralSettings();
+    const apiKey = settings.openaiApiKey;
+    if (!apiKey) {
+      return { success: false, text: '', error: 'No OpenAI API key configured. Add it in Settings.' };
+    }
+
+    try {
+      // Build multipart form data manually (no external deps)
+      const boundary = '----RhythmDeskVoice' + Date.now();
+      const wavBuffer = Buffer.from(audioBuffer);
+
+      const formParts: Buffer[] = [];
+      // file field
+      formParts.push(Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="voice.wav"\r\nContent-Type: audio/wav\r\n\r\n`
+      ));
+      formParts.push(wavBuffer);
+      formParts.push(Buffer.from('\r\n'));
+      // model field
+      formParts.push(Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`
+      ));
+      // language field (optimize for English)
+      formParts.push(Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\nen\r\n`
+      ));
+      // prompt field (helps Whisper understand context)
+      formParts.push(Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="prompt"\r\n\r\nRhythmDesk voice command: pause, resume, break, skip, extend, reduce, shuffle, reverse, reset, time left\r\n`
+      ));
+      formParts.push(Buffer.from(`--${boundary}--\r\n`));
+
+      const body = Buffer.concat(formParts);
+
+      const { net } = require('electron');
+      const response = await net.fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        },
+        body,
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        logger.warn('Voice', 'Whisper API error', { status: response.status, error: errText });
+        if (response.status === 401) {
+          return { success: false, text: '', error: 'Invalid API key. Check Settings.' };
+        }
+        return { success: false, text: '', error: `API error: ${response.status}` };
+      }
+
+      const result = await response.json();
+      const text = (result.text || '').trim();
+      logger.info('Voice', 'Transcription result', { text });
+      return { success: true, text, error: null };
+    } catch (err: any) {
+      logger.error('Voice', 'Transcription failed', { error: err.message });
+      return { success: false, text: '', error: `Failed: ${err.message}` };
+    }
+  });
+
+  // Voice commands: Local transcription via whisper.cpp CLI binary
+  ipcMain.handle(IPC_CHANNELS.VOICE_TRANSCRIBE_LOCAL, async (_event, audioBuffer: ArrayBuffer) => {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
+      const { execFile } = require('child_process');
+
+      // Write WAV buffer to temp file
+      const tmpDir = os.tmpdir();
+      const tmpFile = path.join(tmpDir, `rhythmdesk-voice-${Date.now()}.wav`);
+      fs.writeFileSync(tmpFile, Buffer.from(audioBuffer));
+
+      // Find resources directory
+      const resourcesDir = app.isPackaged
+        ? path.join(process.resourcesPath, 'resources')
+        : path.join(app.getAppPath(), 'resources');
+
+      // Find model file
+      const modelPath = path.join(resourcesDir, 'models', 'ggml-base.en.bin');
+      if (!fs.existsSync(modelPath)) {
+        return { success: false, text: '', error: 'Whisper model not found. Download ggml-base.en.bin to resources/models/' };
+      }
+
+      // Find whisper-cli binary
+      const binDir = path.join(resourcesDir, 'bin');
+      const whisperBin = path.join(binDir, 'whisper-cli');
+      if (!fs.existsSync(whisperBin)) {
+        return { success: false, text: '', error: 'whisper-cli binary not found in resources/bin/' };
+      }
+
+      // Run whisper-cli with LD_LIBRARY_PATH set to find shared libs
+      const text = await new Promise<string>((resolve, reject) => {
+        const args = [
+          '-m', modelPath,
+          '-f', tmpFile,
+          '-l', 'en',
+          '--no-timestamps',
+        ];
+        const env = { ...process.env, LD_LIBRARY_PATH: binDir };
+        execFile(whisperBin, args, { env, timeout: 30000 }, (err: any, stdout: string, stderr: string) => {
+          if (err) {
+            reject(new Error(stderr || err.message));
+          } else {
+            resolve(stdout);
+          }
+        });
+      });
+
+      // Clean up temp file
+      try { fs.unlinkSync(tmpFile); } catch (_e) { /* ignore */ }
+
+      // Parse output - whisper-cli outputs text lines (may have leading whitespace)
+      const cleanText = text
+        .split('\n')
+        .map((line: string) => line.trim())
+        .filter((line: string) => line.length > 0 && !line.startsWith('['))
+        .join(' ')
+        .trim();
+
+      logger.info('Voice', 'Local transcription result', { text: cleanText });
+      return { success: true, text: cleanText, error: null };
+    } catch (err: any) {
+      logger.error('Voice', 'Local transcription failed', { error: err.message });
+      return { success: false, text: '', error: `Local transcription failed: ${err.message}` };
+    }
+  });
+
   // Dev mode: Clear all data (config + session)
   ipcMain.handle(IPC_CHANNELS.DEV_CLEAR_ALL_DATA, () => {
     if (process.env.NODE_ENV !== 'development') {

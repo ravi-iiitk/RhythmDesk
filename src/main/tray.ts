@@ -42,6 +42,7 @@ function formatMinutesOnly(ms: number): string {
 }
 import { getTimerEngine } from '../core/timerEngine';
 import { getOfficeFocusLockService } from '../core/officeFocusLockService';
+import { getRestBlockService } from '../core/restBlockService';
 import { 
   logTrayCreated, 
   logTrayTooltipUpdated, 
@@ -528,109 +529,161 @@ function buildStaticTrayMenu(): Electron.Menu {
     menuItems.push({ label: '💤 No active schedule', enabled: false });
   }
   
+  if (tick?.cumulativeWorkTimeMs && tick.cumulativeWorkTimeMs > 60000) {
+    menuItems.push({ label: `📊 Work: ${formatDurationHuman(tick.cumulativeWorkTimeMs)}`, enabled: false });
+  }
   menuItems.push({ type: 'separator' });
 
-  // ---- Timer Controls ----
-  menuItems.push({ 
-    label: '⏸ Pause Timer', 
-    click: () => timerEngine.pause(),
-    enabled: tick ? !tick.isPaused : false,
-  });
-  menuItems.push({ 
-    label: '▶️ Resume Timer', 
-    click: () => timerEngine.resume(),
-    enabled: tick?.isPaused || false,
-  });
-  menuItems.push({ type: 'separator' });
-  
-  // ---- Pause Durations ----
-  menuItems.push({
-    label: '⏸ Pause for...',
-    submenu: [
-      { label: '5 minutes', click: () => timerEngine.pauseForDuration(5) },
-      { label: '10 minutes', click: () => timerEngine.pauseForDuration(10) },
-      { label: '15 minutes', click: () => timerEngine.pauseForDuration(15) },
-      { label: '30 minutes', click: () => timerEngine.pauseForDuration(30) },
-    ],
-  });
-  
-  // ---- Postpone Options ----
+  // State flags for smart visibility
+  const hasSchedule = !!tick?.scheduleName;
+  const isPaused = tick?.isPaused || false;
+  const isInBreak = tick?.currentPhase === 'short-break' || tick?.currentPhase === 'long-break';
+  const canExtend = tick && ['sit', 'stand', 'short-break', 'long-break', 'custom'].includes(tick.currentPhase);
   const canPostpone = tick?.canPostpone || false;
-  menuItems.push({
-    label: '⏳ Postpone...',
-    enabled: canPostpone,
-    submenu: [
-      { label: '2 minutes', click: () => timerEngine.postpone(2) },
-      { label: '5 minutes', click: () => timerEngine.postpone(5) },
-      { label: '10 minutes', click: () => timerEngine.postpone(10) },
-    ],
-  });
-  
-  menuItems.push({ label: '⏭ Skip Phase', click: () => timerEngine.skipPhase() });
-  menuItems.push({ label: '✓ Complete Phase', click: () => timerEngine.completePhase() });
-  menuItems.push({ type: 'separator' });
-  
-  // ---- Office Focus Lock ----
   const focusLockActive = tick?.officeFocusLock.isActive || false;
-  
+  const restBlockService = getRestBlockService();
+  const isInRestBlock = restBlockService.getState().isActive;
+
+  // Quick actions — show only what's relevant
+  if (isPaused) {
+    menuItems.push({ label: '▶️ Resume Timer', click: () => timerEngine.resume() });
+  } else {
+    menuItems.push({ label: '⏸ Pause Timer', click: () => timerEngine.pause(), enabled: hasSchedule });
+  }
+  if (hasSchedule && !isPaused) {
+    menuItems.push({ label: '⏭ Skip Phase', click: () => timerEngine.skipPhase() });
+  }
+  if (isInBreak || isInRestBlock) {
+    menuItems.push({ label: '⏹️ Stop Break', click: () => { if (isInRestBlock) restBlockService.stop(); else timerEngine.skipPhase(); } });
+  }
+  menuItems.push({ type: 'separator' });
+
+  // ---- Pause for... (top-level submenu, only when not paused) ----
+  if (!isPaused) {
+    menuItems.push({
+      label: '⏸ Pause for...',
+      submenu: [
+        { label: '5 minutes', click: () => timerEngine.pauseForDuration(5) },
+        { label: '10 minutes', click: () => timerEngine.pauseForDuration(10) },
+        { label: '15 minutes', click: () => timerEngine.pauseForDuration(15) },
+        { label: '30 minutes', click: () => timerEngine.pauseForDuration(30) },
+        { label: '1 hour', click: () => timerEngine.pauseForDuration(60) },
+      ],
+    });
+  }
+
+  // ---- Postpone (top-level submenu, only when can postpone) ----
+  if (canPostpone) {
+    menuItems.push({
+      label: '⏳ Postpone...',
+      submenu: [
+        { label: '2 minutes', click: () => timerEngine.postpone(2) },
+        { label: '5 minutes', click: () => timerEngine.postpone(5) },
+        { label: '10 minutes', click: () => timerEngine.postpone(10) },
+      ],
+    });
+  }
+
+  // ---- Extend / Reduce Phase (top-level submenu, only when extendable) ----
+  if (canExtend) {
+    menuItems.push({
+      label: '⏱️ Extend Phase...',
+      submenu: [
+        { label: '+2 minutes', click: () => timerEngine.extendPhase(2) },
+        { label: '+5 minutes', click: () => timerEngine.extendPhase(5) },
+        { label: '+10 minutes', click: () => timerEngine.extendPhase(10) },
+      ],
+    });
+    menuItems.push({
+      label: '⏱️ Reduce Phase...',
+      submenu: [
+        { label: '-1 minute', click: () => timerEngine.preponePhase(1) },
+        { label: '-2 minutes', click: () => timerEngine.preponePhase(2) },
+        { label: '-5 minutes', click: () => timerEngine.preponePhase(5) },
+      ],
+    });
+  }
+
+  // ============================================================
+  // 2. MORE CONTROLS — grouped submenu (less-frequent actions)
+  // ============================================================
   menuItems.push({
-    label: '🔒 Start Focus Lock',
-    enabled: !focusLockActive,
+    label: '⏯️ More Controls',
     submenu: [
-      {
-        label: 'Deep Work',
-        submenu: OFFICE_FOCUS_LOCK_DURATIONS.map((minutes) => ({
-          label: `${minutes} min`,
-          click: () => officeFocusLockService.start('Deep Work', minutes),
-        })),
-      },
-      {
-        label: 'Meeting',
-        submenu: OFFICE_FOCUS_LOCK_DURATIONS.map((minutes) => ({
-          label: `${minutes} min`,
-          click: () => officeFocusLockService.start('Meeting', minutes),
-        })),
-      },
+      { label: '✓ Complete Phase', click: () => timerEngine.completePhase(), enabled: hasSchedule },
+      { label: '🔁 Restart Activity', click: () => timerEngine.restartCurrentActivity(), enabled: hasSchedule },
+      { type: 'separator' },
+      { label: '🔀 Shuffle Flow', click: () => timerEngine.shuffleFlow(), enabled: hasSchedule },
+      { label: '↩️ Reverse Flow', click: () => timerEngine.reverseFlow(), enabled: hasSchedule },
+      { type: 'separator' },
+      { label: '🔄 Reset Session', click: () => timerEngine.resetSession(), enabled: hasSchedule },
     ],
   });
-  menuItems.push({ 
-    label: '🔓 Stop Focus Lock', 
-    click: () => officeFocusLockService.stop(),
-    enabled: focusLockActive,
-  });
+
+  // ============================================================
+  // 3. BREAKS — grouped submenu (hidden when in break/rest)
+  // ============================================================
+  if (!isInBreak && !isInRestBlock) {
+    menuItems.push({
+      label: '☕ Take a Break',
+      submenu: [
+        { label: '2 min — Quick', click: () => timerEngine.startAdHocBreak(2) },
+        { label: '5 min — Short', click: () => timerEngine.startAdHocBreak(5) },
+        { label: '10 min — Medium', click: () => timerEngine.startAdHocBreak(10) },
+        { label: '15 min — Long', click: () => timerEngine.startAdHocBreak(15) },
+        { label: '30 min — Extended', click: () => timerEngine.startAdHocBreak(30) },
+        { type: 'separator' },
+        { label: '🚻 Bio Break (2 min)', click: () => restBlockService.start('Bio Break', 2, false) },
+        { label: '🛋️ Quick Rest (5 min)', click: () => restBlockService.start('Quick Rest', 5, false) },
+        { label: '🍽️ Lunch (30 min)', click: () => restBlockService.start('Lunch Break', 30, false) },
+        { label: '🍛 Dinner (45 min)', click: () => restBlockService.start('Dinner', 45, false) },
+        { label: '🕐 1 Hour', click: () => restBlockService.start('Long Break', 60, false) },
+      ],
+    });
+  }
+
+  // ============================================================
+  // 4. FOCUS LOCK — show/hide based on state
+  // ============================================================
+  if (focusLockActive) {
+    menuItems.push({ label: '🔓 Stop Focus Lock', click: () => officeFocusLockService.stop() });
+  } else {
+    menuItems.push({
+      label: '🔒 Focus Lock',
+      submenu: [
+        {
+          label: 'Deep Work',
+          submenu: OFFICE_FOCUS_LOCK_DURATIONS.map((m) => ({
+            label: `${m} min`, click: () => officeFocusLockService.start('Deep Work', m),
+          })),
+        },
+        {
+          label: 'Meeting',
+          submenu: OFFICE_FOCUS_LOCK_DURATIONS.map((m) => ({
+            label: `${m} min`, click: () => officeFocusLockService.start('Meeting', m),
+          })),
+        },
+      ],
+    });
+  }
   menuItems.push({ type: 'separator' });
-  
-  // ---- Session Controls ----
-  menuItems.push({ 
-    label: '🔄 Reset Session', 
-    click: () => timerEngine.resetSession(),
-    enabled: tick?.scheduleName !== null,
-  });
-  menuItems.push({ type: 'separator' });
-  
-  // ---- Main Actions ----
+
+  // ============================================================
+  // 5. NAVIGATION — always present
+  // ============================================================
   menuItems.push({ label: '📊 Open Dashboard', click: () => showMainWindow() });
-  menuItems.push({ 
-    label: '⚙️ Settings', 
+  menuItems.push({
+    label: '⚙️ Settings',
     click: () => {
       showMainWindow();
-      // Navigate to settings after window opens
       setTimeout(() => {
         const mainWindow = require('./windowManager').getMainWindow();
-        if (mainWindow) {
-          mainWindow.webContents.send('navigate', '/settings');
-        }
+        if (mainWindow) mainWindow.webContents.send('navigate', '/settings');
       }, 100);
     },
   });
   menuItems.push({ type: 'separator' });
-  menuItems.push({
-    label: '❌ Quit RhythmDesk',
-    click: () => {
-      setQuitting(true);
-      app.quit();
-    },
-  });
+  menuItems.push({ label: '❌ Quit RhythmDesk', click: () => { setQuitting(true); app.quit(); } });
 
   return Menu.buildFromTemplate(menuItems);
 }

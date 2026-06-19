@@ -20,6 +20,12 @@ export const KEYBOARD_SHORTCUTS = {
     { keys: 'E', action: 'Extend current work phase (sit/stand)', context: 'Dashboard' },
     { keys: 'P', action: 'Prepone/reduce current work phase (sit/stand)', context: 'Dashboard' },
     { keys: 'B', action: 'Toggle ad-hoc break options (short, long, custom)', context: 'Dashboard' },
+    { keys: 'H', action: 'Shuffle flow order', context: 'Dashboard' },
+    { keys: 'J', action: 'Reverse flow order', context: 'Dashboard' },
+    { keys: 'A', action: 'Restart current activity', context: 'Dashboard' },
+    { keys: 'C', action: 'Reset today\'s counters', context: 'Dashboard' },
+    { keys: 'F', action: 'Toggle Office Focus Lock options', context: 'Dashboard' },
+    { keys: 'V (hold)', action: 'Push-to-talk voice command', context: 'Dashboard' },
   ],
   overlay: [
     { keys: 'Space', action: 'Pause / Resume schedule', context: 'Overlay' },
@@ -511,6 +517,13 @@ function HelpPage() {
           <li><strong>Interval</strong> - How often to remind (5-60 minutes)</li>
         </ul>
 
+        <h4 style={{ color: '#8b5cf6', marginBottom: '0.5rem' }}>Voice Commands</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><strong>Voice Mode</strong> - Off (disabled), Local (free, offline whisper.cpp), or Cloud (OpenAI Whisper API)</li>
+          <li><strong>OpenAI API Key</strong> - Only needed for Cloud mode. Get from platform.openai.com/api-keys</li>
+          <li><strong>Local Model</strong> - Uses ggml-base.en.bin (~142MB) stored in resources/models/</li>
+        </ul>
+
         <h4 style={{ color: '#8b5cf6', marginBottom: '0.5rem' }}>Developer Options</h4>
         <ul style={{ marginLeft: '1.5rem' }}>
           <li><strong>Simulate Mode</strong> - Speed up timers for testing (1 min = 2 seconds)</li>
@@ -581,6 +594,79 @@ function HelpPage() {
         </table>
       </Section>
 
+      {/* ==================== VOICE COMMANDS ==================== */}
+      <Section title="Voice Commands" icon="🎙️" defaultOpen={true}>
+        <p style={{ marginBottom: '1rem', opacity: 0.9 }}>
+          Control RhythmDesk with natural language voice commands. Hold <code style={codeStyle}>V</code> on Dashboard, speak your command, then release.
+        </p>
+        
+        <div style={{ padding: '0.75rem', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderRadius: '6px', marginBottom: '1rem', borderLeft: '3px solid #3b82f6' }}>
+          <strong>Setup:</strong> Go to Settings → Voice Commands and choose a mode:<br/>
+          • <strong>💻 Local</strong> — Free, offline, uses whisper.cpp (base model, ~142MB). No API key needed.<br/>
+          • <strong>☁️ Cloud</strong> — Best accuracy, uses OpenAI Whisper API (~$0.006/min). Requires API key.
+        </div>
+
+        <h4 style={{ color: '#22c55e', marginBottom: '0.5rem' }}>🎯 Breaks & Rest</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><code style={codeStyle}>"break"</code> / <code style={codeStyle}>"take a break"</code> — Ad-hoc break (uses schedule duration)</li>
+          <li><code style={codeStyle}>"break for 7 minutes"</code> / <code style={codeStyle}>"take 10"</code> — Custom duration break</li>
+          <li><code style={codeStyle}>"bio break"</code> / <code style={codeStyle}>"bathroom"</code> — 2-minute rest block</li>
+          <li><code style={codeStyle}>"lunch break"</code> / <code style={codeStyle}>"dinner"</code> / <code style={codeStyle}>"quick rest"</code> — Named rest block</li>
+          <li><code style={codeStyle}>"stop break"</code> / <code style={codeStyle}>"end rest"</code> — End current break/rest</li>
+          <li><code style={codeStyle}>"break now"</code> / <code style={codeStyle}>"take the pending break"</code> — Take pending break immediately</li>
+          <li><code style={codeStyle}>"postpone"</code> / <code style={codeStyle}>"delay by 10"</code> — Postpone pending break (default 5 min)</li>
+        </ul>
+
+        <h4 style={{ color: '#3b82f6', marginBottom: '0.5rem' }}>⏯️ Timer Control</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><code style={codeStyle}>"pause"</code> / <code style={codeStyle}>"hold"</code> — Pause timer indefinitely</li>
+          <li><code style={codeStyle}>"pause for 10 minutes"</code> — Pause for specific duration (auto-resumes)</li>
+          <li><code style={codeStyle}>"resume"</code> / <code style={codeStyle}>"continue"</code> — Resume the timer</li>
+          <li><code style={codeStyle}>"skip"</code> / <code style={codeStyle}>"move on"</code> — Skip to next phase</li>
+          <li><code style={codeStyle}>"done"</code> / <code style={codeStyle}>"complete"</code> / <code style={codeStyle}>"finished"</code> — Mark current phase complete</li>
+          <li><code style={codeStyle}>"start next"</code> / <code style={codeStyle}>"next activity"</code> — Start next (when waiting)</li>
+          <li><code style={codeStyle}>"restart"</code> / <code style={codeStyle}>"redo"</code> — Restart current activity</li>
+          <li><code style={codeStyle}>"reset"</code> / <code style={codeStyle}>"start over"</code> — Reset entire session</li>
+          <li><code style={codeStyle}>"reset counters"</code> / <code style={codeStyle}>"clear stats"</code> — Reset today's counters</li>
+        </ul>
+
+        <h4 style={{ color: '#f59e0b', marginBottom: '0.5rem' }}>⏱️ Time Adjustment</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><code style={codeStyle}>"extend by 5"</code> / <code style={codeStyle}>"add 5 minutes"</code> — Add time to current phase</li>
+          <li><code style={codeStyle}>"reduce by 2"</code> / <code style={codeStyle}>"shorten"</code> — Reduce time from current phase</li>
+          <li><code style={codeStyle}>"reset duration"</code> / <code style={codeStyle}>"undo extend"</code> — Revert to original configured duration</li>
+        </ul>
+
+        <h4 style={{ color: '#a855f7', marginBottom: '0.5rem' }}>🔀 Flow Control</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><code style={codeStyle}>"shuffle"</code> / <code style={codeStyle}>"randomize"</code> — Randomize flow order</li>
+          <li><code style={codeStyle}>"reverse"</code> / <code style={codeStyle}>"flip"</code> — Reverse flow order</li>
+        </ul>
+
+        <h4 style={{ color: '#f97316', marginBottom: '0.5rem' }}>🔒 Focus Mode</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><code style={codeStyle}>"start focus"</code> / <code style={codeStyle}>"deep work"</code> / <code style={codeStyle}>"focus mode"</code> — Start focus lock (default 60 min)</li>
+          <li><code style={codeStyle}>"start focus for 30 minutes"</code> — Focus lock with custom duration</li>
+          <li><code style={codeStyle}>"stop focus"</code> / <code style={codeStyle}>"end focus"</code> — Stop focus lock</li>
+        </ul>
+
+        <h4 style={{ color: '#0ea5e9', marginBottom: '0.5rem' }}>❓ Queries</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><code style={codeStyle}>"how much time left"</code> / <code style={codeStyle}>"time remaining"</code> — Query remaining time</li>
+          <li><code style={codeStyle}>"status"</code> / <code style={codeStyle}>"what phase"</code> / <code style={codeStyle}>"what's happening"</code> — Query current status</li>
+        </ul>
+
+        <h4 style={{ color: '#64748b', marginBottom: '0.5rem' }}>🖥️ App Control</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><code style={codeStyle}>"open settings"</code> / <code style={codeStyle}>"go to settings"</code> — Navigate to Settings</li>
+          <li><code style={codeStyle}>"minimize"</code> / <code style={codeStyle}>"hide"</code> — Minimize to system tray</li>
+        </ul>
+
+        <div style={{ padding: '0.75rem', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderRadius: '6px', borderLeft: '3px solid #22c55e' }}>
+          <strong>💡 Tip:</strong> Speak naturally! Say "I need a 10 minute break", "pause for five minutes", or "start deep work for an hour" — the parser understands many variations.
+        </div>
+      </Section>
+
       {/* ==================== TIPS & BEST PRACTICES ==================== */}
       <Section title="Tips & Best Practices" icon="💡">
         <h4 style={{ color: '#fbbf24', marginBottom: '0.5rem' }}>Getting the Most Out of RhythmDesk</h4>
@@ -644,10 +730,27 @@ function HelpPage() {
         </ul>
 
         <p><strong>Timer seems stuck:</strong></p>
-        <ul style={{ marginLeft: '1.5rem' }}>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
           <li>Check if schedule is paused (Dashboard will show "Paused")</li>
           <li>Check if "Waiting for Next Activity" is shown (click Start Next)</li>
           <li>Try Reset Session to restart from beginning</li>
+        </ul>
+
+        <p><strong>Voice commands not working:</strong></p>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li>Check Settings → Voice Commands is set to Local or Cloud (not Off)</li>
+          <li>For Local: ensure resources/models/ggml-base.en.bin exists (~142MB file)</li>
+          <li>For Cloud: verify your OpenAI API key is correct and has credits</li>
+          <li>Hold V for at least 1 second — speak clearly — then release</li>
+          <li>Voice only works on Dashboard page, not other pages</li>
+        </ul>
+
+        <p><strong>Voice commands not understanding me:</strong></p>
+        <ul style={{ marginLeft: '1.5rem' }}>
+          <li>Use simple commands: "break", "pause", "resume", "skip"</li>
+          <li>Speak clearly and in English</li>
+          <li>If Local mode is inaccurate, try Cloud mode for better recognition</li>
+          <li>Check Help → Voice Commands for full list of supported phrases</li>
         </ul>
       </Section>
 

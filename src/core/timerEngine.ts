@@ -558,6 +558,8 @@ export class TimerEngine extends EventEmitter {
               this.state.currentFlowStepIndex = breakIndex;
             }
           }
+          // Reset water reminder timer to prevent back-to-back popups
+          this.waterReminderLastShownAt = Date.now();
           // Start the break - this will trigger phaseChange event which shows overlay
           this.startPhase(pendingBreak);
           this.emitTick();
@@ -816,6 +818,10 @@ export class TimerEngine extends EventEmitter {
       this.state.longBreakCountToday = (this.state.longBreakCountToday ?? 0) + 1;
     }
     this.stateChanged = true;
+    
+    // Reset water reminder timer so it doesn't fire immediately after
+    // the break overlay is dismissed/postponed (prevents back-to-back popups)
+    this.waterReminderLastShownAt = Date.now();
     
     this.emit('breakDue', breakType);
     this.startPhase(breakType);
@@ -1722,6 +1728,10 @@ export class TimerEngine extends EventEmitter {
     this.state.postponedUntil = Date.now() + minutesToMs(minutes);
     this.state.postponeCountsToday[breakType]++;
     
+    // Reset water reminder timer to prevent back-to-back popups
+    // (user just interacted with an overlay, don't show another immediately)
+    this.waterReminderLastShownAt = Date.now();
+    
     // CRITICAL FIX: Restore work phase - do NOT keep break as current phase
     // Use preBreakPhase (set when break was triggered) or interruptedPhase
     let workPhaseToRestore = this.preBreakPhase || this.state.interruptedPhase || 'sit';
@@ -1967,6 +1977,15 @@ export class TimerEngine extends EventEmitter {
       this.state.prePostponeWorkPhase = null;
       this.state.prePostponeWorkPhaseRemainingMs = 0;
       this.state.prePostponeFlowIndex = undefined;
+
+      // CRITICAL: Update break threshold markers so checkBreakTriggers doesn't
+      // immediately re-trigger the same break type. Treat skip as if the break
+      // was taken — reset the "time since last break" counter.
+      if (pendingBreak === 'short-break') {
+        this.state.lastShortBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
+      } else if (pendingBreak === 'long-break') {
+        this.state.lastLongBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
+      }
 
       logSessionEvent({
         event: 'skipPhase',

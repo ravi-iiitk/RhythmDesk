@@ -9,7 +9,7 @@
  * - Focus Lock resets to OFF on restart (not persisted)
  */
 
-import { app, BrowserWindow, powerMonitor, globalShortcut } from 'electron';
+import { app, BrowserWindow, powerMonitor, globalShortcut, session } from 'electron';
 import { createMainWindow, showOverlay, closeOverlay, sendToAll, sendToOverlay, getMainWindow, getOverlayWindow, recoverOverlayIfNeeded, startMainWindowHealthCheck, setScreenLocked, showAndFocusMainWindow } from './windowManager';
 import logger from '../core/logger';
 import { createTray, updateTrayWithTick } from './tray';
@@ -130,6 +130,19 @@ function initialize(): void {
 
   // App ready
   app.whenReady().then(() => {
+    // Grant microphone permission for voice commands (Web Speech API)
+    session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+      if (permission === 'media') {
+        callback(true);
+      } else {
+        callback(true);
+      }
+    });
+    session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+      if (permission === 'media') return true;
+      return true;
+    });
+
     // Initialize default schedules if none exist
     const schedules = configService.getSchedules();
     if (schedules.length === 0) {

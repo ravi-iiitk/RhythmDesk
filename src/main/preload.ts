@@ -59,6 +59,10 @@ export interface RhythmDeskAPI {
   getAvailableSounds: () => Promise<string[]>;
   playTestSound: (filename: string, volume: number) => Promise<void>;
   
+  // Voice commands
+  voiceTranscribe: (audioBuffer: ArrayBuffer) => Promise<{ success: boolean; text: string; error: string | null }>;
+  voiceTranscribeLocal: (audioBuffer: ArrayBuffer) => Promise<{ success: boolean; text: string; error: string | null }>;
+  
   // Dev mode only
   devClearAllData: () => Promise<{ success: boolean; message: string }>;
   
@@ -146,6 +150,10 @@ const api: RhythmDeskAPI = {
   // Sound management
   getAvailableSounds: () => ipcRenderer.invoke(IPC_CHANNELS.GET_AVAILABLE_SOUNDS),
   playTestSound: (filename, volume) => ipcRenderer.invoke(IPC_CHANNELS.PLAY_TEST_SOUND, filename, volume),
+
+  // Voice commands
+  voiceTranscribe: (audioBuffer) => ipcRenderer.invoke(IPC_CHANNELS.VOICE_TRANSCRIBE, audioBuffer),
+  voiceTranscribeLocal: (audioBuffer) => ipcRenderer.invoke(IPC_CHANNELS.VOICE_TRANSCRIBE_LOCAL, audioBuffer),
 
   // Dev mode only
   devClearAllData: () => ipcRenderer.invoke(IPC_CHANNELS.DEV_CLEAR_ALL_DATA),
