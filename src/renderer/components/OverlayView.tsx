@@ -613,30 +613,32 @@ function OverlayView({ tick }: OverlayViewProps) {
             </button>
           )}
 
-          {/* Prepone (reduce) buttons for breaks — only show valid options */}
-          {isActiveBreakPhase && preponeOptions.some(m => tick.phaseRemainingMs > (m * 60000) + 30000) && (
-            <>
-              {preponeOptions.filter(m => tick.phaseRemainingMs > (m * 60000) + 30000).map((minutes) => (
-                <button 
-                  key={`prepone-${minutes}`}
-                  className="btn btn-secondary" 
-                  onClick={async () => {
-                    const success = await window.rhythmDesk.preponePhase(minutes);
-                    if (!success) {
-                      alert(`Cannot reduce by ${minutes} min — not enough time remaining.`);
-                    }
-                  }}
-                  style={{
-                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                    borderColor: 'rgba(239, 68, 68, 0.3)',
-                    color: '#ef4444',
-                  }}
-                >
-                  -{minutes} min
-                </button>
-              ))}
-            </>
-          )}
+          {/* Prepone (reduce) buttons for breaks — always visible, disabled when not enough time */}
+          {isActiveBreakPhase && preponeOptions.map((minutes) => {
+            const canReduce = tick.phaseRemainingMs > (minutes * 60000) + 30000;
+            return (
+              <button 
+                key={`prepone-${minutes}`}
+                className="btn btn-secondary" 
+                disabled={!canReduce}
+                onClick={async () => {
+                  const success = await window.rhythmDesk.preponePhase(minutes);
+                  if (!success) {
+                    alert(`Cannot reduce by ${minutes} min — not enough time remaining.`);
+                  }
+                }}
+                title={canReduce ? `Reduce by ${minutes} minutes` : `Not enough time to reduce by ${minutes} min`}
+                style={{
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  borderColor: 'rgba(239, 68, 68, 0.3)',
+                  color: '#ef4444',
+                  ...(canReduce ? {} : { opacity: 0.4, cursor: 'not-allowed' }),
+                }}
+              >
+                -{minutes} min
+              </button>
+            );
+          })}
 
           {/* Reset Duration button - only when duration was modified */}
           {isActiveBreakPhase && tick.phaseTotalMs !== tick.phaseOriginalDurationMs && (

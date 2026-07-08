@@ -584,25 +584,25 @@ function buildStaticTrayMenu(): Electron.Menu {
     });
   }
 
-  // ---- Extend / Reduce Phase (top-level submenu, only when extendable) ----
-  if (canExtend) {
-    menuItems.push({
-      label: '⏱️ Extend Phase...',
-      submenu: [
-        { label: '+2 minutes', click: () => timerEngine.extendPhase(2) },
-        { label: '+5 minutes', click: () => timerEngine.extendPhase(5) },
-        { label: '+10 minutes', click: () => timerEngine.extendPhase(10) },
-      ],
-    });
-    menuItems.push({
-      label: '⏱️ Reduce Phase...',
-      submenu: [
-        { label: '-1 minute', click: () => timerEngine.preponePhase(1) },
-        { label: '-2 minutes', click: () => timerEngine.preponePhase(2) },
-        { label: '-5 minutes', click: () => timerEngine.preponePhase(5) },
-      ],
-    });
-  }
+  // ---- Extend / Reduce Phase (always visible, disabled when not applicable) ----
+  menuItems.push({
+    label: '⏱️ Extend Phase...',
+    enabled: !!canExtend,
+    submenu: [
+      { label: '+2 minutes', click: () => timerEngine.extendPhase(2) },
+      { label: '+5 minutes', click: () => timerEngine.extendPhase(5) },
+      { label: '+10 minutes', click: () => timerEngine.extendPhase(10) },
+    ],
+  });
+  menuItems.push({
+    label: '⏪ Reduce Phase...',
+    enabled: !!canExtend,
+    submenu: [
+      { label: '-1 minute', click: () => timerEngine.preponePhase(1) },
+      { label: '-2 minutes', click: () => timerEngine.preponePhase(2) },
+      { label: '-5 minutes', click: () => timerEngine.preponePhase(5) },
+    ],
+  });
 
   // ============================================================
   // 2. MORE CONTROLS — grouped submenu (less-frequent actions)

@@ -1025,31 +1025,36 @@ function DashboardPage({ tick }: DashboardPageProps) {
             )}
 
             {/* Separator between Extend and Reduce */}
-            {(tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && 
-              preponeOptions.some(m => tick.phaseRemainingMs > (m * 60000) + 30000) && (
+            {(tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && (
               <span style={{ color: '#475569', margin: '0 0.5rem', fontSize: '1.1rem' }}>|</span>
             )}
 
-            {/* Reduce buttons - inline, only for work phases with enough remaining time */}
-            {(tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && 
-              preponeOptions.some(m => tick.phaseRemainingMs > (m * 60000) + 30000) && (
+            {/* Reduce buttons - inline, for work phases; individual buttons disabled when not enough time */}
+            {(tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'nowrap' }}>
                 <span style={{ color: '#e2e8f0', fontSize: '0.85rem', fontWeight: 600 }}>Reduce:</span>
-                {preponeOptions.filter(m => tick.phaseRemainingMs > (m * 60000) + 30000).map((minutes) => (
-                  <button 
-                    key={minutes}
-                    className="btn btn-secondary" 
-                    onClick={() => handlePreponePhase(minutes)}
-                    title={`Reduce current ${tick.currentPhase} phase by ${minutes} minutes`}
-                    style={{
-                      backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                      borderColor: 'rgba(239, 68, 68, 0.3)',
-                      color: '#ef4444',
-                    }}
-                  >
-                    -{minutes}
-                  </button>
-                ))}
+                {preponeOptions.map((minutes) => {
+                  const canReduce = tick.phaseRemainingMs > (minutes * 60000) + 30000;
+                  return (
+                    <button 
+                      key={minutes}
+                      className="btn btn-secondary" 
+                      onClick={() => handlePreponePhase(minutes)}
+                      disabled={!canReduce}
+                      title={canReduce 
+                        ? `Reduce current ${tick.currentPhase} phase by ${minutes} minutes`
+                        : `Not enough time remaining to reduce by ${minutes} minutes`}
+                      style={{
+                        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                        borderColor: 'rgba(239, 68, 68, 0.3)',
+                        color: '#ef4444',
+                        ...(canReduce ? {} : { opacity: 0.4, cursor: 'not-allowed' }),
+                      }}
+                    >
+                      -{minutes}
+                    </button>
+                  );
+                })}
               </span>
             )}
 

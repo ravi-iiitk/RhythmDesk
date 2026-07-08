@@ -279,6 +279,13 @@ function initialize(): void {
       const isRestBlockActive = restBlockService.isActive();
 
       if (newPolicy.showOverlay) {
+        // CRITICAL: Dismiss water reminder if active before showing a new overlay.
+        // Otherwise its 2-minute auto-dismiss timeout will fire later and close
+        // the break overlay, leaving a blank/frozen screen when health check reopens it.
+        if (timerEngine.isWaterReminderActive()) {
+          timerEngine.dismissWaterReminder();
+        }
+        
         showOverlay(newPolicy.strictMode);
         sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: data.newPhase });
         
@@ -405,7 +412,13 @@ function initialize(): void {
         if (timerEngine.isWaterReminderActive()) {
           logger.warn('Main', 'Water reminder auto-dismissed after 2 minute timeout');
           timerEngine.dismissWaterReminder();
-          safeCloseOverlay();
+          // Only close overlay if no break/transition phase needs it right now.
+          // This prevents accidentally closing a break overlay that replaced the water one.
+          const currentPhase = timerEngine.getState().currentPhase;
+          const policy = getOverlayPolicyForState(currentPhase);
+          if (!policy.showOverlay) {
+            safeCloseOverlay();
+          }
         }
       }, 120000);
     });
