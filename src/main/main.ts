@@ -462,27 +462,31 @@ function initialize(): void {
         logger.info('Main', 'System idle detected - auto-pausing schedule');
         timerEngine.pause();
         idleAutoPaused = true;
+        // Show pause overlay immediately so user sees the paused state
+        // when they return to the machine. The overlay stays until manually dismissed.
+        const pausedAt = timerEngine.getState().pausedAt ?? Date.now();
+        showOverlay(false); // Non-strict so user can always dismiss
+        const overlay = getOverlayWindow();
+        if (overlay && !overlay.isDestroyed()) {
+          const sendPause = () => sendToAll(IPC_CHANNELS.SHOW_PAUSE_REMINDER, { pausedForMs: 0, pausedAt });
+          if (!overlay.webContents.isLoading()) {
+            sendPause();
+          } else {
+            overlay.webContents.once('did-finish-load', sendPause);
+          }
+        }
       }
     });
 
     idleDetector.on('active', () => {
       if (idleAutoPaused) {
-        logger.info('Main', 'System activity resumed - auto-resuming schedule');
-        timerEngine.resume();
+        // DESIGN: Do NOT auto-resume when system becomes active again.
+        // The user should see the pause overlay and choose to resume manually.
+        // This prevents the unwanted transition overlay that appeared when
+        // auto-resume triggered a phase change right after system wake.
+        logger.info('Main', 'System activity detected after idle auto-pause - keeping schedule paused (user must resume manually)');
         idleAutoPaused = false;
-        // After auto-resume, reopen overlay if current phase needs it (e.g. break)
-        const resumedPhase = timerEngine.getState().currentPhase;
-        const policy = getOverlayPolicyForState(resumedPhase);
-        if (policy.showOverlay) {
-          showOverlay(policy.strictMode);
-          sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: resumedPhase });
-        } else {
-          // Close any open overlay (e.g. pause reminder)
-          const overlay = getOverlayWindow();
-          if (overlay && !overlay.isDestroyed()) {
-            safeCloseOverlay();
-          }
-        }
+        // Pause overlay is already showing from idle event — keep it open.
       }
     });
 
@@ -724,6 +728,12 @@ function initialize(): void {
     // Also handle system resume (suspend/hibernate)
     powerMonitor.on('resume', () => {
       logger.info('Main', 'System resumed from suspend - checking overlay');
+      // If the system was suspended while we had an idle auto-pause pending,
+      // clear it so we don't fire a stale auto-resume after a long sleep.
+      if (idleAutoPaused) {
+        logger.info('Main', 'Clearing stale idleAutoPaused flag on system resume');
+        idleAutoPaused = false;
+      }
       // Same recovery logic as unlock, but with longer delay for system wake
       setTimeout(() => {
         const currentPhase = timerEngine.getState().currentPhase;
