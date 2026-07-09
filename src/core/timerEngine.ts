@@ -1551,9 +1551,10 @@ export class TimerEngine extends EventEmitter {
    * @returns true if break was started, false if not in a valid state to take a break
    */
   startAdHocBreak(durationMinutes: number): boolean {
-    // Only allow ad-hoc breaks during work phases (sit/stand)
-    if (!this.isWorkPhase(this.state.currentPhase)) {
-      logger.debug('TimerEngine', 'startAdHocBreak: not in work phase', {
+    // Allow ad-hoc breaks during work phases (sit/stand) and transitions
+    const isTransition = this.state.currentPhase === 'sit-to-stand-transition' || this.state.currentPhase === 'stand-to-sit-transition';
+    if (!this.isWorkPhase(this.state.currentPhase) && !isTransition) {
+      logger.debug('TimerEngine', 'startAdHocBreak: not in work or transition phase', {
         currentPhase: this.state.currentPhase,
       });
       return false;

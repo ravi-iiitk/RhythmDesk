@@ -51,10 +51,28 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const dragNodeRef = useRef<HTMLDivElement | null>(null);
   
-  // Raw text state for postpone options (to allow typing commas)
-  const [postponeOptionsText, setPostponeOptionsText] = useState<string>(
-    (formData.postponeOptionsMinutes ?? [2, 5, 10]).join(', ')
-  );
+  // Postpone range state (min, max, step) — replaces free-text comma list
+  const deriveRange = (opts: number[]) => {
+    const sorted = [...opts].sort((a, b) => a - b);
+    if (sorted.length === 0) return { min: 5, max: 30, step: 5 };
+    if (sorted.length === 1) return { min: sorted[0], max: sorted[0], step: sorted[0] };
+    const gaps = sorted.slice(1).map((v, i) => v - sorted[i]);
+    const gcd = gaps.reduce((a, b) => { let x = a, y = b; while (y) { [x, y] = [y, x % y]; } return x; }, gaps[0]);
+    return { min: sorted[0], max: sorted[sorted.length - 1], step: gcd || sorted[0] };
+  };
+  const initOpts = formData.postponeOptionsMinutes ?? [2, 5, 10];
+  const initRange = deriveRange(initOpts);
+  const [postponeMin, setPostponeMin] = useState<number>(initRange.min);
+  const [postponeMax, setPostponeMax] = useState<number>(initRange.max);
+  const [postponeStep, setPostponeStep] = useState<number>(initRange.step);
+
+  const generatePostponeOptions = (min: number, max: number, step: number): number[] => {
+    if (min <= 0 || max <= 0 || step <= 0 || min > max) return [min];
+    const opts: number[] = [];
+    for (let v = min; v <= max; v += step) opts.push(v);
+    if (opts[opts.length - 1] !== max) opts.push(max);
+    return opts;
+  };
 
   useEffect(() => {
     if (schedule) {
@@ -101,8 +119,11 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         setFlowSteps(getDefaultFlowSteps());
       }
       
-      // Update postpone options text
-      setPostponeOptionsText((rest.postponeOptionsMinutes ?? [2, 5, 10]).join(', '));
+      // Update postpone range from loaded options
+      const loadedRange = deriveRange(rest.postponeOptionsMinutes ?? [2, 5, 10]);
+      setPostponeMin(loadedRange.min);
+      setPostponeMax(loadedRange.max);
+      setPostponeStep(loadedRange.step);
     }
   }, [schedule]);
 
@@ -141,18 +162,15 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
     handleChange('activeDays', newDays);
   };
 
-  const handlePostponeOptionsChange = (value: string) => {
-    // Just store the raw text - parse on blur
-    setPostponeOptionsText(value);
-  };
-  
-  const handlePostponeOptionsBlur = () => {
-    // Parse the text into numbers array on blur
-    const options = postponeOptionsText
-      .split(',')
-      .map((s) => parseInt(s.trim(), 10))
-      .filter((n) => !isNaN(n) && n > 0);
-    handleChange('postponeOptionsMinutes', options.length > 0 ? options : [2, 5, 10]);
+  const handlePostponeRangeChange = (field: 'min' | 'max' | 'step', raw: string) => {
+    const val = parseInt(raw, 10);
+    if (isNaN(val) || val <= 0) return;
+    let min = postponeMin, max = postponeMax, step = postponeStep;
+    if (field === 'min') { min = val; setPostponeMin(val); }
+    if (field === 'max') { max = val; setPostponeMax(val); }
+    if (field === 'step') { step = val; setPostponeStep(val); }
+    if (min > max) max = min;
+    handleChange('postponeOptionsMinutes', generatePostponeOptions(min, max, step));
   };
 
   // Flow builder handlers
@@ -870,15 +888,55 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
       {formData.allowPostpone && (
         <>
           <div className="form-group">
-            <label className="form-label">Postpone Options (minutes, comma-separated)</label>
-            <input
-              type="text"
-              className="form-input"
-              value={postponeOptionsText}
-              onChange={(e) => handlePostponeOptionsChange(e.target.value)}
-              onBlur={handlePostponeOptionsBlur}
-              placeholder="2, 5, 10, 15, 30, 60, 90, 120"
-            />
+            <label className="form-label">Postpone Duration Range</label>
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: '70px' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Min (min)</span>
+                <input
+                  type="number"
+                  className="form-input"
+                  style={{ width: '80px' }}
+                  value={postponeMin}
+                  min={1}
+                  onChange={(e) => handlePostponeRangeChange('min', e.target.value)}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: '70px' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Max (min)</span>
+                <input
+                  type="number"
+                  className="form-input"
+                  style={{ width: '80px' }}
+                  value={postponeMax}
+                  min={postponeMin}
+                  onChange={(e) => handlePostponeRangeChange('max', e.target.value)}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: '70px' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Step (min)</span>
+                <input
+                  type="number"
+                  className="form-input"
+                  style={{ width: '80px' }}
+                  value={postponeStep}
+                  min={1}
+                  onChange={(e) => handlePostponeRangeChange('step', e.target.value)}
+                />
+              </div>
+            </div>
+            <div style={{ marginTop: '0.5rem', display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginRight: '0.25rem' }}>Options:</span>
+              {(formData.postponeOptionsMinutes ?? generatePostponeOptions(postponeMin, postponeMax, postponeStep)).map((m) => (
+                <span key={m} style={{
+                  fontSize: '0.75rem',
+                  padding: '0.15rem 0.5rem',
+                  borderRadius: '999px',
+                  background: 'rgba(99,102,241,0.15)',
+                  color: '#818cf8',
+                  border: '1px solid rgba(99,102,241,0.3)',
+                }}>{m}m</span>
+              ))}
+            </div>
           </div>
           <div className="form-group">
             <label className="form-label">Max Postpones Per Day</label>

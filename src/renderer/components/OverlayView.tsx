@@ -55,12 +55,18 @@ function OverlayView({ tick }: OverlayViewProps) {
   const [currentTime, setCurrentTime] = useState(formatCurrentTime());
   // Pause reminder state
   const [pauseReminderData, setPauseReminderData] = useState<{ pausedForMs: number; pausedAt: number } | null>(null);
+  // When pause reminder was shown (for minimum display time before dismiss is allowed)
+  const [pauseReminderShownAt, setPauseReminderShownAt] = useState<number | null>(null);
   // Water reminder state
   const [waterReminderActive, setWaterReminderActive] = useState(false);
   // Break extend minutes from settings (use first option)
   const [breakExtendMinutes, setBreakExtendMinutes] = useState(2);
+  // All extend options from settings
+  const [extendOptions, setExtendOptions] = useState<number[]>([2, 5, 10]);
   // Prepone options from settings
   const [preponeOptions, setPreponeOptions] = useState<number[]>([1, 2, 5]);
+  // Show all postpone options (expand beyond first 4)
+  const [showAllPostpone, setShowAllPostpone] = useState<boolean>(false);
   
   
   // Update current time every second
@@ -75,6 +81,7 @@ function OverlayView({ tick }: OverlayViewProps) {
   useEffect(() => {
     const cleanup = window.rhythmDesk.onShowPauseReminder((data) => {
       setPauseReminderData(data);
+      setPauseReminderShownAt(Date.now());
     });
     return cleanup;
   }, []);
@@ -135,9 +142,12 @@ function OverlayView({ tick }: OverlayViewProps) {
       .then((config) => {
         const extOptions = config?.generalSettings?.extendOptions;
         if (extOptions && extOptions.length > 0) {
+          setExtendOptions(extOptions);
           setBreakExtendMinutes(extOptions[0]);
         } else if (config?.generalSettings?.breakExtendMinutes) {
-          setBreakExtendMinutes(config.generalSettings.breakExtendMinutes);
+          const fallback = config.generalSettings.breakExtendMinutes;
+          setExtendOptions([fallback]);
+          setBreakExtendMinutes(fallback);
         }
         const prepOptions = config?.generalSettings?.preponeOptions;
         if (prepOptions && prepOptions.length > 0) {
@@ -243,6 +253,12 @@ function OverlayView({ tick }: OverlayViewProps) {
   // Pause reminder overlay (can render even without tick data)
   if (pauseReminderData) {
     const pausedMinutes = Math.floor((Date.now() - pauseReminderData.pausedAt) / 60000);
+    // Minimum display time before dismiss is allowed (30 seconds)
+    const MIN_DISPLAY_SECONDS = 30;
+    const shownForSeconds = pauseReminderShownAt ? Math.floor((Date.now() - pauseReminderShownAt) / 1000) : 0;
+    const canDismiss = shownForSeconds >= MIN_DISPLAY_SECONDS;
+    const dismissCountdown = MIN_DISPLAY_SECONDS - shownForSeconds;
+    
     return (
       <div className="overlay">
         <div className="overlay-content">
@@ -295,16 +311,20 @@ function OverlayView({ tick }: OverlayViewProps) {
             </button>
             <button
               className="btn btn-secondary"
+              disabled={!canDismiss}
               style={{
                 fontSize: '1rem',
                 padding: '0.5rem 1.5rem',
+                ...(canDismiss ? {} : { opacity: 0.5, cursor: 'not-allowed' }),
               }}
               onClick={() => {
-                setPauseReminderData(null);
-                window.rhythmDesk.dismissPauseReminder();
+                if (canDismiss) {
+                  setPauseReminderData(null);
+                  window.rhythmDesk.dismissPauseReminder();
+                }
               }}
             >
-              Dismiss
+              {canDismiss ? 'Dismiss' : `Dismiss (${dismissCountdown}s)`}
             </button>
           </div>
         </div>
@@ -402,6 +422,16 @@ function OverlayView({ tick }: OverlayViewProps) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
 
+  // CRITICAL: When paused, don't render the normal work/break overlay.
+  // Only the pause reminder overlay should show when paused.
+  // This prevents the confusing "STANDING WORK" + "PAUSED" badge screen.
+  // Close the overlay entirely — pause reminder will reopen it when triggered.
+  if (tick.isPaused && !tick.restBlock?.isActive) {
+    // Close overlay to avoid frozen blank screen
+    window.rhythmDesk.closeOverlay();
+    return null;
+  }
+
   // Use custom step color/message if provided (from FlowStep flags), otherwise use defaults
   const phaseColor = tick.currentStepColor || PHASE_COLORS[tick.currentPhase] || '#6b7280';
   // Use custom labels from tick (includes user-defined flow step labels)
@@ -420,7 +450,7 @@ function OverlayView({ tick }: OverlayViewProps) {
   const handleStopRestBlock = () => window.rhythmDesk.stopRestBlock();
   const handlePause = () => window.rhythmDesk.pause();
   const handleResume = () => window.rhythmDesk.resume();
-  const handleExtendBreak = () => window.rhythmDesk.extendBreak(breakExtendMinutes);
+
 
   // Check if rest block is active - takes priority over normal phases
   const isRestBlockActive = tick.restBlock.isActive;
@@ -593,49 +623,53 @@ function OverlayView({ tick }: OverlayViewProps) {
             </button>
           )}
 
+          {/* Take Break Now — on transition screens only, starts a short-break immediately */}
+          {isTransitionPhase && !tick.isStrictMode && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => window.rhythmDesk.startAdHocBreak(tick.configuredDurations.shortBreakDurationMinutes)}
+              style={{ backgroundColor: 'rgba(34,197,94,0.15)', borderColor: 'rgba(34,197,94,0.3)', color: '#22c55e' }}
+            >
+              ☕ Take Break Now
+            </button>
+          )}
+
           {showDoneButton && (
             <button className="btn btn-success" onClick={handleComplete}>
               ✓ Done
             </button>
           )}
 
-          {isActiveBreakPhase && (
-            <button 
-              className="btn btn-secondary" 
-              onClick={handleExtendBreak}
-              style={{
-                backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                borderColor: 'rgba(59, 130, 246, 0.3)',
-                color: '#3b82f6',
-              }}
+          {/* Extend buttons — always visible, can be used multiple times */}
+          {isActiveBreakPhase && extendOptions.map((m) => (
+            <button
+              key={`extend-${m}`}
+              className="btn btn-secondary"
+              onClick={() => window.rhythmDesk.extendBreak(m)}
+              style={{ backgroundColor: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.3)', color: '#3b82f6' }}
             >
-              +{breakExtendMinutes} min
+              +{m} min
             </button>
-          )}
+          ))}
 
-          {/* Prepone (reduce) buttons for breaks — always visible, disabled when not enough time */}
-          {isActiveBreakPhase && preponeOptions.map((minutes) => {
-            const canReduce = tick.phaseRemainingMs > (minutes * 60000) + 30000;
+          {/* Reduce buttons — always visible, disabled when not enough time remains */}
+          {isActiveBreakPhase && preponeOptions.map((m) => {
+            const canReduce = tick.phaseRemainingMs > (m * 60000) + 30000;
             return (
-              <button 
-                key={`prepone-${minutes}`}
-                className="btn btn-secondary" 
+              <button
+                key={`prepone-${m}`}
+                className="btn btn-secondary"
                 disabled={!canReduce}
-                onClick={async () => {
-                  const success = await window.rhythmDesk.preponePhase(minutes);
-                  if (!success) {
-                    alert(`Cannot reduce by ${minutes} min — not enough time remaining.`);
-                  }
-                }}
-                title={canReduce ? `Reduce by ${minutes} minutes` : `Not enough time to reduce by ${minutes} min`}
+                onClick={() => canReduce && window.rhythmDesk.preponePhase(m)}
+                title={canReduce ? `Reduce by ${m} min` : `Need >${m}m remaining`}
                 style={{
-                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                  borderColor: 'rgba(239, 68, 68, 0.3)',
+                  backgroundColor: 'rgba(239,68,68,0.15)',
+                  borderColor: 'rgba(239,68,68,0.3)',
                   color: '#ef4444',
-                  ...(canReduce ? {} : { opacity: 0.4, cursor: 'not-allowed' }),
+                  ...(canReduce ? {} : { opacity: 0.35, cursor: 'not-allowed' }),
                 }}
               >
-                -{minutes} min
+                -{m} min
               </button>
             );
           })}
@@ -716,23 +750,41 @@ function OverlayView({ tick }: OverlayViewProps) {
           </div>
         )}
 
-        {/* Postpone Options */}
-        {showPostponeButtons && tick.postponeOptions.length > 0 && (
-          <div className="overlay-postpone-info">
-            <p>Postpone ({tick.maxPostponesPerDay - tick.postponeCountToday} remaining today)</p>
-            <div className="postpone-options">
-              {tick.postponeOptions.map((minutes) => (
-                <button
-                  key={minutes}
-                  className="btn btn-secondary"
-                  onClick={() => handlePostpone(minutes)}
-                >
-                  +{formatPostponeMinutes(minutes)}
-                </button>
-              ))}
+        {/* Postpone — compact pill buttons, max 4 visible with expand toggle */}
+        {showPostponeButtons && tick.postponeOptions.length > 0 && (() => {
+          const opts = tick.postponeOptions;
+          const VISIBLE = 4;
+          const visible = showAllPostpone ? opts : opts.slice(0, VISIBLE);
+          const hasMore = opts.length > VISIBLE;
+          return (
+            <div className="overlay-postpone-info" style={{ marginTop: '1.5rem' }}>
+              <p style={{ marginBottom: '0.6rem' }}>
+                Postpone&ensp;<span style={{ color: 'var(--text-secondary)', fontSize: '0.9em' }}>({tick.maxPostponesPerDay - tick.postponeCountToday} remaining today)</span>
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '0.5rem' }}>
+                {visible.map((minutes) => (
+                  <button
+                    key={minutes}
+                    className="btn btn-secondary"
+                    onClick={() => handlePostpone(minutes)}
+                    style={{ borderColor: `${phaseColor}55`, color: phaseColor, backgroundColor: `${phaseColor}18`, minWidth: '60px' }}
+                  >
+                    +{formatPostponeMinutes(minutes)}
+                  </button>
+                ))}
+                {hasMore && (
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => setShowAllPostpone((v) => !v)}
+                    style={{ color: 'var(--text-muted)', borderColor: 'rgba(148,163,184,0.3)', minWidth: '44px', fontSize: '0.85rem' }}
+                  >
+                    {showAllPostpone ? '−less' : '+more'}
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Next Phase Info */}
         <div className="overlay-postpone-info" style={{ marginTop: '2rem' }}>
