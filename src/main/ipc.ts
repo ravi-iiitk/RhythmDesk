@@ -16,6 +16,7 @@ import { getOverlaySyncService, OVERLAY_SYNC_CHANNELS } from '../core/overlaySyn
 import { syncLoginItemWithSettings } from './autostart';
 import { getOverlayWatchdog } from '../core/watchdog';
 import logger from '../core/logger';
+import { clearPauseReminderFlag } from './pauseReminderState';
 
 /**
  * Register all IPC handlers
@@ -173,6 +174,7 @@ export function registerIpcHandlers(): void {
       syncService.stop();
     }
     closeOverlay();
+    clearPauseReminderFlag();
   });
 
   ipcMain.handle(IPC_CHANNELS.DISMISS_PAUSE_REMINDER, () => {
@@ -181,6 +183,7 @@ export function registerIpcHandlers(): void {
       syncService.stop();
     }
     closeOverlay();
+    clearPauseReminderFlag();
   });
 
   ipcMain.handle(IPC_CHANNELS.DISMISS_WATER_REMINDER, () => {

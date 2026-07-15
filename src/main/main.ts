@@ -35,13 +35,12 @@ import { playSound, getSoundService } from '../core/soundService';
 import { getIdleDetector } from '../core/idleDetector';
 // Autostart
 import { syncLoginItemWithSettings } from './autostart';
+import { isPauseReminderShowing, setPauseReminderShowing, clearPauseReminderFlag } from './pauseReminderState';
 
 /**
  * Get overlay policy for current state
  * Centralized decision engine - all overlay logic goes through here
  */
-// Track if pause reminder overlay is currently showing (for system resume recovery)
-let pauseReminderShowing = false;
 
 /**
  * Safely close the overlay AND stop the heartbeat watchdog.
@@ -56,7 +55,7 @@ function safeCloseOverlay(): void {
   closeOverlay();
   sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
   // Clear pause reminder flag when overlay closes
-  pauseReminderShowing = false;
+  clearPauseReminderFlag();
 }
 
 function getOverlayPolicyForState(phase: PhaseType): ReturnType<typeof getOverlayPolicy> {
@@ -215,6 +214,12 @@ function initialize(): void {
     const sendOverlayResyncSnapshot = (reason: string): void => {
       const restState = getRestBlockService().getState();
       const tick = timerEngine.getLastEmittedTick() || lastTimerTick;
+      const state = timerEngine.getState();
+
+      // Include pause reminder data if timer is paused and pause reminder is showing
+      const pauseReminder = (state.isPaused && isPauseReminderShowing() && state.pausedAt)
+        ? { pausedForMs: Date.now() - state.pausedAt, pausedAt: state.pausedAt }
+        : null;
 
       sendToOverlay(OVERLAY_SYNC_CHANNELS.RESYNC_DATA, {
         requestedAt: Date.now(),
@@ -222,6 +227,7 @@ function initialize(): void {
         restBlock: restState,
         overlayStateVersion: restState.startedAt ?? Date.now(),
         reason,
+        pauseReminder,
       });
 
       logger.info('Main', 'Overlay state resent', {
@@ -371,18 +377,21 @@ function initialize(): void {
     // Handle pause reminder - show overlay every 5 min when paused
     timerEngine.on('pauseReminder', (data: { pausedForMs: number; pausedAt: number }) => {
       logger.info('Main', 'Showing pause reminder overlay', { pausedForMs: data.pausedForMs });
-      pauseReminderShowing = true;
+      setPauseReminderShowing(true);
       showOverlay(false); // Non-strict, dismissible overlay
-      // Wait for overlay to fully load before sending the event
+      // Send SHOW_PAUSE_REMINDER immediately AND after load to win the race
+      // against the tick resync that would cause the renderer to see isPaused
+      // and render a blank/work overlay instead of the pause reminder.
       const overlay = getOverlayWindow();
       if (overlay && !overlay.isDestroyed()) {
         const webContents = overlay.webContents;
         const sendEvent = () => {
           sendToAll(IPC_CHANNELS.SHOW_PAUSE_REMINDER, data);
         };
-        if (!webContents.isLoading()) {
-          sendEvent();
-        } else {
+        // Send immediately (in case overlay is already loaded)
+        sendEvent();
+        // Also send after load completes (in case overlay was just created)
+        if (webContents.isLoading()) {
           webContents.once('did-finish-load', sendEvent);
         }
       }
@@ -740,7 +749,7 @@ function initialize(): void {
         // CRITICAL: If timer is paused and we were showing pause reminder, restore it
         // The overlay policy returns showOverlay=false when paused, but we need to
         // preserve the pause reminder overlay so user sees "Schedule is Paused" on wake.
-        if (state.isPaused && pauseReminderShowing) {
+        if (state.isPaused && isPauseReminderShowing()) {
           logger.info('Main', 'System resume while paused with pause reminder - restoring pause overlay');
           const pausedAt = state.pausedAt ?? Date.now();
           showOverlay(false); // Non-strict
@@ -750,9 +759,9 @@ function initialize(): void {
               pausedForMs: Date.now() - pausedAt, 
               pausedAt 
             });
-            if (!overlay.webContents.isLoading()) {
-              sendPause();
-            } else {
+            // Send immediately AND after load to win the race
+            sendPause();
+            if (overlay.webContents.isLoading()) {
               overlay.webContents.once('did-finish-load', sendPause);
             }
           }
@@ -823,6 +832,27 @@ function ensureOverlayIfRequired(): void {
   
   // Use centralized overlay policy
   const policy = getOverlayPolicyForState(currentPhase);
+  
+  // If paused with pause reminder showing but overlay is gone, recreate it
+  if (state.isPaused && isPauseReminderShowing()) {
+    const overlay = getOverlayWindow();
+    if (!overlay || overlay.isDestroyed()) {
+      logger.warn('Main', 'Pause reminder overlay missing - recreating');
+      const pausedAt = state.pausedAt ?? Date.now();
+      showOverlay(false);
+      const newOverlay = getOverlayWindow();
+      if (newOverlay && !newOverlay.isDestroyed()) {
+        const sendPause = () => sendToAll(IPC_CHANNELS.SHOW_PAUSE_REMINDER, { 
+          pausedForMs: Date.now() - pausedAt, pausedAt 
+        });
+        sendPause();
+        if (newOverlay.webContents.isLoading()) {
+          newOverlay.webContents.once('did-finish-load', sendPause);
+        }
+      }
+    }
+    return; // Don't run normal overlay check when pause reminder is active
+  }
   
   // Check if overlay should be showing (for normal phases or rest blocks)
   if (policy.showOverlay || restBlockActive) {

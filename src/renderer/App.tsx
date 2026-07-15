@@ -175,6 +175,7 @@ function App() {
       tick?: TimerTick | null;
       restBlock?: RestBlockState;
       reason?: string;
+      pauseReminder?: { pausedForMs: number; pausedAt: number } | null;
     }) => {
       const restBlockState = data.restBlock;
       if (!restBlockState) return;
@@ -183,6 +184,14 @@ function App() {
         setCurrentTick({ ...data.tick, restBlock: restBlockState });
       } else {
         setCurrentTick(createFallbackTickForRestBlock(restBlockState));
+      }
+
+      // If resync includes pause reminder data, dispatch it as a custom DOM event
+      // so OverlayView's listener picks it up (avoids IPC race condition)
+      if (data.pauseReminder) {
+        window.dispatchEvent(new CustomEvent('rhythmdesk:pauseReminder', { 
+          detail: data.pauseReminder 
+        }));
       }
 
       lastUpdateRef.current = Date.now();

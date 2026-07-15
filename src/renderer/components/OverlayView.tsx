@@ -77,13 +77,28 @@ function OverlayView({ tick }: OverlayViewProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // Listen for pause reminder events
+  // Listen for pause reminder events (from IPC)
   useEffect(() => {
     const cleanup = window.rhythmDesk.onShowPauseReminder((data) => {
       setPauseReminderData(data);
       setPauseReminderShownAt(Date.now());
     });
     return cleanup;
+  }, []);
+
+  // Also listen for pause reminder from resync snapshot (custom DOM event)
+  // This handles the race condition where the overlay loads and receives
+  // tick data (isPaused=true) before the SHOW_PAUSE_REMINDER IPC arrives.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && detail.pausedAt) {
+        setPauseReminderData(detail);
+        setPauseReminderShownAt(Date.now());
+      }
+    };
+    window.addEventListener('rhythmdesk:pauseReminder', handler);
+    return () => window.removeEventListener('rhythmdesk:pauseReminder', handler);
   }, []);
 
   // Listen for water reminder events
@@ -165,6 +180,20 @@ function OverlayView({ tick }: OverlayViewProps) {
       setPauseReminderData(null);
     }
   }, [tick?.isPaused]);
+
+  // When paused with no pause/water reminder showing, close overlay after a short
+  // delay. The delay gives SHOW_PAUSE_REMINDER IPC time to arrive (avoids race).
+  useEffect(() => {
+    if (tick && tick.isPaused && !pauseReminderData && !waterReminderActive && !tick.restBlock?.isActive) {
+      const timer = setTimeout(() => {
+        // Re-check: if pause reminder arrived during the delay, don't close
+        // (pauseReminderData is captured by closure at effect time, so we
+        // rely on the cleanup to cancel if dependencies change)
+        window.rhythmDesk.closeOverlay();
+      }, 500); // 500ms grace for IPC events to arrive
+      return () => clearTimeout(timer);
+    }
+  }, [tick?.isPaused, pauseReminderData, waterReminderActive, tick?.restBlock?.isActive]);
 
   // Phase 2: Respond to heartbeat requests from main process
   // CRITICAL: Must be before ALL early returns — if tick is null this still needs to fire
@@ -422,15 +451,13 @@ function OverlayView({ tick }: OverlayViewProps) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
 
-  // CRITICAL: When paused, don't render the normal work/break overlay.
-  // Only the pause reminder overlay should show when paused.
-  // This prevents the confusing "STANDING WORK" + "PAUSED" badge screen.
-  // Close the overlay entirely — pause reminder will reopen it when triggered.
+  // When paused, don't render the normal work/break overlay.
+  // The useEffect above will close the overlay after a short delay
+  // (unless a pause reminder or water reminder arrives first).
   if (tick.isPaused && !tick.restBlock?.isActive) {
-    // Close overlay to avoid frozen blank screen
-    window.rhythmDesk.closeOverlay();
-    return null;
+    return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
+
 
   // Use custom step color/message if provided (from FlowStep flags), otherwise use defaults
   const phaseColor = tick.currentStepColor || PHASE_COLORS[tick.currentPhase] || '#6b7280';
