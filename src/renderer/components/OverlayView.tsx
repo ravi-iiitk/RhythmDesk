@@ -181,19 +181,23 @@ function OverlayView({ tick }: OverlayViewProps) {
     }
   }, [tick?.isPaused]);
 
-  // When paused with no pause/water reminder showing, close overlay after a short
-  // delay. The delay gives SHOW_PAUSE_REMINDER IPC time to arrive (avoids race).
+  // When paused during a WORK phase (no overlay content to show) with no
+  // pause/water reminder, close the overlay after a short delay.
+  // Transitions and breaks keep their overlay open with a PAUSED badge.
+  const isOverlayPhase = tick ? [
+    'sit-to-stand-transition', 'stand-to-sit-transition',
+    'short-break', 'long-break'
+  ].includes(tick.currentPhase) || (tick.currentPhase === 'custom' && tick.currentStepShowOverlay) : false;
+
   useEffect(() => {
-    if (tick && tick.isPaused && !pauseReminderData && !waterReminderActive && !tick.restBlock?.isActive) {
+    if (tick && tick.isPaused && !pauseReminderData && !waterReminderActive
+        && !tick.restBlock?.isActive && !isOverlayPhase) {
       const timer = setTimeout(() => {
-        // Re-check: if pause reminder arrived during the delay, don't close
-        // (pauseReminderData is captured by closure at effect time, so we
-        // rely on the cleanup to cancel if dependencies change)
         window.rhythmDesk.closeOverlay();
       }, 500); // 500ms grace for IPC events to arrive
       return () => clearTimeout(timer);
     }
-  }, [tick?.isPaused, pauseReminderData, waterReminderActive, tick?.restBlock?.isActive]);
+  }, [tick?.isPaused, pauseReminderData, waterReminderActive, tick?.restBlock?.isActive, isOverlayPhase]);
 
   // Phase 2: Respond to heartbeat requests from main process
   // CRITICAL: Must be before ALL early returns — if tick is null this still needs to fire
@@ -215,6 +219,11 @@ function OverlayView({ tick }: OverlayViewProps) {
     ].includes(tick.currentPhase);
     const canClose = !tick.isStrictMode && !tick.officeFocusLock.isActive;
     const canSkip = isBreakOrTransition && !(tick.noSkipEnabled ?? false) && tick.canSkipCurrentBreak !== false;
+
+    // When pause reminder is showing, ignore all keyboard shortcuts to prevent
+    // accidental resume from typing (e.g. spacebar while working). User must
+    // deliberately click the Resume/Dismiss buttons instead.
+    if (pauseReminderData) return;
 
     switch (e.key) {
       case ' ': // Space - pause/resume
@@ -266,7 +275,7 @@ function OverlayView({ tick }: OverlayViewProps) {
         }
         break;
     }
-  }, [tick, breakExtendMinutes, preponeOptions]);
+  }, [tick, breakExtendMinutes, preponeOptions, pauseReminderData]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -451,10 +460,15 @@ function OverlayView({ tick }: OverlayViewProps) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
 
-  // When paused, don't render the normal work/break overlay.
-  // The useEffect above will close the overlay after a short delay
-  // (unless a pause reminder or water reminder arrives first).
-  if (tick.isPaused && !tick.restBlock?.isActive) {
+  // When paused during a work phase, don't render the normal work overlay.
+  // The useEffect above will close the overlay after a short delay.
+  // Transitions and breaks KEEP their overlay open (they show a PAUSED badge).
+  const isOverlayPhaseForRender = [
+    'sit-to-stand-transition', 'stand-to-sit-transition',
+    'short-break', 'long-break'
+  ].includes(tick.currentPhase) || (tick.currentPhase === 'custom' && tick.currentStepShowOverlay);
+
+  if (tick.isPaused && !tick.restBlock?.isActive && !isOverlayPhaseForRender) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
 

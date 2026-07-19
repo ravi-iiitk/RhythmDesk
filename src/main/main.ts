@@ -427,11 +427,12 @@ function initialize(): void {
         if (timerEngine.isWaterReminderActive()) {
           logger.warn('Main', 'Water reminder auto-dismissed after 2 minute timeout');
           timerEngine.dismissWaterReminder();
-          // Only close overlay if no break/transition phase needs it right now.
-          // This prevents accidentally closing a break overlay that replaced the water one.
+          // Only close overlay if no break/transition phase or pause reminder needs it.
+          // This prevents accidentally closing a break overlay that replaced the water one,
+          // or a pause reminder overlay that's coexisting with the water reminder.
           const currentPhase = timerEngine.getState().currentPhase;
           const policy = getOverlayPolicyForState(currentPhase);
-          if (!policy.showOverlay) {
+          if (!policy.showOverlay && !isPauseReminderShowing()) {
             safeCloseOverlay();
           }
         }

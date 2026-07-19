@@ -501,13 +501,12 @@ export class TimerEngine extends EventEmitter {
         this.resume();
       } else {
         // Check if it's time to show a pause reminder (every 5 minutes)
-        // Only show during work phases (sit/stand) - not during breaks/transitions
-        // which already have their own overlay visible
+        // Show for all phases (work, transitions, breaks) since overlays now stay
+        // open when paused and the pause reminder UI takes render priority.
         // IMPORTANT: Do NOT show pause reminders during rest blocks - the timer is paused
         // by design and the rest block has its own overlay already showing
-        const isWorkPhase = this.state.currentPhase === 'sit' || this.state.currentPhase === 'stand';
         const restBlockActive = getRestBlockService().isActive();
-        if (isWorkPhase && !restBlockActive && this.state.pausedAt && now - this.pauseReminderLastShownAt >= TimerEngine.PAUSE_REMINDER_INTERVAL_MS) {
+        if (!restBlockActive && this.state.pausedAt && now - this.pauseReminderLastShownAt >= TimerEngine.PAUSE_REMINDER_INTERVAL_MS) {
           this.pauseReminderLastShownAt = now;
           const pausedForMs = now - this.state.pausedAt;
           logger.info('TimerEngine', 'Pause reminder triggered', { pausedForMs });

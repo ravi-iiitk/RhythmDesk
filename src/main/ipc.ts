@@ -16,7 +16,7 @@ import { getOverlaySyncService, OVERLAY_SYNC_CHANNELS } from '../core/overlaySyn
 import { syncLoginItemWithSettings } from './autostart';
 import { getOverlayWatchdog } from '../core/watchdog';
 import logger from '../core/logger';
-import { clearPauseReminderFlag } from './pauseReminderState';
+import { clearPauseReminderFlag, isPauseReminderShowing } from './pauseReminderState';
 
 /**
  * Register all IPC handlers
@@ -188,7 +188,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.DISMISS_WATER_REMINDER, () => {
     timerEngine.dismissWaterReminder();
-    closeOverlay();
+    // Don't close overlay if pause reminder is still showing
+    if (!isPauseReminderShowing()) {
+      closeOverlay();
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.MINIMIZE_TO_TRAY, () => {
@@ -261,9 +264,15 @@ export function registerIpcHandlers(): void {
 
     const latestTick = timerEngine.getLastEmittedTick();
     const restBlock = restBlockService.getState();
+    const state = timerEngine.getState();
 
     const tick = latestTick
       ? { ...latestTick, restBlock }
+      : null;
+
+    // Include pause reminder data so renderer doesn't race-close the overlay
+    const pauseReminder = (state.isPaused && isPauseReminderShowing() && state.pausedAt)
+      ? { pausedForMs: Date.now() - state.pausedAt, pausedAt: state.pausedAt }
       : null;
 
     event.sender.send(OVERLAY_SYNC_CHANNELS.RESYNC_DATA, {
@@ -271,6 +280,7 @@ export function registerIpcHandlers(): void {
       tick,
       restBlock,
       overlayStateVersion: restBlock.startedAt ?? Date.now(),
+      pauseReminder,
     });
 
     logger.info('IPC', '[OVERLAY_SYNC] resync data sent to overlay', {
