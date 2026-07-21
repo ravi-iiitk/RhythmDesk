@@ -135,6 +135,10 @@ export function registerIpcHandlers(): void {
     return timerEngine.reverseFlow();
   });
 
+  ipcMain.handle(IPC_CHANNELS.APPLY_FLOW_ORDER, () => {
+    timerEngine.applyFlowOrder();
+  });
+
   ipcMain.handle(IPC_CHANNELS.TRIGGER_PENDING_BREAK_NOW, () => {
     return timerEngine.triggerPendingBreakNow();
   });

@@ -500,6 +500,7 @@ export const IPC_CHANNELS = {
   RESET_TODAY_COUNTERS: 'timer:resetTodayCounters',
   SHUFFLE_FLOW: 'timer:shuffleFlow',
   REVERSE_FLOW: 'timer:reverseFlow',
+  APPLY_FLOW_ORDER: 'timer:applyFlowOrder',
   TRIGGER_PENDING_BREAK_NOW: 'timer:triggerPendingBreakNow',
   START_NEXT_ACTIVITY: 'timer:startNextActivity',
   RESTART_CURRENT_ACTIVITY: 'timer:restartCurrentActivity',

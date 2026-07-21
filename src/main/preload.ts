@@ -28,6 +28,7 @@ export interface RhythmDeskAPI {
   resetTodayCounters: () => Promise<void>;
   shuffleFlow: () => Promise<void>;
   reverseFlow: () => Promise<void>;
+  applyFlowOrder: () => Promise<void>;
   triggerPendingBreakNow: () => Promise<boolean>;
   startNextActivity: () => Promise<boolean>;
   restartCurrentActivity: () => Promise<boolean>;
@@ -114,6 +115,7 @@ const api: RhythmDeskAPI = {
   resetTodayCounters: () => ipcRenderer.invoke(IPC_CHANNELS.RESET_TODAY_COUNTERS),
   shuffleFlow: () => ipcRenderer.invoke(IPC_CHANNELS.SHUFFLE_FLOW),
   reverseFlow: () => ipcRenderer.invoke(IPC_CHANNELS.REVERSE_FLOW),
+  applyFlowOrder: () => ipcRenderer.invoke(IPC_CHANNELS.APPLY_FLOW_ORDER),
   triggerPendingBreakNow: () => ipcRenderer.invoke(IPC_CHANNELS.TRIGGER_PENDING_BREAK_NOW),
   startNextActivity: () => ipcRenderer.invoke(IPC_CHANNELS.START_NEXT_ACTIVITY),
   restartCurrentActivity: () => ipcRenderer.invoke(IPC_CHANNELS.RESTART_CURRENT_ACTIVITY),

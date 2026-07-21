@@ -2323,6 +2323,114 @@ export class TimerEngine extends EventEmitter {
   }
 
   /**
+   * Apply new flow order without resetting break progress.
+   * 
+   * This is a lightweight alternative to resetSession() after shuffle/reverse.
+   * It applies the updated flow step order but preserves:
+   * - cumulativeWorkTimeMs (break progress toward next long/short break)
+   * - lastLongBreakAtWorkTimeMs (long break countdown)
+   * - lastShortBreakAtWorkTimeMs (short break countdown)
+   * - Today's counters (postpone counts, break counts)
+   * 
+   * It DOES reset:
+   * - Flow step index (starts from first work phase of new order)
+   * - Current phase (begins the first step of the new flow)
+   * - Paused state (unpauses if paused)
+   * - Postponed break state (clears pending postpones since flow changed)
+   */
+  applyFlowOrder(): void {
+    if (!this.currentSchedule || !isFlowBasedSchedule(this.currentSchedule)) {
+      logger.warn('TimerEngine', 'Cannot apply flow order - no flow-based schedule active');
+      return;
+    }
+
+    // Reload schedule from config to get the shuffled/reversed flow
+    const schedules = configService.getSchedules();
+    const updatedSchedule = schedules.find(s => s.id === this.currentSchedule!.id);
+    if (updatedSchedule) {
+      this.currentSchedule = updatedSchedule;
+    }
+
+    const now = Date.now();
+
+    // Compute start state from the new flow order
+    const resetState = computeResetState(this.currentSchedule);
+
+    // Apply new flow position
+    this.state.currentPhase = resetState.currentPhase;
+    this.state.currentFlowStepIndex = resetState.currentFlowStepIndex;
+    this.state.phaseStartedAt = now;
+    this.state.phaseEndsAt = now + resetState.phaseDurationMs;
+    this.state.phaseRemainingMs = resetState.phaseDurationMs;
+    this.state.phaseTotalMs = resetState.phaseDurationMs;
+    this.state.phaseOriginalDurationMs = resetState.phaseDurationMs;
+
+    // Update flow config hash and re-freeze snapshot
+    this.state.flowConfigHash = computeFlowConfigHash(this.currentSchedule.flowSteps);
+    this.freezeFlowSnapshot();
+
+    // Clear interrupted phase and flow index
+    this.state.interruptedPhase = null;
+    this.state.interruptedPhaseRemainingMs = 0;
+    this.state.interruptedFlowIndex = undefined;
+
+    // Clear postponed state (flow changed, pending postpones no longer valid)
+    this.state.isPostponed = false;
+    this.state.postponedUntil = null;
+    this.state.postponedPhase = null;
+    this.state.postponedBreakType = null;
+    this.state.prePostponeWorkPhase = null;
+    this.state.prePostponeWorkPhaseRemainingMs = 0;
+    this.state.prePostponeFlowIndex = undefined;
+
+    // Clear waiting-for-next-activity state
+    this.state.isWaitingForNextActivity = false;
+    this.state.waitingNextPhase = null;
+
+    // Unpause if paused
+    if (this.state.isPaused) {
+      this.state.isPaused = false;
+      this.state.pausedAt = null;
+      this.state.pauseResumeAt = null;
+    }
+
+    // Clear pre-break tracking
+    this.preBreakPhase = null;
+
+    // Update tick time
+    this.lastTickTime = now;
+
+    // Validate
+    this.validateStateInvariants('After applyFlowOrder');
+    const validation = validateSessionState(this.state, this.currentSchedule);
+    if (!validation.valid) {
+      logValidationResult(validation, 'Apply Flow Order - validation failed');
+    }
+
+    // Save state and emit tick
+    this.saveState();
+    this.emitTick();
+
+    // Emit session reset event for sound
+    this.emit('sessionReset');
+
+    logger.info('TimerEngine', 'Flow order applied (breaks preserved)', {
+      newPhase: resetState.currentPhase,
+      newIndex: resetState.currentFlowStepIndex,
+      cumulativeWorkTimeMs: this.state.cumulativeWorkTimeMs,
+      lastLongBreakAtWorkTimeMs: this.state.lastLongBreakAtWorkTimeMs,
+    });
+
+    logSessionEvent({
+      event: 'applyFlowOrder',
+      phase: resetState.currentPhase,
+      index: resetState.currentFlowStepIndex,
+      cumulativeWorkMs: this.state.cumulativeWorkTimeMs,
+      scheduleId: this.currentSchedule?.id,
+    });
+  }
+
+  /**
    * Reset today's counters without affecting current phase
    * 
    * Resets:

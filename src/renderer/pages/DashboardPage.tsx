@@ -845,22 +845,39 @@ function DashboardPage({ tick }: DashboardPageProps) {
             <span style={{ fontSize: '1.25rem' }}>⚠️</span>
             <div>
               <div style={{ fontWeight: 600, color: '#fb923c' }}>Schedule flow updated</div>
-              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Reset session to apply the new flow order</div>
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Apply the new order — keep breaks or start fresh</div>
             </div>
           </div>
-          <button 
-            className="btn" 
-            onClick={handleResetSession}
-            style={{ 
-              padding: '0.5rem 1rem', 
-              backgroundColor: 'rgba(251, 146, 60, 0.2)', 
-              color: '#fb923c', 
-              border: '1px solid rgba(251, 146, 60, 0.4)',
-              fontWeight: 600
-            }}
-          >
-            Reset Now
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button 
+              className="btn" 
+              onClick={() => window.rhythmDesk.applyFlowOrder()}
+              title="Apply new flow order without resetting break timers"
+              style={{ 
+                padding: '0.5rem 1rem', 
+                backgroundColor: 'rgba(34, 197, 94, 0.15)', 
+                color: '#22c55e', 
+                border: '1px solid rgba(34, 197, 94, 0.4)',
+                fontWeight: 600
+              }}
+            >
+              Apply Order
+            </button>
+            <button 
+              className="btn" 
+              onClick={handleResetSession}
+              title="Full reset — new order + reset all break timers"
+              style={{ 
+                padding: '0.5rem 1rem', 
+                backgroundColor: 'rgba(251, 146, 60, 0.2)', 
+                color: '#fb923c', 
+                border: '1px solid rgba(251, 146, 60, 0.4)',
+                fontWeight: 600
+              }}
+            >
+              Full Reset
+            </button>
+          </div>
         </div>
       )}
 
