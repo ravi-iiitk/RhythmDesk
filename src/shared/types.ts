@@ -315,6 +315,40 @@ export interface GeneralSettings {
   preponeOptions: number[]; // Array of prepone (reduce) duration options in minutes (default: [1, 2, 5])
   openaiApiKey: string; // OpenAI API key for voice commands (Whisper STT)
   voiceMode: 'off' | 'local' | 'cloud'; // Voice command backend: off, local whisper.cpp, or cloud Whisper API
+  logRetentionDays: number; // How many days to keep activity log entries (default: 30)
+}
+
+// Activity Log - user-facing event log for tracking work sessions
+export type ActivityLogEventType =
+  | 'schedule_started'
+  | 'schedule_stopped'
+  | 'phase_started'
+  | 'phase_completed'
+  | 'break_started'
+  | 'break_completed'
+  | 'break_skipped'
+  | 'break_postponed'
+  | 'session_reset'
+  | 'session_paused'
+  | 'session_resumed'
+  | 'flow_shuffled'
+  | 'flow_reversed'
+  | 'flow_order_applied'
+  | 'focus_lock_started'
+  | 'focus_lock_ended'
+  | 'rest_block_started'
+  | 'rest_block_ended';
+
+export interface ActivityLogEntry {
+  id: string;
+  timestamp: number;       // Unix ms
+  event: ActivityLogEventType;
+  title: string;           // Human-readable title (e.g. "Sit Phase Started")
+  description?: string;    // Optional details
+  phase?: PhaseType;       // Related phase
+  scheduleName?: string;   // Which schedule was active
+  durationMs?: number;     // Duration of the completed event (if applicable)
+  metadata?: Record<string, unknown>; // Extra data for detail view
 }
 
 // Office Focus Lock state - runtime only, not persisted across restarts
@@ -545,6 +579,10 @@ export const IPC_CHANNELS = {
   VOICE_TRANSCRIBE: 'voice:transcribe',
   VOICE_TRANSCRIBE_LOCAL: 'voice:transcribeLocal',
   
+  // Activity Log
+  GET_ACTIVITY_LOG: 'activityLog:get',
+  CLEAR_ACTIVITY_LOG: 'activityLog:clear',
+  
   // Dev mode only
   DEV_CLEAR_ALL_DATA: 'dev:clearAllData',
 } as const;
@@ -681,6 +719,7 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   preponeOptions: [1, 2, 5],
   openaiApiKey: '',
   voiceMode: 'off' as const,
+  logRetentionDays: 30,
 };
 
 // Initial Office Focus Lock state (inactive)

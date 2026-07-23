@@ -17,6 +17,18 @@ import { syncLoginItemWithSettings } from './autostart';
 import { getOverlayWatchdog } from '../core/watchdog';
 import logger from '../core/logger';
 import { clearPauseReminderFlag, isPauseReminderShowing } from './pauseReminderState';
+import {
+  getActivityLogEntries,
+  clearActivityLog,
+  pruneActivityLog,
+  logSessionPaused,
+  logSessionResumed,
+  logBreakPostponed,
+  logBreakSkipped,
+  logFlowShuffled,
+  logFlowReversed,
+  logFlowOrderApplied,
+} from '../core/activityLogService';
 
 /**
  * Register all IPC handlers
@@ -62,6 +74,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.PAUSE, () => {
     const state = timerEngine.getState();
     timerEngine.pause();
+    logSessionPaused(state.currentPhase, (timerEngine as any).currentSchedule?.name);
     // Only close overlay during work phases (sit/stand) - user shouldn't be trapped
     // Keep overlay open during transitions/breaks so user sees the paused state
     const workPhases = ['sit', 'stand', 'idle'];
@@ -71,7 +84,10 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.RESUME, () => {
+    const preResumeState = timerEngine.getState();
+    const pausedForMs = preResumeState.pausedAt ? Date.now() - preResumeState.pausedAt : undefined;
     timerEngine.resume();
+    logSessionResumed(pausedForMs, (timerEngine as any).currentSchedule?.name);
     // After resume, check if the current phase still needs an overlay
     // (e.g. if a break was paused mid-way, reopen the break overlay)
     const state = timerEngine.getState();
@@ -108,11 +124,18 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.POSTPONE, (_event, minutes: number) => {
-    return timerEngine.postpone(minutes);
+    const state = timerEngine.getState();
+    const result = timerEngine.postpone(minutes);
+    if (result) {
+      logBreakPostponed(minutes, state.currentPhase, (timerEngine as any).currentSchedule?.name);
+    }
+    return result;
   });
 
   ipcMain.handle(IPC_CHANNELS.SKIP_PHASE, () => {
+    const state = timerEngine.getState();
     timerEngine.skipPhase();
+    logBreakSkipped(state.currentPhase, (timerEngine as any).currentSchedule?.name);
   });
 
   ipcMain.handle(IPC_CHANNELS.COMPLETE_PHASE, () => {
@@ -128,15 +151,20 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.SHUFFLE_FLOW, () => {
-    return timerEngine.shuffleFlow();
+    const result = timerEngine.shuffleFlow();
+    logFlowShuffled(undefined, (timerEngine as any).currentSchedule?.name);
+    return result;
   });
 
   ipcMain.handle(IPC_CHANNELS.REVERSE_FLOW, () => {
-    return timerEngine.reverseFlow();
+    const result = timerEngine.reverseFlow();
+    logFlowReversed(undefined, (timerEngine as any).currentSchedule?.name);
+    return result;
   });
 
   ipcMain.handle(IPC_CHANNELS.APPLY_FLOW_ORDER, () => {
     timerEngine.applyFlowOrder();
+    logFlowOrderApplied((timerEngine as any).currentSchedule?.name);
   });
 
   ipcMain.handle(IPC_CHANNELS.TRIGGER_PENDING_BREAK_NOW, () => {
@@ -252,6 +280,19 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.DELETE_REST_BLOCK_PRESET, (_event, presetId: string) => {
     const deleted = restBlockService.deletePreset(presetId);
     return { deleted, presets: restBlockService.getPresets() };
+  });
+
+  // Activity Log handlers
+  ipcMain.handle(IPC_CHANNELS.GET_ACTIVITY_LOG, (_event, fromTimestamp?: number, toTimestamp?: number) => {
+    // Prune old entries on each fetch based on retention setting
+    const config = configService.getConfig();
+    const retentionDays = config?.generalSettings?.logRetentionDays ?? 30;
+    pruneActivityLog(retentionDays);
+    return getActivityLogEntries(fromTimestamp, toTimestamp);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLEAR_ACTIVITY_LOG, () => {
+    clearActivityLog();
   });
 
   // Phase 2: Overlay sync heartbeat handler

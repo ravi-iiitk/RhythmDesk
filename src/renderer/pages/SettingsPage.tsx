@@ -573,7 +573,39 @@ function SettingsPage() {
 
         <div className="form-group" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #333' }}>
           <label style={{ fontWeight: 500, marginBottom: '0.5rem', display: 'block' }}>
-            🗑️ Reset App Data
+            � Activity Log Retention
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Keep logs for</span>
+            <select
+              value={settings.logRetentionDays ?? 30}
+              onChange={(e) => handleChange('logRetentionDays', Number(e.target.value))}
+              style={{
+                padding: '0.35rem 0.5rem',
+                borderRadius: '4px',
+                backgroundColor: 'var(--bg-input)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text-primary)',
+                fontSize: '0.85rem',
+              }}
+            >
+              <option value={7}>7 days</option>
+              <option value={14}>14 days</option>
+              <option value={30}>30 days</option>
+              <option value={60}>60 days</option>
+              <option value={90}>90 days</option>
+              <option value={180}>180 days</option>
+              <option value={365}>1 year</option>
+            </select>
+          </div>
+          <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+            Older log entries are automatically deleted on app startup.
+          </p>
+        </div>
+
+        <div className="form-group" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #333' }}>
+          <label style={{ fontWeight: 500, marginBottom: '0.5rem', display: 'block' }}>
+            �🗑️ Reset App Data
           </label>
           <button 
             className="btn"

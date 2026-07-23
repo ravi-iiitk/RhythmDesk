@@ -8,6 +8,7 @@ import DashboardPage from './pages/DashboardPage';
 import SchedulesPage from './pages/SchedulesPage';
 import SettingsPage from './pages/SettingsPage';
 import HelpPage from './pages/HelpPage';
+import ActivityLogPage from './pages/ActivityLogPage';
 import OverlayView from './components/OverlayView';
 import {
   TimerTick,
@@ -274,6 +275,12 @@ function App() {
             </NavLink>
           </li>
           <li>
+            <NavLink to="/log" className={({ isActive }) => isActive ? 'active' : ''}>
+              <span className="nav-icon">📜</span>
+              Activity Log
+            </NavLink>
+          </li>
+          <li>
             <NavLink to="/settings" className={({ isActive }) => isActive ? 'active' : ''}>
               <span className="nav-icon">⚙️</span>
               Settings
@@ -299,6 +306,7 @@ function App() {
         <Routes>
           <Route path="/" element={<DashboardPage tick={currentTick} />} />
           <Route path="/schedules" element={<SchedulesPage />} />
+          <Route path="/log" element={<ActivityLogPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/help" element={<HelpPage />} />
         </Routes>

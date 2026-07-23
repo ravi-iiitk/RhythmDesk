@@ -64,6 +64,10 @@ export interface RhythmDeskAPI {
   voiceTranscribe: (audioBuffer: ArrayBuffer) => Promise<{ success: boolean; text: string; error: string | null }>;
   voiceTranscribeLocal: (audioBuffer: ArrayBuffer) => Promise<{ success: boolean; text: string; error: string | null }>;
   
+  // Activity Log
+  getActivityLog: (fromTimestamp?: number, toTimestamp?: number) => Promise<any[]>;
+  clearActivityLog: () => Promise<void>;
+  
   // Dev mode only
   devClearAllData: () => Promise<{ success: boolean; message: string }>;
   
@@ -156,6 +160,10 @@ const api: RhythmDeskAPI = {
   // Voice commands
   voiceTranscribe: (audioBuffer) => ipcRenderer.invoke(IPC_CHANNELS.VOICE_TRANSCRIBE, audioBuffer),
   voiceTranscribeLocal: (audioBuffer) => ipcRenderer.invoke(IPC_CHANNELS.VOICE_TRANSCRIBE_LOCAL, audioBuffer),
+
+  // Activity Log
+  getActivityLog: (fromTimestamp?: number, toTimestamp?: number) => ipcRenderer.invoke(IPC_CHANNELS.GET_ACTIVITY_LOG, fromTimestamp, toTimestamp),
+  clearActivityLog: () => ipcRenderer.invoke(IPC_CHANNELS.CLEAR_ACTIVITY_LOG),
 
   // Dev mode only
   devClearAllData: () => ipcRenderer.invoke(IPC_CHANNELS.DEV_CLEAR_ALL_DATA),

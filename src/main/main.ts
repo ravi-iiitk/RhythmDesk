@@ -36,6 +36,17 @@ import { getIdleDetector } from '../core/idleDetector';
 // Autostart
 import { syncLoginItemWithSettings } from './autostart';
 import { isPauseReminderShowing, setPauseReminderShowing, clearPauseReminderFlag } from './pauseReminderState';
+// Activity log
+import {
+  logPhaseStarted,
+  logPhaseCompleted,
+  logSessionReset,
+  logFocusLockStarted,
+  logFocusLockEnded,
+  logRestBlockStarted,
+  logRestBlockEnded,
+  pruneActivityLog,
+} from '../core/activityLogService';
 
 /**
  * Get overlay policy for current state
@@ -272,6 +283,17 @@ function initialize(): void {
     timerEngine.on('phaseChange', (data: { prevPhase: PhaseType; newPhase: PhaseType }) => {
       sendToAll(IPC_CHANNELS.PHASE_CHANGE, data);
       
+      // Activity log: log phase completion and new phase start
+      const scheduleName = timerEngine.getState().activeScheduleId ? 
+        (timerEngine as any).currentSchedule?.name : undefined;
+      if (data.prevPhase !== 'idle') {
+        logPhaseCompleted(data.prevPhase, undefined, scheduleName);
+      }
+      if (data.newPhase !== 'idle') {
+        const state = timerEngine.getState();
+        logPhaseStarted(data.newPhase, scheduleName, state.phaseTotalMs);
+      }
+
       // Play appropriate sound for the phase change
       if (data.newPhase === 'short-break' || data.newPhase === 'long-break') {
         playSound('break_start');
@@ -372,6 +394,7 @@ function initialize(): void {
     // Handle session reset
     timerEngine.on('sessionReset', () => {
       playSound('session_reset');
+      logSessionReset((timerEngine as any).currentSchedule?.name);
     });
 
     // Handle pause reminder - show overlay every 5 min when paused
@@ -501,6 +524,8 @@ function initialize(): void {
     
     officeFocusLockService.on('started', () => {
       playSound('focus_lock_start');
+      const lockState = officeFocusLockService.getState();
+      logFocusLockStarted(lockState.label, lockState.durationMs);
       // When Office Focus Lock starts, use centralized policy to determine overlay
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
@@ -509,11 +534,12 @@ function initialize(): void {
         showOverlay(policy.strictMode);
         sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: currentPhase });
       }
-      sendToAll(IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, officeFocusLockService.getState());
+      sendToAll(IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, lockState);
     });
 
     officeFocusLockService.on('stopped', () => {
       playSound('focus_lock_end');
+      logFocusLockEnded();
       // When Office Focus Lock stops, use centralized policy to determine if overlay should close
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
@@ -565,6 +591,7 @@ function initialize(): void {
       logger.info('Main', 'Rest block started - pausing timer and showing overlay');
       const restState = restBlockService.getState();
       logRestBlockStart(restState.name, restState.durationMs, restState.isStrictMode);
+      logRestBlockStarted(restState.name, restState.durationMs);
       
       timerEngine.pause();
       showOverlay(restState.isStrictMode);
@@ -615,6 +642,7 @@ function initialize(): void {
       // When Rest Block stops, resume timer and check if overlay should close
       logger.info('Main', 'Rest block stopped - resuming timer');
       logRestBlockEnd('manual', 'user stopped');
+      logRestBlockEnded('Rest Block', undefined);
       
       timerEngine.resume();
       const currentPhase = timerEngine.getState().currentPhase;
@@ -631,6 +659,7 @@ function initialize(): void {
       // Rest Block timer expired - resume timer and check overlay
       logger.info('Main', 'Rest block expired - resuming timer');
       logRestBlockEnd('expired', 'timer completed');
+      logRestBlockEnded('Rest Block', undefined);
       
       timerEngine.resume();
       const currentPhase = timerEngine.getState().currentPhase;
@@ -641,6 +670,10 @@ function initialize(): void {
       }
       sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restBlockService.getState());
     });
+
+    // Prune old activity log entries on startup
+    const retentionDays = configService.getConfig()?.generalSettings?.logRetentionDays ?? 30;
+    pruneActivityLog(retentionDays);
 
     // Start the timer
     timerEngine.start();
