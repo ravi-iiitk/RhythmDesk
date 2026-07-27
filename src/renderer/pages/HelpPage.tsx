@@ -11,6 +11,8 @@ export const KEYBOARD_SHORTCUTS = {
   global: [
     { keys: 'Super+Shift+R', action: 'Bring app to front (maximize & focus)', context: 'System-wide' },
     { keys: 'Super+Shift+B', action: 'Take ad-hoc break (short break from schedule)', context: 'System-wide' },
+    { keys: 'Super+Shift+Q', action: '🚨 Emergency kill — force-close overlay & pause timer', context: 'System-wide' },
+    { keys: 'Super+Shift+Escape', action: '🚨 Emergency kill (backup) — same as Super+Shift+Q', context: 'System-wide' },
   ],
   dashboard: [
     { keys: 'Space', action: 'Pause / Resume schedule', context: 'Dashboard' },
@@ -40,8 +42,9 @@ export const KEYBOARD_SHORTCUTS = {
   navigation: [
     { keys: 'Alt+1', action: 'Go to Dashboard', context: 'App' },
     { keys: 'Alt+2', action: 'Go to Schedules', context: 'App' },
-    { keys: 'Alt+3', action: 'Go to Settings', context: 'App' },
-    { keys: 'Alt+4', action: 'Go to Help', context: 'App' },
+    { keys: 'Alt+3', action: 'Go to Activity Log', context: 'App' },
+    { keys: 'Alt+4', action: 'Go to Settings', context: 'App' },
+    { keys: 'Alt+5', action: 'Go to Help', context: 'App' },
     { keys: '?', action: 'Open Help page', context: 'App' },
   ],
 };
@@ -80,8 +83,9 @@ function HelpPage() {
         switch (e.key) {
           case '1': navigate('/'); break;
           case '2': navigate('/schedules'); break;
-          case '3': navigate('/settings'); break;
-          case '4': navigate('/help'); break;
+          case '3': navigate('/log'); break;
+          case '4': navigate('/settings'); break;
+          case '5': navigate('/help'); break;
         }
       }
       if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -451,6 +455,40 @@ function HelpPage() {
         </ul>
       </Section>
 
+      {/* ==================== ACTIVITY LOG ==================== */}
+      <Section title="Activity Log" icon="📜">
+        <p style={{ marginBottom: '1rem' }}>
+          The Activity Log records all user-facing events and state changes, giving you
+          a timeline of your daily RhythmDesk usage.
+        </p>
+
+        <h4 style={{ color: '#8b5cf6', marginBottom: '0.5rem' }}>What Gets Logged</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><strong>Schedule Started / Stopped</strong> - When your schedule activates or deactivates</li>
+          <li><strong>Phase Changes</strong> - Sit, Stand, Short Break, Long Break, Transitions</li>
+          <li><strong>Session Paused / Resumed</strong> - Manual pauses and resumes</li>
+          <li><strong>Breaks Skipped / Postponed</strong> - When you skip or delay a break</li>
+          <li><strong>Flow Changes</strong> - Shuffle, reverse, or custom flow order applied</li>
+          <li><strong>Focus Lock</strong> - Office Focus Lock started/ended</li>
+          <li><strong>Rest Blocks</strong> - Rest block started/stopped/expired</li>
+        </ul>
+
+        <h4 style={{ color: '#8b5cf6', marginBottom: '0.5rem' }}>Features</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><strong>Filter by Type</strong> - Filter entries by category (phases, breaks, schedule, etc.)</li>
+          <li><strong>Date Grouping</strong> - Entries grouped by day for easy reading</li>
+          <li><strong>Expandable Details</strong> - Click any entry to see metadata (phase, duration, etc.)</li>
+          <li><strong>Refresh</strong> - Reload log entries from storage</li>
+          <li><strong>Clear Log</strong> - Delete all log entries</li>
+        </ul>
+
+        <h4 style={{ color: '#8b5cf6', marginBottom: '0.5rem' }}>Log Retention</h4>
+        <p>
+          By default, log entries older than 30 days are automatically pruned on app startup.
+          You can configure the retention period in Settings → Activity Log Retention (7 days to 1 year).
+        </p>
+      </Section>
+
       {/* ==================== WATER REMINDER ==================== */}
       <Section title="Water Reminder" icon="💧">
         <p style={{ marginBottom: '1rem' }}>
@@ -522,6 +560,13 @@ function HelpPage() {
           <li><strong>Voice Mode</strong> - Off (disabled), Local (free, offline whisper.cpp), or Cloud (OpenAI Whisper API)</li>
           <li><strong>OpenAI API Key</strong> - Only needed for Cloud mode. Get from platform.openai.com/api-keys</li>
           <li><strong>Local Model</strong> - Uses ggml-base.en.bin (~142MB) stored in resources/models/</li>
+        </ul>
+
+        <h4 style={{ color: '#8b5cf6', marginBottom: '0.5rem' }}>Activity Log Retention</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><strong>Retention Period</strong> - How long to keep activity log entries (7 days to 1 year)</li>
+          <li>Old entries are automatically pruned on app startup</li>
+          <li>Default: 30 days</li>
         </ul>
 
         <h4 style={{ color: '#8b5cf6', marginBottom: '0.5rem' }}>Developer Options</h4>
@@ -734,6 +779,15 @@ function HelpPage() {
           <li>Check if schedule is paused (Dashboard will show "Paused")</li>
           <li>Check if "Waiting for Next Activity" is shown (click Start Next)</li>
           <li>Try Reset Session to restart from beginning</li>
+        </ul>
+
+        <p><strong>🚨 Overlay frozen / blank screen / can't access desktop:</strong></p>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><strong>Press <code style={codeStyle}>Win+Shift+Q</code></strong> — Emergency kill shortcut (works system-wide)</li>
+          <li><strong>Press <code style={codeStyle}>Win+Shift+Escape</code></strong> — Backup emergency kill</li>
+          <li>These shortcuts force-close the overlay, pause the timer, and show a notification</li>
+          <li>If neither works (very rare): switch to a TTY with <code style={codeStyle}>Ctrl+Alt+F2</code>, then run <code style={codeStyle}>pkill -f electron</code></li>
+          <li>After recovery, use <code style={codeStyle}>Win+Shift+R</code> to bring the app window back</li>
         </ul>
 
         <p><strong>Voice commands not working:</strong></p>

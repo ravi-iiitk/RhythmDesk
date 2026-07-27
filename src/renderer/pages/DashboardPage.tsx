@@ -98,8 +98,9 @@ function DashboardPage({ tick }: DashboardPageProps) {
       switch (e.key) {
         case '1': navigate('/'); return;
         case '2': navigate('/schedules'); return;
-        case '3': navigate('/settings'); return;
-        case '4': navigate('/help'); return;
+        case '3': navigate('/log'); return;
+        case '4': navigate('/settings'); return;
+        case '5': navigate('/help'); return;
       }
     }
 

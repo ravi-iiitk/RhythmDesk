@@ -28,7 +28,7 @@ import * as path from 'path';
 import { TimerTick, OFFICE_FOCUS_LOCK_DURATIONS, PhaseType } from '../shared/types';
 import { PHASE_DISPLAY_NAMES } from '../shared/constants';
 import { formatDurationHuman } from '../shared/timeUtils';
-import { showMainWindow, setQuitting } from './windowManager';
+import { showMainWindow, setQuitting, closeOverlay, getOverlayWindow } from './windowManager';
 
 /**
  * Format milliseconds to minutes only (rounded) for tray display
@@ -525,8 +525,20 @@ function buildStaticTrayMenu(): Electron.Menu {
       const lockRemaining = formatMinutesOnly(tick.officeFocusLock.remainingMs);
       menuItems.push({ label: `🔒 Focus: ${tick.officeFocusLock.label} (${lockRemaining})`, enabled: false });
     }
+    
+    // Rest block status
+    const restState = getRestBlockService().getState();
+    if (restState.isActive) {
+      const restRemaining = formatMinutesOnly(restState.remainingMs);
+      menuItems.push({ label: `🛋️ Rest: ${restState.name || 'Rest Block'} (${restRemaining})`, enabled: false });
+    }
+    
+    // Water reminder active
+    if (tick.waterReminderActive) {
+      menuItems.push({ label: '� Water Reminder Active', enabled: false });
+    }
   } else {
-    menuItems.push({ label: '💤 No active schedule', enabled: false });
+    menuItems.push({ label: '�� No active schedule', enabled: false });
   }
   
   if (tick?.cumulativeWorkTimeMs && tick.cumulativeWorkTimeMs > 60000) {
@@ -669,7 +681,30 @@ function buildStaticTrayMenu(): Electron.Menu {
   menuItems.push({ type: 'separator' });
 
   // ============================================================
-  // 5. NAVIGATION — always present
+  // 5. EMERGENCY & WATER CONTROLS
+  // ============================================================
+  const overlayExists = !!getOverlayWindow();
+  if (overlayExists) {
+    menuItems.push({
+      label: '🚨 Kill Overlay (Emergency)',
+      click: () => {
+        closeOverlay();
+        if (!timerEngine.getState().isPaused) {
+          timerEngine.pause();
+        }
+      },
+    });
+  }
+  if (timerEngine.isWaterReminderActive()) {
+    menuItems.push({
+      label: '💧 Dismiss Water Reminder',
+      click: () => timerEngine.dismissWaterReminder(),
+    });
+  }
+  menuItems.push({ type: 'separator' });
+
+  // ============================================================
+  // 6. NAVIGATION — always present
   // ============================================================
   menuItems.push({ label: '📊 Open Dashboard', click: () => showMainWindow() });
   menuItems.push({

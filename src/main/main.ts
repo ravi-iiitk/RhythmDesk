@@ -41,6 +41,8 @@ import {
   logPhaseStarted,
   logPhaseCompleted,
   logSessionReset,
+  logScheduleStarted,
+  logScheduleStopped,
   logFocusLockStarted,
   logFocusLockEnded,
   logRestBlockStarted,
@@ -207,6 +209,72 @@ function initialize(): void {
       logger.info('Main', 'Global shortcut registered: Super+Shift+B (ad-hoc break)');
     } else {
       logger.warn('Main', 'Failed to register global shortcut: Super+Shift+B');
+    }
+
+    // CRITICAL: Register global EMERGENCY KILL shortcut (Super+Shift+Q)
+    // This works at the OS level regardless of overlay/renderer state.
+    // If the overlay is frozen/crashed/unresponsive, this is the user's escape hatch.
+    const killShortcutRegistered = globalShortcut.register('Super+Shift+Q', () => {
+      logger.warn('Main', '🚨 EMERGENCY KILL shortcut triggered: Super+Shift+Q');
+      // 1. Force-close any overlay (bypasses strict mode, close prevention, everything)
+      safeCloseOverlay();
+      // 2. Pause the timer to prevent overlay from immediately reopening
+      const timerEng = getTimerEngine();
+      if (!timerEng.getState().isPaused) {
+        timerEng.pause();
+      }
+      // 3. Stop any active rest block
+      const restBlock = getRestBlockService();
+      if (restBlock.isActive()) {
+        restBlock.stop();
+      }
+      // 4. Clear water reminder if active
+      if (timerEng.isWaterReminderActive()) {
+        timerEng.dismissWaterReminder();
+      }
+      // 5. Show notification to user that emergency kill succeeded
+      const { Notification } = require('electron');
+      new Notification({
+        title: 'RhythmDesk — Emergency Kill',
+        body: 'Overlay force-closed. Schedule paused. Use Super+Shift+R to reopen the app.',
+      }).show();
+      logger.warn('Main', '🚨 Emergency kill complete — overlay destroyed, timer paused');
+    });
+
+    if (killShortcutRegistered) {
+      logger.info('Main', 'Global shortcut registered: Super+Shift+Q (emergency kill overlay)');
+    } else {
+      logger.warn('Main', 'Failed to register global shortcut: Super+Shift+Q');
+    }
+
+    // Also register Super+Shift+Escape as backup emergency kill
+    // (in case Super+Shift+Q conflicts with another app)
+    const killShortcut2Registered = globalShortcut.register('Super+Shift+Escape', () => {
+      logger.warn('Main', '🚨 EMERGENCY KILL shortcut triggered: Super+Shift+Escape');
+      safeCloseOverlay();
+      const timerEng = getTimerEngine();
+      if (!timerEng.getState().isPaused) {
+        timerEng.pause();
+      }
+      const restBlock = getRestBlockService();
+      if (restBlock.isActive()) {
+        restBlock.stop();
+      }
+      if (timerEng.isWaterReminderActive()) {
+        timerEng.dismissWaterReminder();
+      }
+      const { Notification } = require('electron');
+      new Notification({
+        title: 'RhythmDesk — Emergency Kill',
+        body: 'Overlay force-closed. Schedule paused.',
+      }).show();
+      logger.warn('Main', '🚨 Emergency kill complete (via Super+Shift+Escape)');
+    });
+
+    if (killShortcut2Registered) {
+      logger.info('Main', 'Global shortcut registered: Super+Shift+Escape (emergency kill backup)');
+    } else {
+      logger.warn('Main', 'Failed to register global shortcut: Super+Shift+Escape');
     }
     
     // Start main window health check watchdog
@@ -379,6 +447,13 @@ function initialize(): void {
 
     timerEngine.on('scheduleChange', (_schedule: unknown) => {
       sendToAll(IPC_CHANNELS.CONFIG_UPDATED, configService.getConfig());
+      // Activity log: track schedule activation/deactivation
+      const schedule = timerEngine.getCurrentSchedule();
+      if (schedule) {
+        logScheduleStarted(schedule.name);
+      } else {
+        logScheduleStopped();
+      }
     });
 
     // Handle postpone - close overlay when user postpones
@@ -677,6 +752,14 @@ function initialize(): void {
 
     // Start the timer
     timerEngine.start();
+
+    // Activity log: record the initial state so the log isn't empty on first launch
+    const initialSchedule = timerEngine.getCurrentSchedule();
+    const initialState = timerEngine.getState();
+    if (initialSchedule && initialState.currentPhase !== 'idle') {
+      logScheduleStarted(initialSchedule.name);
+      logPhaseStarted(initialState.currentPhase, initialSchedule.name, initialState.phaseTotalMs);
+    }
     
     // WATCHDOG: Periodically check overlay health during rest blocks
     // This ensures long rest blocks don't get stuck due to overlay issues
@@ -779,6 +862,12 @@ function initialize(): void {
         const currentPhase = state.currentPhase;
         const policy = getOverlayPolicyForState(currentPhase);
         const restBlockActive = getRestBlockService().isActive();
+        
+        // Clear stale pause reminder flag if timer is no longer paused
+        if (!state.isPaused && isPauseReminderShowing()) {
+          logger.info('Main', 'Clearing stale pause reminder flag on system resume (timer not paused)');
+          clearPauseReminderFlag();
+        }
         
         // CRITICAL: If timer is paused and we were showing pause reminder, restore it
         // The overlay policy returns showOverlay=false when paused, but we need to
@@ -908,6 +997,23 @@ function ensureOverlayIfRequired(): void {
         logger.error('Main', 'Overlay webContents inaccessible - recreating');
         const strictMode = restBlockActive ? getRestBlockService().getState().isStrictMode : policy.strictMode;
         recoverOverlayIfNeeded(strictMode, true);
+      }
+    }
+  } else {
+    // CRITICAL FIX: Overlay should NOT be showing — close any stale/orphan overlay.
+    // This prevents blank frozen overlays after system suspend/resume, Chromium crashes,
+    // or race conditions where the overlay was opened but never properly closed.
+    const overlay = getOverlayWindow();
+    if (overlay && !overlay.isDestroyed()) {
+      const waterActive = timerEngine.isWaterReminderActive();
+      // Only close if no water reminder is active (water reminder uses non-strict overlay)
+      if (!waterActive) {
+        logger.warn('Main', 'Stale overlay detected - closing (no policy requires it)', {
+          phase: currentPhase,
+          isPaused: state.isPaused,
+          restBlockActive,
+        });
+        safeCloseOverlay();
       }
     }
   }

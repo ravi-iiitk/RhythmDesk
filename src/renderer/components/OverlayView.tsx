@@ -5,7 +5,7 @@
  * Phase 2: Added heartbeat response for overlay sync watchdog
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { TimerTick, PhaseType } from '../../shared/types';
 import { PHASE_DISPLAY_NAMES, PHASE_COLORS } from '../../shared/constants';
 import { formatDuration, formatDurationHuman } from '../../shared/timeUtils';
@@ -282,9 +282,30 @@ function OverlayView({ tick }: OverlayViewProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
+  // SAFETY NET: If overlay has no meaningful content for >3 seconds, auto-close.
+  // This prevents blank frozen overlays after system crashes, suspend/resume,
+  // or race conditions where the overlay was opened but never received state.
+  const blankSinceRef = useRef<number | null>(null);
+  const isBlank = !tick && !pauseReminderData && !waterReminderActive;
+  useEffect(() => {
+    if (isBlank) {
+      if (!blankSinceRef.current) {
+        blankSinceRef.current = Date.now();
+      }
+      const timer = setTimeout(() => {
+        // Still blank after 3 seconds — close the overlay
+        console.warn('[OverlayView] Blank overlay safety close triggered (no tick for 3s)');
+        window.rhythmDesk.closeOverlay();
+      }, 3000);
+      return () => clearTimeout(timer);
+    } else {
+      blankSinceRef.current = null;
+    }
+  }, [isBlank]);
+
   // Show nothing while waiting for first tick - prevents idle flash
   // NOTE: all hooks above must stay before this return
-  if (!tick && !pauseReminderData && !waterReminderActive) {
+  if (isBlank) {
     return <div className="overlay" style={{ backgroundColor: '#0f0f1a' }} />;
   }
 

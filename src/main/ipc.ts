@@ -115,6 +115,8 @@ export function registerIpcHandlers(): void {
       // Phase does not need overlay — close any open one (pause reminder)
       closeOverlay();
     }
+    // Always clear pause reminder flag on resume to prevent stale overlays
+    clearPauseReminderFlag();
   });
 
   ipcMain.handle(IPC_CHANNELS.PAUSE_FOR_DURATION, (_event, minutes: number) => {
