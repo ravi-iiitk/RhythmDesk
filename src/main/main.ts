@@ -33,6 +33,7 @@ import { initDebugMode } from '../core/debugMode';
 import { playSound, getSoundService } from '../core/soundService';
 // Idle detection
 import { getIdleDetector } from '../core/idleDetector';
+import { isBreakPhase } from '../core/transitions';
 // Autostart
 import { syncLoginItemWithSettings } from './autostart';
 import { isPauseReminderShowing, setPauseReminderShowing, clearPauseReminderFlag } from './pauseReminderState';
@@ -571,8 +572,9 @@ function initialize(): void {
     idleDetector.on('idle', () => {
       const state = timerEngine.getState();
       const restBlockActive = getRestBlockService().isActive();
-      // Don't auto-pause during rest blocks (user is on a manual break)
-      if (!state.isPaused && state.currentPhase !== 'idle' && !restBlockActive) {
+      const breakActive = isBreakPhase(state.currentPhase);
+      // Don't auto-pause during breaks or rest blocks (user is intentionally away)
+      if (!state.isPaused && state.currentPhase !== 'idle' && !restBlockActive && !breakActive) {
         logger.info('Main', 'System idle detected - auto-pausing schedule');
         timerEngine.pause();
         idleAutoPaused = true;

@@ -601,6 +601,13 @@ function OverlayView({ tick }: OverlayViewProps) {
             Take a break and relax
           </div>
 
+          {/* Next Activity Info - what resumes when rest block ends */}
+          {tick.currentPhase !== 'idle' && (
+            <div className="overlay-postpone-info" style={{ marginTop: '0.5rem' }}>
+              Next: {phaseName}
+            </div>
+          )}
+
           {/* Progress Bar */}
           <div style={{ width: '60%', margin: '1rem auto' }}>
             <div style={{ height: '8px', backgroundColor: 'rgba(34, 197, 94, 0.2)', borderRadius: '4px', overflow: 'hidden' }}>
