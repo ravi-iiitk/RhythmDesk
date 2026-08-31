@@ -20,9 +20,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as child_process from 'child_process';
 import logger from '../core/logger';
+import { getIdleDetector } from '../core/idleDetector';
 
 let focusStealInterval: NodeJS.Timeout | null = null;
 let isLockdownActive = false;
+let idleWasRunning = false; // Track idle detector state so we can restore it on exit
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -37,6 +39,7 @@ export function enterFocusLockdown(mainWindow: BrowserWindow): void {
   // 1. Intercept escape shortcuts so the user cannot leave
   //    Unregister the ones we registered ourselves first to avoid double-registration.
   globalShortcut.unregister('Super+Shift+Q'); // emergency kill — suspended during session
+  globalShortcut.unregister('Super+Shift+Escape'); // backup emergency kill — also suspended
   globalShortcut.unregister('Super+Shift+B'); // ad-hoc break shortcut
   globalShortcut.unregister('Super+Shift+R'); // bring-to-front shortcut
 
@@ -67,13 +70,35 @@ export function enterFocusLockdown(mainWindow: BrowserWindow): void {
     }
   }, 500);
 
-  // 5. Enable autostart so the app survives a reboot
+  // 5. Suspend idle detection — stillness during a focus session is not idleness
+  const idleDetector = getIdleDetector();
+  idleWasRunning = idleDetector.isRunning();
+  if (idleWasRunning) {
+    idleDetector.stop();
+    logger.info('FocusLockdown', 'Idle detector suspended for focus session');
+  }
+
+  // 6. Enable autostart so the app survives a reboot
   ensureAutostart();
 
-  // 6. Enable systemd guardian so the app restarts after kill-9
+  // 7. Enable systemd guardian so the app restarts after kill-9
   enableSystemdGuardian();
 
   logger.info('FocusLockdown', 'Focus lockdown active');
+}
+
+/**
+ * Callback to re-register the global shortcuts that enterFocusLockdown unregistered.
+ * Set via setShortcutRestoreCallback() from main.ts after the shortcuts are first created.
+ */
+let shortcutRestoreCallback: (() => void) | null = null;
+
+/**
+ * main.ts must call this once after registering global shortcuts so that
+ * exitFocusLockdown can re-register them when the session ends.
+ */
+export function setShortcutRestoreCallback(cb: () => void): void {
+  shortcutRestoreCallback = cb;
 }
 
 export function exitFocusLockdown(mainWindow: BrowserWindow): void {
@@ -97,6 +122,25 @@ export function exitFocusLockdown(mainWindow: BrowserWindow): void {
   try { mainWindow.setKiosk(false); } catch {}
   mainWindow.setFullScreen(false);
   mainWindow.setAlwaysOnTop(false);
+
+  // Re-register global shortcuts (Super+Shift+Q, B, R) that were unregistered on entry
+  if (shortcutRestoreCallback) {
+    try {
+      shortcutRestoreCallback();
+      logger.info('FocusLockdown', 'Global shortcuts re-registered after lockdown');
+    } catch (err) {
+      logger.warn('FocusLockdown', 'Failed to re-register global shortcuts', { err: String(err) });
+    }
+  }
+
+  // Restore idle detection if it was running before lockdown
+  if (idleWasRunning) {
+    const configService = require('../core/configService').default as typeof import('../core/configService').default;
+    const settings = configService.getGeneralSettings();
+    getIdleDetector().start(settings.idleThresholdMinutes ?? 3);
+    idleWasRunning = false;
+    logger.info('FocusLockdown', 'Idle detector restored after focus session');
+  }
 
   // Disable systemd guardian (unless user has regular autostart enabled — leave that alone)
   disableSystemdGuardian();

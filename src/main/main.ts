@@ -38,7 +38,7 @@ import { isBreakPhase } from '../core/transitions';
 import { syncLoginItemWithSettings } from './autostart';
 // Focus Sessions
 import { getFocusSessionService } from '../core/focusSessionService';
-import { enterFocusLockdown, exitFocusLockdown, isFocusLockdownActive } from './focusLockdown';
+import { enterFocusLockdown, exitFocusLockdown, isFocusLockdownActive, setShortcutRestoreCallback } from './focusLockdown';
 import { FocusSession } from '../shared/types';
 import { isPauseReminderShowing, setPauseReminderShowing, clearPauseReminderFlag } from './pauseReminderState';
 // Activity log
@@ -139,8 +139,13 @@ function initialize(): void {
     // Don't quit - keep running in tray
   });
 
-  // Clean up on quit
-  app.on('before-quit', () => {
+  // Clean up on quit — but block during focus lockdown
+  app.on('before-quit', (event) => {
+    if (isFocusLockdownActive()) {
+      logger.warn('Main', 'before-quit blocked — focus session is active');
+      event.preventDefault();
+      return;
+    }
     logger.info('Main', 'App quitting - flushing session snapshot');
     const timerEngine = getTimerEngine();
     timerEngine.stop();
@@ -282,6 +287,45 @@ function initialize(): void {
       logger.warn('Main', 'Failed to register global shortcut: Super+Shift+Escape');
     }
     
+    // Tell focusLockdown how to re-register our global shortcuts after a session ends.
+    // enterFocusLockdown unregisters Super+Shift+Q/B/R; this callback restores them.
+    setShortcutRestoreCallback(() => {
+      // Re-register only if not already registered (avoids double-registration errors)
+      if (!globalShortcut.isRegistered('Super+Shift+Q')) {
+        globalShortcut.register('Super+Shift+Q', () => {
+          const timerEng = getTimerEngine();
+          safeCloseOverlay();
+          if (!timerEng.getState().isPaused) timerEng.pause();
+          const rb = getRestBlockService();
+          if (rb.isActive()) rb.stop();
+          if (timerEng.isWaterReminderActive()) timerEng.dismissWaterReminder();
+        });
+      }
+      if (!globalShortcut.isRegistered('Super+Shift+B')) {
+        globalShortcut.register('Super+Shift+B', () => {
+          const timerEng = getTimerEngine();
+          const st = timerEng.getState();
+          if (st.currentPhase === 'sit' || st.currentPhase === 'stand') {
+            const sched = timerEng.getCurrentSchedule();
+            timerEng.startAdHocBreak(sched?.shortBreak?.durationMinutes ?? 5);
+          }
+        });
+      }
+      if (!globalShortcut.isRegistered('Super+Shift+R')) {
+        globalShortcut.register('Super+Shift+R', () => showAndFocusMainWindow());
+      }
+      if (!globalShortcut.isRegistered('Super+Shift+Escape')) {
+        globalShortcut.register('Super+Shift+Escape', () => {
+          const timerEng = getTimerEngine();
+          safeCloseOverlay();
+          if (!timerEng.getState().isPaused) timerEng.pause();
+          const rb = getRestBlockService();
+          if (rb.isActive()) rb.stop();
+          if (timerEng.isWaterReminderActive()) timerEng.dismissWaterReminder();
+        });
+      }
+    });
+
     // Start main window health check watchdog
     // This detects zombie states after system suspend/resume
     startMainWindowHealthCheck();
@@ -466,6 +510,9 @@ function initialize(): void {
       } else {
         logScheduleStopped();
       }
+      // If the schedule changed (or was deactivated), re-evaluate focus session immediately.
+      // This handles: schedule deactivated, schedule switched, schedule deleted.
+      getFocusSessionService().check(schedule, Date.now());
     });
 
     // Handle postpone - close overlay when user postpones

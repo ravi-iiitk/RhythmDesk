@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Schedule, DayOfWeek, DEFAULT_SCHEDULE, ScheduleMode, FlowStep, FlowStepType } from '../../shared/types';
+import { Schedule, DayOfWeek, DEFAULT_SCHEDULE, ScheduleMode, FlowStep, FlowStepType, FocusSession } from '../../shared/types';
 import { DAY_SHORT_LABELS } from '../../shared/constants';
 import {
   getDefaultFlowSteps,
@@ -46,6 +46,26 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
   // Transition pause toggle (shared for both sit-to-stand and stand-to-sit)
   const [transitionAllowPause, setTransitionAllowPause] = useState<boolean>(true);
   
+  // Focus Sessions state
+  const [focusSessions, setFocusSessions] = useState<FocusSession[]>([]);
+  const [focusSessionForm, setFocusSessionForm] = useState<{
+    open: boolean;
+    editId: string | null;
+    name: string;
+    startTime: string;
+    endTime: string;
+    daysOfWeek: number[];
+    enabled: boolean;
+  }>({
+    open: false,
+    editId: null,
+    name: '',
+    startTime: '09:00',
+    endTime: '17:00',
+    daysOfWeek: [1, 2, 3, 4, 5],
+    enabled: true,
+  });
+
   // Drag and drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -76,9 +96,11 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
 
   useEffect(() => {
     if (schedule) {
-      const { id, createdAt, ...rest } = schedule;
+      const { id, createdAt, focusSessions: loadedFocusSessions, ...rest } = schedule;
       // Ensure ALL legacy fields have safe defaults when loading existing schedule
       // This prevents crashes when editing schedules from before migration
+      // Note: focusSessions is destructured out — the separate focusSessions state
+      // is the single source of truth (set below via setFocusSessions).
       setFormData({
         ...rest,
         // Transition durations
@@ -120,6 +142,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
       } else {
         setFlowSteps(getDefaultFlowSteps());
       }
+      setFocusSessions(loadedFocusSessions ?? []);
       
       // Update postpone range from loaded options
       const loadedRange = deriveRange(rest.postponeOptionsMinutes ?? [2, 5, 10]);
@@ -296,6 +319,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
       id: schedule?.id || uuidv4(),
       createdAt: schedule?.createdAt || Date.now(),
       ...formData,
+      focusSessions,
       // Schedule mode
       mode: scheduleMode,
       // Flow steps (only used in flow-based mode) - trim labels on save
@@ -998,6 +1022,213 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
           </div>
         </>
       )}
+
+      {/* ── Focus Sessions ── */}
+      <div className="form-group" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem', marginTop: '0.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <div>
+            <label className="form-label" style={{ marginBottom: 0 }}>🔒 Focus Sessions</label>
+            <p className="text-muted" style={{ fontSize: '0.72rem', marginTop: '0.2rem' }}>
+              Time blocks where the app takes over the entire screen. No other app is accessible. Breaks still run normally inside.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', whiteSpace: 'nowrap', marginLeft: '1rem' }}
+            onClick={() => setFocusSessionForm({ open: true, editId: null, name: '', startTime: '09:00', endTime: '17:00', daysOfWeek: [1,2,3,4,5], enabled: true })}
+          >
+            + Add Session
+          </button>
+        </div>
+
+        {/* Session list */}
+        {focusSessions.length === 0 ? (
+          <p className="text-muted" style={{ fontSize: '0.8rem', fontStyle: 'italic' }}>No focus sessions configured.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {focusSessions.map((fs) => (
+              <div key={fs.id} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '0.6rem 0.85rem',
+                borderRadius: '6px',
+                background: fs.enabled ? 'rgba(99,102,241,0.08)' : 'rgba(255,255,255,0.03)',
+                border: `1px solid ${fs.enabled ? 'rgba(99,102,241,0.3)' : 'var(--border-color)'}`,
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                  <span style={{ fontWeight: 600, fontSize: '0.85rem', color: fs.enabled ? '#a5b4fc' : 'var(--text-muted)' }}>
+                    {fs.name || 'Unnamed'}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    {fs.startTime} – {fs.endTime}
+                    {' · '}
+                    {fs.daysOfWeek.length === 0
+                      ? 'Every day'
+                      : fs.daysOfWeek.length === 7
+                      ? 'Every day'
+                      : fs.daysOfWeek.map(d => ['Su','Mo','Tu','We','Th','Fr','Sa'][d]).join(', ')}
+                    {!fs.enabled && <span style={{ marginLeft: '0.4rem', opacity: 0.6 }}>(disabled)</span>}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <button type="button" className="btn btn-secondary" style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}
+                    onClick={() => setFocusSessionForm({ open: true, editId: fs.id, name: fs.name, startTime: fs.startTime, endTime: fs.endTime, daysOfWeek: fs.daysOfWeek, enabled: fs.enabled })}
+                  >Edit</button>
+                  <button type="button" className="btn btn-secondary" style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem', color: '#f87171', borderColor: 'rgba(248,113,113,0.3)' }}
+                    onClick={() => setFocusSessions(prev => prev.filter(s => s.id !== fs.id))}
+                  >Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Inline editor */}
+        {focusSessionForm.open && (
+          <div style={{
+            marginTop: '0.75rem', padding: '1rem',
+            borderRadius: '8px',
+            background: 'rgba(99,102,241,0.06)',
+            border: '1px solid rgba(99,102,241,0.25)',
+            display: 'flex', flexDirection: 'column', gap: '0.75rem',
+          }}>
+            <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>
+              {focusSessionForm.editId ? 'Edit Focus Session' : 'New Focus Session'}
+            </span>
+
+            {/* Name */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Name</label>
+              <input className="form-input" type="text" placeholder="e.g., Deep Work"
+                value={focusSessionForm.name}
+                onChange={e => setFocusSessionForm(f => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+
+            {/* Time range */}
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Start Time</label>
+                <input className="form-input" type="time"
+                  value={focusSessionForm.startTime}
+                  onChange={e => setFocusSessionForm(f => ({ ...f, startTime: e.target.value }))}
+                />
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>End Time</label>
+                <input className="form-input" type="time"
+                  value={focusSessionForm.endTime}
+                  onChange={e => setFocusSessionForm(f => ({ ...f, endTime: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            {/* Day picker */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Days (empty = every day)</label>
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                {['Su','Mo','Tu','We','Th','Fr','Sa'].map((label, dow) => (
+                  <button key={dow} type="button"
+                    className={`day-toggle ${focusSessionForm.daysOfWeek.includes(dow) ? 'selected' : ''}`}
+                    onClick={() => setFocusSessionForm(f => ({
+                      ...f,
+                      daysOfWeek: f.daysOfWeek.includes(dow)
+                        ? f.daysOfWeek.filter(d => d !== dow)
+                        : [...f.daysOfWeek, dow].sort(),
+                    }))}
+                  >{label}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Enabled toggle */}
+            <label className="form-checkbox" style={{ fontSize: '0.82rem' }}>
+              <input type="checkbox" checked={focusSessionForm.enabled}
+                onChange={e => setFocusSessionForm(f => ({ ...f, enabled: e.target.checked }))}
+              />
+              Enabled
+            </label>
+
+            {/* Validation warnings */}
+            {focusSessionForm.startTime >= focusSessionForm.endTime && (
+              <p style={{ fontSize: '0.75rem', color: '#f87171', margin: 0 }}>⚠ End time must be after start time.</p>
+            )}
+            {focusSessionForm.startTime < focusSessionForm.endTime && (() => {
+              // Bounds check: handles overnight schedules (endTime < startTime = crosses midnight)
+              const schedStart = formData.startTime;
+              const schedEnd = formData.endTime;
+              const fsStart = focusSessionForm.startTime;
+              const fsEnd = focusSessionForm.endTime;
+              const isOvernightSchedule = schedEnd <= schedStart;
+              const inBounds = isOvernightSchedule
+                ? (fsStart >= schedStart || fsEnd <= schedEnd)  // session fits in either half
+                : (fsStart >= schedStart && fsEnd <= schedEnd); // simple range check
+              return !inBounds ? (
+                <p style={{ fontSize: '0.75rem', color: '#f87171', margin: 0 }}>
+                  ⚠ Focus session must be within the schedule time ({schedStart} – {schedEnd}).
+                </p>
+              ) : null;
+            })()}
+            {focusSessionForm.startTime < focusSessionForm.endTime && (() => {
+              const fsDays = focusSessionForm.daysOfWeek;
+              const overlap = focusSessions.find(s => {
+                if (s.id === focusSessionForm.editId) return false;
+                const sDays = s.daysOfWeek;
+                const daysOverlap = fsDays.length === 0 || sDays.length === 0
+                  || fsDays.some(d => sDays.includes(d));
+                if (!daysOverlap) return false;
+                return focusSessionForm.startTime < s.endTime && focusSessionForm.endTime > s.startTime;
+              });
+              return overlap ? (
+                <p style={{ fontSize: '0.75rem', color: '#f87171', margin: 0 }}>
+                  ⚠ Overlaps with "{overlap.name || 'Unnamed'}" ({overlap.startTime} – {overlap.endTime}).
+                </p>
+              ) : null;
+            })()}
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-secondary" style={{ fontSize: '0.8rem' }}
+                onClick={() => setFocusSessionForm(f => ({ ...f, open: false, editId: null }))}
+              >Cancel</button>
+              <button type="button" className="btn btn-primary" style={{ fontSize: '0.8rem' }}
+                disabled={
+                  !focusSessionForm.name.trim()
+                  || focusSessionForm.startTime >= focusSessionForm.endTime
+                  || (() => {
+                    const schedStart = formData.startTime;
+                    const schedEnd = formData.endTime;
+                    const fsStart = focusSessionForm.startTime;
+                    const fsEnd = focusSessionForm.endTime;
+                    const isOvernightSchedule = schedEnd <= schedStart;
+                    return isOvernightSchedule
+                      ? !(fsStart >= schedStart || fsEnd <= schedEnd)
+                      : !(fsStart >= schedStart && fsEnd <= schedEnd);
+                  })()
+                  || focusSessions.some(s => {
+                    if (s.id === focusSessionForm.editId) return false;
+                    const fsDays = focusSessionForm.daysOfWeek;
+                    const sDays = s.daysOfWeek;
+                    const daysOverlap = fsDays.length === 0 || sDays.length === 0
+                      || fsDays.some(d => sDays.includes(d));
+                    if (!daysOverlap) return false;
+                    return focusSessionForm.startTime < s.endTime && focusSessionForm.endTime > s.startTime;
+                  })
+                }
+                onClick={() => {
+                  const { open, editId, ...fields } = focusSessionForm;
+                  if (editId) {
+                    setFocusSessions(prev => prev.map(s => s.id === editId ? { ...s, ...fields } : s));
+                  } else {
+                    setFocusSessions(prev => [...prev, { id: uuidv4(), ...fields }]);
+                  }
+                  setFocusSessionForm(f => ({ ...f, open: false, editId: null }));
+                }}
+              >{focusSessionForm.editId ? 'Save Changes' : 'Add Session'}</button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Form Actions */}
       <div className="modal-footer">

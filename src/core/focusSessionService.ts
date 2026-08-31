@@ -82,7 +82,7 @@ export class FocusSessionService extends EventEmitter {
     return Math.max(0, this.computeEndMs(this.activeSession, now) - now);
   }
 
-  computeEndMs(session: FocusSession, now: number): number {
+  private computeEndMs(session: FocusSession, now: number): number {
     const date = new Date(now);
     const [h, m] = session.endTime.split(':').map(Number);
     return new Date(

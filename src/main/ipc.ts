@@ -74,6 +74,10 @@ export function registerIpcHandlers(): void {
 
   // Timer control handlers
   ipcMain.handle(IPC_CHANNELS.PAUSE, () => {
+    if (isFocusLockdownActive()) {
+      logger.warn('IPC', 'PAUSE blocked — focus session is active');
+      return;
+    }
     const state = timerEngine.getState();
     timerEngine.pause();
     logSessionPaused(state.currentPhase, (timerEngine as any).currentSchedule?.name);
@@ -235,6 +239,10 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.MINIMIZE_TO_TRAY, () => {
+    if (isFocusLockdownActive()) {
+      logger.warn('IPC', 'MINIMIZE_TO_TRAY blocked — focus session is active');
+      return;
+    }
     hideMainWindow();
   });
 
