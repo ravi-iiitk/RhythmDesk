@@ -28,7 +28,8 @@ export type SessionEventType =
   | 'flowDesync'
   | 'validationError'
   | 'stateNormalized'
-  | 'restartActivity';
+  | 'restartActivity'
+  | 'applyFlowOrder';
 
 // ============================================================
 // SESSION DEBUG LOGGING

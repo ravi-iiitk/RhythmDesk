@@ -493,6 +493,67 @@ function SettingsPage() {
 
       <div className="card">
         <div className="card-header">
+          <span className="card-title">🎙️ Voice Commands</span>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Voice Mode</label>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            {(['off', 'local', 'cloud'] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => handleChange('voiceMode', mode)}
+                style={{
+                  flex: 1,
+                  padding: '0.5rem',
+                  borderRadius: '6px',
+                  border: `2px solid ${(settings.voiceMode ?? 'off') === mode ? '#3b82f6' : '#333'}`,
+                  backgroundColor: (settings.voiceMode ?? 'off') === mode ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                  color: (settings.voiceMode ?? 'off') === mode ? '#3b82f6' : '#94a3b8',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  transition: 'all 0.2s',
+                }}
+              >
+                {mode === 'off' ? '🔇 Off' : mode === 'local' ? '💻 Local' : '☁️ Cloud'}
+              </button>
+            ))}
+          </div>
+          <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+            {(settings.voiceMode ?? 'off') === 'off' && 'Voice commands disabled. Select Local or Cloud to enable.'}
+            {(settings.voiceMode ?? 'off') === 'local' && '🟢 Free & offline. Uses whisper.cpp (base model, ~142MB). No API key needed.'}
+            {(settings.voiceMode ?? 'off') === 'cloud' && '☁️ Uses OpenAI Whisper API. Best accuracy, requires API key (~$0.006/min).'}
+          </p>
+        </div>
+
+        {(settings.voiceMode ?? 'off') === 'cloud' && (
+          <div className="form-group">
+            <label className="form-label">OpenAI API Key</label>
+            <input
+              type="password"
+              className="form-input"
+              value={settings.openaiApiKey ?? ''}
+              onChange={(e) => handleChange('openaiApiKey', e.target.value)}
+              placeholder="sk-..."
+              style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
+            />
+            <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+              Get your key from <span style={{ color: '#3b82f6' }}>platform.openai.com/api-keys</span>.
+              Key is stored locally, never shared.
+            </p>
+          </div>
+        )}
+
+        {(settings.voiceMode ?? 'off') !== 'off' && (
+          <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+            Hold <strong>V</strong> on Dashboard → speak command → release. The app understands natural language and talks back.
+          </p>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-header">
           <span className="card-title">Developer</span>
         </div>
 
@@ -512,7 +573,39 @@ function SettingsPage() {
 
         <div className="form-group" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #333' }}>
           <label style={{ fontWeight: 500, marginBottom: '0.5rem', display: 'block' }}>
-            🗑️ Reset App Data
+            � Activity Log Retention
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Keep logs for</span>
+            <select
+              value={settings.logRetentionDays ?? 30}
+              onChange={(e) => handleChange('logRetentionDays', Number(e.target.value))}
+              style={{
+                padding: '0.35rem 0.5rem',
+                borderRadius: '4px',
+                backgroundColor: 'var(--bg-input)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text-primary)',
+                fontSize: '0.85rem',
+              }}
+            >
+              <option value={7}>7 days</option>
+              <option value={14}>14 days</option>
+              <option value={30}>30 days</option>
+              <option value={60}>60 days</option>
+              <option value={90}>90 days</option>
+              <option value={180}>180 days</option>
+              <option value={365}>1 year</option>
+            </select>
+          </div>
+          <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+            Older log entries are automatically deleted on app startup.
+          </p>
+        </div>
+
+        <div className="form-group" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #333' }}>
+          <label style={{ fontWeight: 500, marginBottom: '0.5rem', display: 'block' }}>
+            �🗑️ Reset App Data
           </label>
           <button 
             className="btn"

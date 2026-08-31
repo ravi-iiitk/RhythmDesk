@@ -85,6 +85,9 @@ function migrateSessionState(state: Partial<SessionState>): SessionState {
     prePostponeFlowIndex: state.prePostponeFlowIndex,
     currentFlowStepIndex: state.currentFlowStepIndex,
     flowConfigHash: state.flowConfigHash,
+    isFocusSessionActive: state.isFocusSessionActive ?? false,
+    activeFocusSessionId: state.activeFocusSessionId ?? null,
+    focusSessionEndsAt: state.focusSessionEndsAt ?? null,
   };
 }
 

@@ -9,7 +9,7 @@
  * - Focus Lock resets to OFF on restart (not persisted)
  */
 
-import { app, BrowserWindow, powerMonitor, globalShortcut } from 'electron';
+import { app, BrowserWindow, powerMonitor, globalShortcut, session } from 'electron';
 import { createMainWindow, showOverlay, closeOverlay, sendToAll, sendToOverlay, getMainWindow, getOverlayWindow, recoverOverlayIfNeeded, startMainWindowHealthCheck, setScreenLocked, showAndFocusMainWindow } from './windowManager';
 import logger from '../core/logger';
 import { createTray, updateTrayWithTick } from './tray';
@@ -33,13 +33,33 @@ import { initDebugMode } from '../core/debugMode';
 import { playSound, getSoundService } from '../core/soundService';
 // Idle detection
 import { getIdleDetector } from '../core/idleDetector';
+import { isBreakPhase } from '../core/transitions';
 // Autostart
 import { syncLoginItemWithSettings } from './autostart';
+// Focus Sessions
+import { getFocusSessionService } from '../core/focusSessionService';
+import { enterFocusLockdown, exitFocusLockdown, isFocusLockdownActive, setShortcutRestoreCallback } from './focusLockdown';
+import { FocusSession } from '../shared/types';
+import { isPauseReminderShowing, setPauseReminderShowing, clearPauseReminderFlag } from './pauseReminderState';
+// Activity log
+import {
+  logPhaseStarted,
+  logPhaseCompleted,
+  logSessionReset,
+  logScheduleStarted,
+  logScheduleStopped,
+  logFocusLockStarted,
+  logFocusLockEnded,
+  logRestBlockStarted,
+  logRestBlockEnded,
+  pruneActivityLog,
+} from '../core/activityLogService';
 
 /**
  * Get overlay policy for current state
  * Centralized decision engine - all overlay logic goes through here
  */
+
 /**
  * Safely close the overlay AND stop the heartbeat watchdog.
  * Every overlay-close path must use this to prevent the watchdog from
@@ -52,6 +72,8 @@ function safeCloseOverlay(): void {
   }
   closeOverlay();
   sendToAll(IPC_CHANNELS.HIDE_OVERLAY, {});
+  // Clear pause reminder flag when overlay closes
+  clearPauseReminderFlag();
 }
 
 function getOverlayPolicyForState(phase: PhaseType): ReturnType<typeof getOverlayPolicy> {
@@ -117,8 +139,13 @@ function initialize(): void {
     // Don't quit - keep running in tray
   });
 
-  // Clean up on quit
-  app.on('before-quit', () => {
+  // Clean up on quit — but block during focus lockdown
+  app.on('before-quit', (event) => {
+    if (isFocusLockdownActive()) {
+      logger.warn('Main', 'before-quit blocked — focus session is active');
+      event.preventDefault();
+      return;
+    }
     logger.info('Main', 'App quitting - flushing session snapshot');
     const timerEngine = getTimerEngine();
     timerEngine.stop();
@@ -130,6 +157,19 @@ function initialize(): void {
 
   // App ready
   app.whenReady().then(() => {
+    // Grant microphone permission for voice commands (Web Speech API)
+    session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+      if (permission === 'media') {
+        callback(true);
+      } else {
+        callback(false);
+      }
+    });
+    session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+      if (permission === 'media') return true;
+      return false;
+    });
+
     // Initialize default schedules if none exist
     const schedules = configService.getSchedules();
     if (schedules.length === 0) {
@@ -180,7 +220,112 @@ function initialize(): void {
     } else {
       logger.warn('Main', 'Failed to register global shortcut: Super+Shift+B');
     }
+
+    // CRITICAL: Register global EMERGENCY KILL shortcut (Super+Shift+Q)
+    // This works at the OS level regardless of overlay/renderer state.
+    // If the overlay is frozen/crashed/unresponsive, this is the user's escape hatch.
+    const killShortcutRegistered = globalShortcut.register('Super+Shift+Q', () => {
+      logger.warn('Main', '🚨 EMERGENCY KILL shortcut triggered: Super+Shift+Q');
+      // 1. Force-close any overlay (bypasses strict mode, close prevention, everything)
+      safeCloseOverlay();
+      // 2. Pause the timer to prevent overlay from immediately reopening
+      const timerEng = getTimerEngine();
+      if (!timerEng.getState().isPaused) {
+        timerEng.pause();
+      }
+      // 3. Stop any active rest block
+      const restBlock = getRestBlockService();
+      if (restBlock.isActive()) {
+        restBlock.stop();
+      }
+      // 4. Clear water reminder if active
+      if (timerEng.isWaterReminderActive()) {
+        timerEng.dismissWaterReminder();
+      }
+      // 5. Show notification to user that emergency kill succeeded
+      const { Notification } = require('electron');
+      new Notification({
+        title: 'RhythmDesk — Emergency Kill',
+        body: 'Overlay force-closed. Schedule paused. Use Super+Shift+R to reopen the app.',
+      }).show();
+      logger.warn('Main', '🚨 Emergency kill complete — overlay destroyed, timer paused');
+    });
+
+    if (killShortcutRegistered) {
+      logger.info('Main', 'Global shortcut registered: Super+Shift+Q (emergency kill overlay)');
+    } else {
+      logger.warn('Main', 'Failed to register global shortcut: Super+Shift+Q');
+    }
+
+    // Also register Super+Shift+Escape as backup emergency kill
+    // (in case Super+Shift+Q conflicts with another app)
+    const killShortcut2Registered = globalShortcut.register('Super+Shift+Escape', () => {
+      logger.warn('Main', '🚨 EMERGENCY KILL shortcut triggered: Super+Shift+Escape');
+      safeCloseOverlay();
+      const timerEng = getTimerEngine();
+      if (!timerEng.getState().isPaused) {
+        timerEng.pause();
+      }
+      const restBlock = getRestBlockService();
+      if (restBlock.isActive()) {
+        restBlock.stop();
+      }
+      if (timerEng.isWaterReminderActive()) {
+        timerEng.dismissWaterReminder();
+      }
+      const { Notification } = require('electron');
+      new Notification({
+        title: 'RhythmDesk — Emergency Kill',
+        body: 'Overlay force-closed. Schedule paused.',
+      }).show();
+      logger.warn('Main', '🚨 Emergency kill complete (via Super+Shift+Escape)');
+    });
+
+    if (killShortcut2Registered) {
+      logger.info('Main', 'Global shortcut registered: Super+Shift+Escape (emergency kill backup)');
+    } else {
+      logger.warn('Main', 'Failed to register global shortcut: Super+Shift+Escape');
+    }
     
+    // Tell focusLockdown how to re-register our global shortcuts after a session ends.
+    // enterFocusLockdown unregisters Super+Shift+Q/B/R; this callback restores them.
+    setShortcutRestoreCallback(() => {
+      // Re-register only if not already registered (avoids double-registration errors)
+      if (!globalShortcut.isRegistered('Super+Shift+Q')) {
+        globalShortcut.register('Super+Shift+Q', () => {
+          const timerEng = getTimerEngine();
+          safeCloseOverlay();
+          if (!timerEng.getState().isPaused) timerEng.pause();
+          const rb = getRestBlockService();
+          if (rb.isActive()) rb.stop();
+          if (timerEng.isWaterReminderActive()) timerEng.dismissWaterReminder();
+        });
+      }
+      if (!globalShortcut.isRegistered('Super+Shift+B')) {
+        globalShortcut.register('Super+Shift+B', () => {
+          const timerEng = getTimerEngine();
+          const st = timerEng.getState();
+          if (st.currentPhase === 'sit' || st.currentPhase === 'stand') {
+            const sched = timerEng.getCurrentSchedule();
+            timerEng.startAdHocBreak(sched?.shortBreak?.durationMinutes ?? 5);
+          }
+        });
+      }
+      if (!globalShortcut.isRegistered('Super+Shift+R')) {
+        globalShortcut.register('Super+Shift+R', () => showAndFocusMainWindow());
+      }
+      if (!globalShortcut.isRegistered('Super+Shift+Escape')) {
+        globalShortcut.register('Super+Shift+Escape', () => {
+          const timerEng = getTimerEngine();
+          safeCloseOverlay();
+          if (!timerEng.getState().isPaused) timerEng.pause();
+          const rb = getRestBlockService();
+          if (rb.isActive()) rb.stop();
+          if (timerEng.isWaterReminderActive()) timerEng.dismissWaterReminder();
+        });
+      }
+    });
+
     // Start main window health check watchdog
     // This detects zombie states after system suspend/resume
     startMainWindowHealthCheck();
@@ -197,6 +342,12 @@ function initialize(): void {
     const sendOverlayResyncSnapshot = (reason: string): void => {
       const restState = getRestBlockService().getState();
       const tick = timerEngine.getLastEmittedTick() || lastTimerTick;
+      const state = timerEngine.getState();
+
+      // Include pause reminder data if timer is paused and pause reminder is showing
+      const pauseReminder = (state.isPaused && isPauseReminderShowing() && state.pausedAt)
+        ? { pausedForMs: Date.now() - state.pausedAt, pausedAt: state.pausedAt }
+        : null;
 
       sendToOverlay(OVERLAY_SYNC_CHANNELS.RESYNC_DATA, {
         requestedAt: Date.now(),
@@ -204,6 +355,7 @@ function initialize(): void {
         restBlock: restState,
         overlayStateVersion: restState.startedAt ?? Date.now(),
         reason,
+        pauseReminder,
       });
 
       logger.info('Main', 'Overlay state resent', {
@@ -228,12 +380,19 @@ function initialize(): void {
     
     logger.info('Main', 'Watchdogs and health monitor started');
     
+    // Declare overlaySyncService here (before any event handler closures that reference it)
+    // to avoid a Temporal Dead Zone hazard if timerEngine emits events before line 647.
+    const overlaySyncService = getOverlaySyncService();
+
     // Handle timer events
     timerEngine.on('tick', (tick: TimerTick) => {
       lastTimerTick = tick;
       // Report tick to watchdog for stall detection
       timerWatchdog.reportTick(tick.phaseRemainingMs);
       
+      // Check focus session on every tick (1 s) for precise start/end detection
+      getFocusSessionService().check(timerEngine.getCurrentSchedule(), Date.now());
+
       // Send tick to all renderer windows
       sendToAll(IPC_CHANNELS.TIMER_TICK, tick);
       // Update tray
@@ -248,6 +407,17 @@ function initialize(): void {
     timerEngine.on('phaseChange', (data: { prevPhase: PhaseType; newPhase: PhaseType }) => {
       sendToAll(IPC_CHANNELS.PHASE_CHANGE, data);
       
+      // Activity log: log phase completion and new phase start
+      const scheduleName = timerEngine.getState().activeScheduleId ? 
+        (timerEngine as any).currentSchedule?.name : undefined;
+      if (data.prevPhase !== 'idle') {
+        logPhaseCompleted(data.prevPhase, undefined, scheduleName);
+      }
+      if (data.newPhase !== 'idle') {
+        const state = timerEngine.getState();
+        logPhaseStarted(data.newPhase, scheduleName, state.phaseTotalMs);
+      }
+
       // Play appropriate sound for the phase change
       if (data.newPhase === 'short-break' || data.newPhase === 'long-break') {
         playSound('break_start');
@@ -266,6 +436,13 @@ function initialize(): void {
       const isRestBlockActive = restBlockService.isActive();
 
       if (newPolicy.showOverlay) {
+        // CRITICAL: Dismiss water reminder if active before showing a new overlay.
+        // Otherwise its 2-minute auto-dismiss timeout will fire later and close
+        // the break overlay, leaving a blank/frozen screen when health check reopens it.
+        if (timerEngine.isWaterReminderActive()) {
+          timerEngine.dismissWaterReminder();
+        }
+        
         showOverlay(newPolicy.strictMode);
         sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: data.newPhase });
         
@@ -326,6 +503,16 @@ function initialize(): void {
 
     timerEngine.on('scheduleChange', (_schedule: unknown) => {
       sendToAll(IPC_CHANNELS.CONFIG_UPDATED, configService.getConfig());
+      // Activity log: track schedule activation/deactivation
+      const schedule = timerEngine.getCurrentSchedule();
+      if (schedule) {
+        logScheduleStarted(schedule.name);
+      } else {
+        logScheduleStopped();
+      }
+      // If the schedule changed (or was deactivated), re-evaluate focus session immediately.
+      // This handles: schedule deactivated, schedule switched, schedule deleted.
+      getFocusSessionService().check(schedule, Date.now());
     });
 
     // Handle postpone - close overlay when user postpones
@@ -341,22 +528,27 @@ function initialize(): void {
     // Handle session reset
     timerEngine.on('sessionReset', () => {
       playSound('session_reset');
+      logSessionReset((timerEngine as any).currentSchedule?.name);
     });
 
     // Handle pause reminder - show overlay every 5 min when paused
     timerEngine.on('pauseReminder', (data: { pausedForMs: number; pausedAt: number }) => {
       logger.info('Main', 'Showing pause reminder overlay', { pausedForMs: data.pausedForMs });
+      setPauseReminderShowing(true);
       showOverlay(false); // Non-strict, dismissible overlay
-      // Wait for overlay to fully load before sending the event
+      // Send SHOW_PAUSE_REMINDER immediately AND after load to win the race
+      // against the tick resync that would cause the renderer to see isPaused
+      // and render a blank/work overlay instead of the pause reminder.
       const overlay = getOverlayWindow();
       if (overlay && !overlay.isDestroyed()) {
         const webContents = overlay.webContents;
         const sendEvent = () => {
           sendToAll(IPC_CHANNELS.SHOW_PAUSE_REMINDER, data);
         };
-        if (!webContents.isLoading()) {
-          sendEvent();
-        } else {
+        // Send immediately (in case overlay is already loaded)
+        sendEvent();
+        // Also send after load completes (in case overlay was just created)
+        if (webContents.isLoading()) {
           webContents.once('did-finish-load', sendEvent);
         }
       }
@@ -392,7 +584,14 @@ function initialize(): void {
         if (timerEngine.isWaterReminderActive()) {
           logger.warn('Main', 'Water reminder auto-dismissed after 2 minute timeout');
           timerEngine.dismissWaterReminder();
-          safeCloseOverlay();
+          // Only close overlay if no break/transition phase or pause reminder needs it.
+          // This prevents accidentally closing a break overlay that replaced the water one,
+          // or a pause reminder overlay that's coexisting with the water reminder.
+          const currentPhase = timerEngine.getState().currentPhase;
+          const policy = getOverlayPolicyForState(currentPhase);
+          if (!policy.showOverlay && !isPauseReminderShowing()) {
+            safeCloseOverlay();
+          }
         }
       }, 120000);
     });
@@ -431,32 +630,27 @@ function initialize(): void {
     idleDetector.on('idle', () => {
       const state = timerEngine.getState();
       const restBlockActive = getRestBlockService().isActive();
-      // Don't auto-pause during rest blocks (user is on a manual break)
-      if (!state.isPaused && state.currentPhase !== 'idle' && !restBlockActive) {
+      const breakActive = isBreakPhase(state.currentPhase);
+      // Don't auto-pause during breaks or rest blocks (user is intentionally away)
+      if (!state.isPaused && state.currentPhase !== 'idle' && !restBlockActive && !breakActive) {
         logger.info('Main', 'System idle detected - auto-pausing schedule');
         timerEngine.pause();
         idleAutoPaused = true;
+        // Don't show pause overlay immediately — let timerEngine's 5-minute
+        // pause reminder interval handle it. The overlay will appear after
+        // the configured reminder interval (5 min by default).
       }
     });
 
     idleDetector.on('active', () => {
       if (idleAutoPaused) {
-        logger.info('Main', 'System activity resumed - auto-resuming schedule');
-        timerEngine.resume();
+        // DESIGN: Do NOT auto-resume when system becomes active again.
+        // The user should see the pause overlay and choose to resume manually.
+        // This prevents the unwanted transition overlay that appeared when
+        // auto-resume triggered a phase change right after system wake.
+        logger.info('Main', 'System activity detected after idle auto-pause - keeping schedule paused (user must resume manually)');
         idleAutoPaused = false;
-        // After auto-resume, reopen overlay if current phase needs it (e.g. break)
-        const resumedPhase = timerEngine.getState().currentPhase;
-        const policy = getOverlayPolicyForState(resumedPhase);
-        if (policy.showOverlay) {
-          showOverlay(policy.strictMode);
-          sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: resumedPhase });
-        } else {
-          // Close any open overlay (e.g. pause reminder)
-          const overlay = getOverlayWindow();
-          if (overlay && !overlay.isDestroyed()) {
-            safeCloseOverlay();
-          }
-        }
+        // Pause overlay is already showing from idle event — keep it open.
       }
     });
 
@@ -465,6 +659,8 @@ function initialize(): void {
     
     officeFocusLockService.on('started', () => {
       playSound('focus_lock_start');
+      const lockState = officeFocusLockService.getState();
+      logFocusLockStarted(lockState.label, lockState.durationMs);
       // When Office Focus Lock starts, use centralized policy to determine overlay
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
@@ -473,11 +669,12 @@ function initialize(): void {
         showOverlay(policy.strictMode);
         sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: currentPhase });
       }
-      sendToAll(IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, officeFocusLockService.getState());
+      sendToAll(IPC_CHANNELS.OFFICE_FOCUS_LOCK_CHANGED, lockState);
     });
 
     officeFocusLockService.on('stopped', () => {
       playSound('focus_lock_end');
+      logFocusLockEnded();
       // When Office Focus Lock stops, use centralized policy to determine if overlay should close
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
@@ -505,7 +702,6 @@ function initialize(): void {
 
     // Initialize Rest Block service and handle its events
     const restBlockService = getRestBlockService();
-    const overlaySyncService = getOverlaySyncService();
 
     overlaySyncService.on('heartbeat-missed', (missedCount: number) => {
       logger.warn('Main', 'Overlay heartbeat missed during rest block', {
@@ -529,6 +725,7 @@ function initialize(): void {
       logger.info('Main', 'Rest block started - pausing timer and showing overlay');
       const restState = restBlockService.getState();
       logRestBlockStart(restState.name, restState.durationMs, restState.isStrictMode);
+      logRestBlockStarted(restState.name, restState.durationMs);
       
       timerEngine.pause();
       showOverlay(restState.isStrictMode);
@@ -579,6 +776,7 @@ function initialize(): void {
       // When Rest Block stops, resume timer and check if overlay should close
       logger.info('Main', 'Rest block stopped - resuming timer');
       logRestBlockEnd('manual', 'user stopped');
+      logRestBlockEnded('Rest Block', undefined);
       
       timerEngine.resume();
       const currentPhase = timerEngine.getState().currentPhase;
@@ -595,6 +793,7 @@ function initialize(): void {
       // Rest Block timer expired - resume timer and check overlay
       logger.info('Main', 'Rest block expired - resuming timer');
       logRestBlockEnd('expired', 'timer completed');
+      logRestBlockEnded('Rest Block', undefined);
       
       timerEngine.resume();
       const currentPhase = timerEngine.getState().currentPhase;
@@ -606,8 +805,89 @@ function initialize(): void {
       sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restBlockService.getState());
     });
 
+    // Prune old activity log entries on startup
+    const retentionDays = configService.getConfig()?.generalSettings?.logRetentionDays ?? 30;
+    pruneActivityLog(retentionDays);
+
+    // ========================================
+    // FOCUS SESSION: Restore lockdown on startup
+    // If the app was restarted (e.g. after kill-9) while a focus session was
+    // active, immediately re-enter lockdown before the user can interact.
+    // ========================================
+    const focusSessionService = getFocusSessionService();
+    const persistedState = timerEngine.getState();
+    const now = Date.now();
+    if (
+      persistedState.isFocusSessionActive &&
+      persistedState.focusSessionEndsAt !== null &&
+      persistedState.focusSessionEndsAt > now
+    ) {
+      const mainWin = getMainWindow();
+      if (mainWin) {
+        logger.info('Main', 'Restoring focus lockdown from persisted state', {
+          endsAt: new Date(persistedState.focusSessionEndsAt).toISOString(),
+        });
+        enterFocusLockdown(mainWin);
+        // Schedule the auto-exit at the persisted end time
+        const msRemaining = persistedState.focusSessionEndsAt - now;
+        setTimeout(() => {
+          const win = getMainWindow();
+          if (win && isFocusLockdownActive()) {
+            logger.info('Main', 'Focus session time elapsed after restart — releasing lockdown');
+            exitFocusLockdown(win);
+            timerEngine.clearFocusSessionState();
+            sendToAll(IPC_CHANNELS.FOCUS_SESSION_CHANGED, { isActive: false, activeSession: null });
+          }
+        }, msRemaining);
+      }
+    } else if (persistedState.isFocusSessionActive) {
+      timerEngine.clearFocusSessionState();
+    }
+
+    // Wire focus session start/end events
+    focusSessionService.on('started', (session: FocusSession, endsAtMs: number) => {
+      const mainWin = getMainWindow();
+      if (!mainWin) return;
+      enterFocusLockdown(mainWin);
+      timerEngine.setFocusSessionState(session.id, endsAtMs);
+      sendToAll(IPC_CHANNELS.FOCUS_SESSION_CHANGED, {
+        isActive: true,
+        activeSession: session,
+        endsAtMs,
+      });
+      logger.info('Main', 'Focus session lockdown started', { name: session.name });
+    });
+
+    focusSessionService.on('ended', (session: FocusSession) => {
+      const mainWin = getMainWindow();
+      if (mainWin && isFocusLockdownActive()) {
+        exitFocusLockdown(mainWin);
+      }
+      timerEngine.clearFocusSessionState();
+      sendToAll(IPC_CHANNELS.FOCUS_SESSION_CHANGED, {
+        isActive: false,
+        activeSession: null,
+        endedSession: session,
+      });
+      logger.info('Main', 'Focus session lockdown ended', { name: session.name });
+    });
+
+    // Periodic focus session check (every 30 s) — also runs on tick for precision
+    setInterval(() => {
+      const schedule = timerEngine.getCurrentSchedule();
+      focusSessionService.check(schedule, Date.now());
+    }, 30_000);
+
     // Start the timer
     timerEngine.start();
+
+    // Activity log: record the initial state so the log isn't empty on first launch
+    const initialSchedule = timerEngine.getCurrentSchedule();
+    const initialState = timerEngine.getState();
+    if (initialSchedule && initialState.currentPhase !== 'idle') {
+      logScheduleStarted(initialSchedule.name);
+      logPhaseStarted(initialState.currentPhase, initialSchedule.name, initialState.phaseTotalMs);
+    }
     
     // WATCHDOG: Periodically check overlay health during rest blocks
     // This ensures long rest blocks don't get stuck due to overlay issues
@@ -698,11 +978,46 @@ function initialize(): void {
     // Also handle system resume (suspend/hibernate)
     powerMonitor.on('resume', () => {
       logger.info('Main', 'System resumed from suspend - checking overlay');
+      // If the system was suspended while we had an idle auto-pause pending,
+      // clear it so we don't fire a stale auto-resume after a long sleep.
+      if (idleAutoPaused) {
+        logger.info('Main', 'Clearing stale idleAutoPaused flag on system resume');
+        idleAutoPaused = false;
+      }
       // Same recovery logic as unlock, but with longer delay for system wake
       setTimeout(() => {
-        const currentPhase = timerEngine.getState().currentPhase;
+        const state = timerEngine.getState();
+        const currentPhase = state.currentPhase;
         const policy = getOverlayPolicyForState(currentPhase);
         const restBlockActive = getRestBlockService().isActive();
+        
+        // Clear stale pause reminder flag if timer is no longer paused
+        if (!state.isPaused && isPauseReminderShowing()) {
+          logger.info('Main', 'Clearing stale pause reminder flag on system resume (timer not paused)');
+          clearPauseReminderFlag();
+        }
+        
+        // CRITICAL: If timer is paused and we were showing pause reminder, restore it
+        // The overlay policy returns showOverlay=false when paused, but we need to
+        // preserve the pause reminder overlay so user sees "Schedule is Paused" on wake.
+        if (state.isPaused && isPauseReminderShowing()) {
+          logger.info('Main', 'System resume while paused with pause reminder - restoring pause overlay');
+          const pausedAt = state.pausedAt ?? Date.now();
+          showOverlay(false); // Non-strict
+          const overlay = getOverlayWindow();
+          if (overlay && !overlay.isDestroyed()) {
+            const sendPause = () => sendToAll(IPC_CHANNELS.SHOW_PAUSE_REMINDER, { 
+              pausedForMs: Date.now() - pausedAt, 
+              pausedAt 
+            });
+            // Send immediately AND after load to win the race
+            sendPause();
+            if (overlay.webContents.isLoading()) {
+              overlay.webContents.once('did-finish-load', sendPause);
+            }
+          }
+          return; // Don't run normal overlay recovery — pause reminder takes priority
+        }
         
         if (policy.showOverlay || restBlockActive) {
           const overlay = getOverlayWindow();
@@ -769,6 +1084,27 @@ function ensureOverlayIfRequired(): void {
   // Use centralized overlay policy
   const policy = getOverlayPolicyForState(currentPhase);
   
+  // If paused with pause reminder showing but overlay is gone, recreate it
+  if (state.isPaused && isPauseReminderShowing()) {
+    const overlay = getOverlayWindow();
+    if (!overlay || overlay.isDestroyed()) {
+      logger.warn('Main', 'Pause reminder overlay missing - recreating');
+      const pausedAt = state.pausedAt ?? Date.now();
+      showOverlay(false);
+      const newOverlay = getOverlayWindow();
+      if (newOverlay && !newOverlay.isDestroyed()) {
+        const sendPause = () => sendToAll(IPC_CHANNELS.SHOW_PAUSE_REMINDER, { 
+          pausedForMs: Date.now() - pausedAt, pausedAt 
+        });
+        sendPause();
+        if (newOverlay.webContents.isLoading()) {
+          newOverlay.webContents.once('did-finish-load', sendPause);
+        }
+      }
+    }
+    return; // Don't run normal overlay check when pause reminder is active
+  }
+  
   // Check if overlay should be showing (for normal phases or rest blocks)
   if (policy.showOverlay || restBlockActive) {
     const overlay = getOverlayWindow();
@@ -789,6 +1125,23 @@ function ensureOverlayIfRequired(): void {
         logger.error('Main', 'Overlay webContents inaccessible - recreating');
         const strictMode = restBlockActive ? getRestBlockService().getState().isStrictMode : policy.strictMode;
         recoverOverlayIfNeeded(strictMode, true);
+      }
+    }
+  } else {
+    // CRITICAL FIX: Overlay should NOT be showing — close any stale/orphan overlay.
+    // This prevents blank frozen overlays after system suspend/resume, Chromium crashes,
+    // or race conditions where the overlay was opened but never properly closed.
+    const overlay = getOverlayWindow();
+    if (overlay && !overlay.isDestroyed()) {
+      const waterActive = timerEngine.isWaterReminderActive();
+      // Only close if no water reminder is active (water reminder uses non-strict overlay)
+      if (!waterActive && !isPauseReminderShowing()) {
+        logger.warn('Main', 'Stale overlay detected - closing (no policy requires it)', {
+          phase: currentPhase,
+          isPaused: state.isPaused,
+          restBlockActive,
+        });
+        safeCloseOverlay();
       }
     }
   }

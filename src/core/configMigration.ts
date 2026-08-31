@@ -398,5 +398,8 @@ export function migrateSessionState(state: unknown): SessionState {
     prePostponeWorkPhase: s.prePostponeWorkPhase ?? null,
     prePostponeWorkPhaseRemainingMs: s.prePostponeWorkPhaseRemainingMs ?? 0,
     prePostponeFlowIndex: s.prePostponeFlowIndex,
+    isFocusSessionActive: s.isFocusSessionActive ?? false,
+    activeFocusSessionId: s.activeFocusSessionId ?? null,
+    focusSessionEndsAt: s.focusSessionEndsAt ?? null,
   };
 }

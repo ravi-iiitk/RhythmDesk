@@ -11,18 +11,26 @@ export const KEYBOARD_SHORTCUTS = {
   global: [
     { keys: 'Super+Shift+R', action: 'Bring app to front (maximize & focus)', context: 'System-wide' },
     { keys: 'Super+Shift+B', action: 'Take ad-hoc break (short break from schedule)', context: 'System-wide' },
+    { keys: 'Super+Shift+Q', action: '🚨 Emergency kill — force-close overlay & pause timer', context: 'System-wide' },
+    { keys: 'Super+Shift+Escape', action: '🚨 Emergency kill (backup) — same as Super+Shift+Q', context: 'System-wide' },
   ],
   dashboard: [
-    { keys: 'Space', action: 'Pause / Resume schedule', context: 'Dashboard' },
+    { keys: 'Shift+Space', action: 'Pause / Resume schedule', context: 'Dashboard' },
     { keys: 'S', action: 'Skip current phase', context: 'Dashboard' },
     { keys: 'R', action: 'Reset session', context: 'Dashboard' },
     { keys: 'N', action: 'Start next activity (when waiting)', context: 'Dashboard' },
     { keys: 'E', action: 'Extend current work phase (sit/stand)', context: 'Dashboard' },
     { keys: 'P', action: 'Prepone/reduce current work phase (sit/stand)', context: 'Dashboard' },
     { keys: 'B', action: 'Toggle ad-hoc break options (short, long, custom)', context: 'Dashboard' },
+    { keys: 'H', action: 'Shuffle flow order', context: 'Dashboard' },
+    { keys: 'J', action: 'Reverse flow order', context: 'Dashboard' },
+    { keys: 'A', action: 'Restart current activity', context: 'Dashboard' },
+    { keys: 'C', action: 'Reset today\'s counters', context: 'Dashboard' },
+    { keys: 'F', action: 'Toggle Office Focus Lock options', context: 'Dashboard' },
+    { keys: 'V (hold)', action: 'Push-to-talk voice command', context: 'Dashboard' },
   ],
   overlay: [
-    { keys: 'Space', action: 'Pause / Resume schedule', context: 'Overlay' },
+    { keys: 'Shift+Space', action: 'Pause / Resume schedule', context: 'Overlay' },
     { keys: 'Enter', action: 'Complete / Done (mark phase complete)', context: 'Overlay' },
     { keys: 'S', action: 'Skip current break/transition', context: 'Overlay' },
     { keys: 'E', action: 'Extend break (+X minutes, breaks only)', context: 'Overlay' },
@@ -34,8 +42,9 @@ export const KEYBOARD_SHORTCUTS = {
   navigation: [
     { keys: 'Alt+1', action: 'Go to Dashboard', context: 'App' },
     { keys: 'Alt+2', action: 'Go to Schedules', context: 'App' },
-    { keys: 'Alt+3', action: 'Go to Settings', context: 'App' },
-    { keys: 'Alt+4', action: 'Go to Help', context: 'App' },
+    { keys: 'Alt+3', action: 'Go to Activity Log', context: 'App' },
+    { keys: 'Alt+4', action: 'Go to Settings', context: 'App' },
+    { keys: 'Alt+5', action: 'Go to Help', context: 'App' },
     { keys: '?', action: 'Open Help page', context: 'App' },
   ],
 };
@@ -74,8 +83,9 @@ function HelpPage() {
         switch (e.key) {
           case '1': navigate('/'); break;
           case '2': navigate('/schedules'); break;
-          case '3': navigate('/settings'); break;
-          case '4': navigate('/help'); break;
+          case '3': navigate('/log'); break;
+          case '4': navigate('/settings'); break;
+          case '5': navigate('/help'); break;
         }
       }
       if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -144,7 +154,7 @@ function HelpPage() {
 
         <h4 style={{ color: '#22c55e', marginBottom: '0.5rem' }}>Quick Actions</h4>
         <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
-          <li><strong>Pause/Resume</strong> - Temporarily stop the timer (keyboard: <code style={codeStyle}>Space</code>)</li>
+          <li><strong>Pause/Resume</strong> - Temporarily stop the timer (keyboard: <code style={codeStyle}>Shift+Space</code>)</li>
           <li><strong>Skip</strong> - Skip the current phase (keyboard: <code style={codeStyle}>S</code>)</li>
           <li><strong>Reset Session</strong> - Start the schedule from the beginning (keyboard: <code style={codeStyle}>R</code>)</li>
           <li><strong>Reset Today's Counters</strong> - Reset daily break/skip counters</li>
@@ -195,6 +205,13 @@ function HelpPage() {
           <li><strong>Long Break</strong> - Extended rest (e.g., 15 minutes every 2 hours of work)</li>
           <li><strong>Break Duration</strong> - How long each break lasts</li>
           <li><strong>Break Interval</strong> - How often breaks occur (based on work time)</li>
+          <li>
+            <strong>Minimum Gap Between Breaks</strong> - Prevents two breaks firing back-to-back
+            (e.g. a long break right after a short break in Flow Mode). If a long break is due but a
+            short break just happened within this gap, the long break is deferred. If the flow reaches
+            a short break step but a long break just happened within this gap, that short break is
+            skipped. Set to 0 to disable.
+          </li>
         </ul>
 
         <h4 style={{ color: '#f59e0b', marginBottom: '0.5rem' }}>Schedule Modes</h4>
@@ -445,6 +462,40 @@ function HelpPage() {
         </ul>
       </Section>
 
+      {/* ==================== ACTIVITY LOG ==================== */}
+      <Section title="Activity Log" icon="📜">
+        <p style={{ marginBottom: '1rem' }}>
+          The Activity Log records all user-facing events and state changes, giving you
+          a timeline of your daily RhythmDesk usage.
+        </p>
+
+        <h4 style={{ color: '#8b5cf6', marginBottom: '0.5rem' }}>What Gets Logged</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><strong>Schedule Started / Stopped</strong> - When your schedule activates or deactivates</li>
+          <li><strong>Phase Changes</strong> - Sit, Stand, Short Break, Long Break, Transitions</li>
+          <li><strong>Session Paused / Resumed</strong> - Manual pauses and resumes</li>
+          <li><strong>Breaks Skipped / Postponed</strong> - When you skip or delay a break</li>
+          <li><strong>Flow Changes</strong> - Shuffle, reverse, or custom flow order applied</li>
+          <li><strong>Focus Lock</strong> - Office Focus Lock started/ended</li>
+          <li><strong>Rest Blocks</strong> - Rest block started/stopped/expired</li>
+        </ul>
+
+        <h4 style={{ color: '#8b5cf6', marginBottom: '0.5rem' }}>Features</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><strong>Filter by Type</strong> - Filter entries by category (phases, breaks, schedule, etc.)</li>
+          <li><strong>Date Grouping</strong> - Entries grouped by day for easy reading</li>
+          <li><strong>Expandable Details</strong> - Click any entry to see metadata (phase, duration, etc.)</li>
+          <li><strong>Refresh</strong> - Reload log entries from storage</li>
+          <li><strong>Clear Log</strong> - Delete all log entries</li>
+        </ul>
+
+        <h4 style={{ color: '#8b5cf6', marginBottom: '0.5rem' }}>Log Retention</h4>
+        <p>
+          By default, log entries older than 30 days are automatically pruned on app startup.
+          You can configure the retention period in Settings → Activity Log Retention (7 days to 1 year).
+        </p>
+      </Section>
+
       {/* ==================== WATER REMINDER ==================== */}
       <Section title="Water Reminder" icon="💧">
         <p style={{ marginBottom: '1rem' }}>
@@ -509,6 +560,20 @@ function HelpPage() {
         <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
           <li><strong>Enable</strong> - Turn on/off water reminders</li>
           <li><strong>Interval</strong> - How often to remind (5-60 minutes)</li>
+        </ul>
+
+        <h4 style={{ color: '#8b5cf6', marginBottom: '0.5rem' }}>Voice Commands</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><strong>Voice Mode</strong> - Off (disabled), Local (free, offline whisper.cpp), or Cloud (OpenAI Whisper API)</li>
+          <li><strong>OpenAI API Key</strong> - Only needed for Cloud mode. Get from platform.openai.com/api-keys</li>
+          <li><strong>Local Model</strong> - Uses ggml-base.en.bin (~142MB) stored in resources/models/</li>
+        </ul>
+
+        <h4 style={{ color: '#8b5cf6', marginBottom: '0.5rem' }}>Activity Log Retention</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><strong>Retention Period</strong> - How long to keep activity log entries (7 days to 1 year)</li>
+          <li>Old entries are automatically pruned on app startup</li>
+          <li>Default: 30 days</li>
         </ul>
 
         <h4 style={{ color: '#8b5cf6', marginBottom: '0.5rem' }}>Developer Options</h4>
@@ -581,6 +646,79 @@ function HelpPage() {
         </table>
       </Section>
 
+      {/* ==================== VOICE COMMANDS ==================== */}
+      <Section title="Voice Commands" icon="🎙️" defaultOpen={true}>
+        <p style={{ marginBottom: '1rem', opacity: 0.9 }}>
+          Control RhythmDesk with natural language voice commands. Hold <code style={codeStyle}>V</code> on Dashboard, speak your command, then release.
+        </p>
+        
+        <div style={{ padding: '0.75rem', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderRadius: '6px', marginBottom: '1rem', borderLeft: '3px solid #3b82f6' }}>
+          <strong>Setup:</strong> Go to Settings → Voice Commands and choose a mode:<br/>
+          • <strong>💻 Local</strong> — Free, offline, uses whisper.cpp (base model, ~142MB). No API key needed.<br/>
+          • <strong>☁️ Cloud</strong> — Best accuracy, uses OpenAI Whisper API (~$0.006/min). Requires API key.
+        </div>
+
+        <h4 style={{ color: '#22c55e', marginBottom: '0.5rem' }}>🎯 Breaks & Rest</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><code style={codeStyle}>"break"</code> / <code style={codeStyle}>"take a break"</code> — Ad-hoc break (uses schedule duration)</li>
+          <li><code style={codeStyle}>"break for 7 minutes"</code> / <code style={codeStyle}>"take 10"</code> — Custom duration break</li>
+          <li><code style={codeStyle}>"bio break"</code> / <code style={codeStyle}>"bathroom"</code> — 2-minute rest block</li>
+          <li><code style={codeStyle}>"lunch break"</code> / <code style={codeStyle}>"dinner"</code> / <code style={codeStyle}>"quick rest"</code> — Named rest block</li>
+          <li><code style={codeStyle}>"stop break"</code> / <code style={codeStyle}>"end rest"</code> — End current break/rest</li>
+          <li><code style={codeStyle}>"break now"</code> / <code style={codeStyle}>"take the pending break"</code> — Take pending break immediately</li>
+          <li><code style={codeStyle}>"postpone"</code> / <code style={codeStyle}>"delay by 10"</code> — Postpone pending break (default 5 min)</li>
+        </ul>
+
+        <h4 style={{ color: '#3b82f6', marginBottom: '0.5rem' }}>⏯️ Timer Control</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><code style={codeStyle}>"pause"</code> / <code style={codeStyle}>"hold"</code> — Pause timer indefinitely</li>
+          <li><code style={codeStyle}>"pause for 10 minutes"</code> — Pause for specific duration (auto-resumes)</li>
+          <li><code style={codeStyle}>"resume"</code> / <code style={codeStyle}>"continue"</code> — Resume the timer</li>
+          <li><code style={codeStyle}>"skip"</code> / <code style={codeStyle}>"move on"</code> — Skip to next phase</li>
+          <li><code style={codeStyle}>"done"</code> / <code style={codeStyle}>"complete"</code> / <code style={codeStyle}>"finished"</code> — Mark current phase complete</li>
+          <li><code style={codeStyle}>"start next"</code> / <code style={codeStyle}>"next activity"</code> — Start next (when waiting)</li>
+          <li><code style={codeStyle}>"restart"</code> / <code style={codeStyle}>"redo"</code> — Restart current activity</li>
+          <li><code style={codeStyle}>"reset"</code> / <code style={codeStyle}>"start over"</code> — Reset entire session</li>
+          <li><code style={codeStyle}>"reset counters"</code> / <code style={codeStyle}>"clear stats"</code> — Reset today's counters</li>
+        </ul>
+
+        <h4 style={{ color: '#f59e0b', marginBottom: '0.5rem' }}>⏱️ Time Adjustment</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><code style={codeStyle}>"extend by 5"</code> / <code style={codeStyle}>"add 5 minutes"</code> — Add time to current phase</li>
+          <li><code style={codeStyle}>"reduce by 2"</code> / <code style={codeStyle}>"shorten"</code> — Reduce time from current phase</li>
+          <li><code style={codeStyle}>"reset duration"</code> / <code style={codeStyle}>"undo extend"</code> — Revert to original configured duration</li>
+        </ul>
+
+        <h4 style={{ color: '#a855f7', marginBottom: '0.5rem' }}>🔀 Flow Control</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><code style={codeStyle}>"shuffle"</code> / <code style={codeStyle}>"randomize"</code> — Randomize flow order</li>
+          <li><code style={codeStyle}>"reverse"</code> / <code style={codeStyle}>"flip"</code> — Reverse flow order</li>
+        </ul>
+
+        <h4 style={{ color: '#f97316', marginBottom: '0.5rem' }}>🔒 Focus Mode</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><code style={codeStyle}>"start focus"</code> / <code style={codeStyle}>"deep work"</code> / <code style={codeStyle}>"focus mode"</code> — Start focus lock (default 60 min)</li>
+          <li><code style={codeStyle}>"start focus for 30 minutes"</code> — Focus lock with custom duration</li>
+          <li><code style={codeStyle}>"stop focus"</code> / <code style={codeStyle}>"end focus"</code> — Stop focus lock</li>
+        </ul>
+
+        <h4 style={{ color: '#0ea5e9', marginBottom: '0.5rem' }}>❓ Queries</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><code style={codeStyle}>"how much time left"</code> / <code style={codeStyle}>"time remaining"</code> — Query remaining time</li>
+          <li><code style={codeStyle}>"status"</code> / <code style={codeStyle}>"what phase"</code> / <code style={codeStyle}>"what's happening"</code> — Query current status</li>
+        </ul>
+
+        <h4 style={{ color: '#64748b', marginBottom: '0.5rem' }}>🖥️ App Control</h4>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><code style={codeStyle}>"open settings"</code> / <code style={codeStyle}>"go to settings"</code> — Navigate to Settings</li>
+          <li><code style={codeStyle}>"minimize"</code> / <code style={codeStyle}>"hide"</code> — Minimize to system tray</li>
+        </ul>
+
+        <div style={{ padding: '0.75rem', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderRadius: '6px', borderLeft: '3px solid #22c55e' }}>
+          <strong>💡 Tip:</strong> Speak naturally! Say "I need a 10 minute break", "pause for five minutes", or "start deep work for an hour" — the parser understands many variations.
+        </div>
+      </Section>
+
       {/* ==================== TIPS & BEST PRACTICES ==================== */}
       <Section title="Tips & Best Practices" icon="💡">
         <h4 style={{ color: '#fbbf24', marginBottom: '0.5rem' }}>Getting the Most Out of RhythmDesk</h4>
@@ -644,10 +782,36 @@ function HelpPage() {
         </ul>
 
         <p><strong>Timer seems stuck:</strong></p>
-        <ul style={{ marginLeft: '1.5rem' }}>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
           <li>Check if schedule is paused (Dashboard will show "Paused")</li>
           <li>Check if "Waiting for Next Activity" is shown (click Start Next)</li>
           <li>Try Reset Session to restart from beginning</li>
+        </ul>
+
+        <p><strong>🚨 Overlay frozen / blank screen / can't access desktop:</strong></p>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li><strong>Press <code style={codeStyle}>Win+Shift+Q</code></strong> — Emergency kill shortcut (works system-wide)</li>
+          <li><strong>Press <code style={codeStyle}>Win+Shift+Escape</code></strong> — Backup emergency kill</li>
+          <li>These shortcuts force-close the overlay, pause the timer, and show a notification</li>
+          <li>If neither works (very rare): switch to a TTY with <code style={codeStyle}>Ctrl+Alt+F2</code>, then run <code style={codeStyle}>pkill -f electron</code></li>
+          <li>After recovery, use <code style={codeStyle}>Win+Shift+R</code> to bring the app window back</li>
+        </ul>
+
+        <p><strong>Voice commands not working:</strong></p>
+        <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
+          <li>Check Settings → Voice Commands is set to Local or Cloud (not Off)</li>
+          <li>For Local: ensure resources/models/ggml-base.en.bin exists (~142MB file)</li>
+          <li>For Cloud: verify your OpenAI API key is correct and has credits</li>
+          <li>Hold V for at least 1 second — speak clearly — then release</li>
+          <li>Voice only works on Dashboard page, not other pages</li>
+        </ul>
+
+        <p><strong>Voice commands not understanding me:</strong></p>
+        <ul style={{ marginLeft: '1.5rem' }}>
+          <li>Use simple commands: "break", "pause", "resume", "skip"</li>
+          <li>Speak clearly and in English</li>
+          <li>If Local mode is inaccurate, try Cloud mode for better recognition</li>
+          <li>Check Help → Voice Commands for full list of supported phrases</li>
         </ul>
       </Section>
 

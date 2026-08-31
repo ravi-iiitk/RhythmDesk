@@ -68,6 +68,13 @@ export function formatDurationHuman(ms: number): string {
   const totalMinutes = Math.floor(ms / 60000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
+
+  // Sub-minute durations (e.g. a 30-second transition) would otherwise floor to
+  // "0 min", which reads as "no time at all" instead of the actual short duration.
+  if (hours === 0 && minutes === 0) {
+    const seconds = Math.max(0, Math.round(ms / 1000));
+    return `${seconds} sec`;
+  }
   
   if (hours > 0 && minutes > 0) {
     return `${hours} hr ${minutes} min`;

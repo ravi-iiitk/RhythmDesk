@@ -8,6 +8,9 @@ import { useNavigate } from 'react-router-dom';
 import { TimerTick, OFFICE_FOCUS_LOCK_DURATIONS, PhaseType, ConfiguredDurations, DEFAULT_REST_BLOCK_PRESETS, Schedule } from '../../shared/types';
 import { PHASE_DISPLAY_NAMES, PHASE_COLORS } from '../../shared/constants';
 import { formatDurationHuman, formatDuration } from '../../shared/timeUtils';
+import { useVoiceCommand } from '../hooks/useVoiceCommand';
+import { VoiceIntent } from '../utils/voiceIntentParser';
+import { VoiceCommandIndicator } from '../components/VoiceCommandIndicator';
 
 interface DashboardPageProps {
   tick: TimerTick | null;
@@ -66,6 +69,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const [preponeOptions, setPreponeOptions] = useState<number[]>([1, 2, 5]);
   const [showBreakOptions, setShowBreakOptions] = useState(false);
   const [breakDurationInput, setBreakDurationInput] = useState<string>('');
+  const [voiceMode, setVoiceMode] = useState<'off' | 'local' | 'cloud'>('off');
 
   // Fetch extend/prepone options from settings
   useEffect(() => {
@@ -75,6 +79,9 @@ function DashboardPage({ tick }: DashboardPageProps) {
       }
       if (config?.generalSettings?.preponeOptions && config.generalSettings.preponeOptions.length > 0) {
         setPreponeOptions(config.generalSettings.preponeOptions);
+      }
+      if (config?.generalSettings?.voiceMode) {
+        setVoiceMode(config.generalSettings.voiceMode);
       }
     });
   }, []);
@@ -91,8 +98,9 @@ function DashboardPage({ tick }: DashboardPageProps) {
       switch (e.key) {
         case '1': navigate('/'); return;
         case '2': navigate('/schedules'); return;
-        case '3': navigate('/settings'); return;
-        case '4': navigate('/help'); return;
+        case '3': navigate('/log'); return;
+        case '4': navigate('/settings'); return;
+        case '5': navigate('/help'); return;
       }
     }
 
@@ -106,7 +114,8 @@ function DashboardPage({ tick }: DashboardPageProps) {
     if (!tick || tick.currentPhase === 'idle') return;
 
     switch (e.key.toLowerCase()) {
-      case ' ': // Space - pause/resume
+      case ' ': // Shift+Space - pause/resume (requires Shift to avoid accidental pause while typing)
+        if (!e.shiftKey) break;
         e.preventDefault();
         if (tick.isPaused) {
           window.rhythmDesk.resume();
@@ -156,6 +165,31 @@ function DashboardPage({ tick }: DashboardPageProps) {
               return !prev;
             });
           }
+        }
+        break;
+      case 'h': // H - shuffle flow
+        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+          window.rhythmDesk.shuffleFlow();
+        }
+        break;
+      case 'j': // J - reverse flow
+        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+          window.rhythmDesk.reverseFlow();
+        }
+        break;
+      case 'a': // A - restart current activity
+        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+          window.rhythmDesk.restartCurrentActivity();
+        }
+        break;
+      case 'c': // C - reset today counters
+        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+          window.rhythmDesk.resetTodayCounters();
+        }
+        break;
+      case 'f': // F - toggle Office Focus Lock options
+        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+          setShowLockOptions(prev => !prev);
         }
         break;
     }
@@ -250,6 +284,189 @@ function DashboardPage({ tick }: DashboardPageProps) {
       alert(`Cannot reduce by ${minutes} min — not enough time remaining (need at least ${minutes} min + 30s safety margin).`);
     }
   };
+
+  // Voice command intent handler - executes actions and returns conversational feedback
+  const handleVoiceIntent = useCallback(async (intent: VoiceIntent): Promise<string> => {
+    switch (intent.action) {
+      case 'pause':
+        await window.rhythmDesk.pause();
+        return 'Okay, pausing the timer.';
+
+      case 'resume':
+        await window.rhythmDesk.resume();
+        return 'Alright, resuming your session.';
+
+      case 'skip':
+        await window.rhythmDesk.skipPhase();
+        return 'Skipping to the next phase.';
+
+      case 'startAdHocBreak': {
+        const mins = intent.duration || (tick?.configuredDurations?.shortBreakDurationMinutes || 5);
+        await window.rhythmDesk.startAdHocBreak(mins);
+        return `Starting a ${mins} minute break. Enjoy!`;
+      }
+
+      case 'extend': {
+        const mins = intent.duration || extendOptions[0] || 2;
+        await window.rhythmDesk.extendBreak(mins);
+        return `Extended by ${mins} minutes. You've got more time.`;
+      }
+
+      case 'reduce': {
+        const mins = intent.duration || preponeOptions[0] || 1;
+        const success = await window.rhythmDesk.preponePhase(mins);
+        if (success) {
+          return `Reduced by ${mins} minutes. Wrapping up sooner.`;
+        }
+        return `Can't reduce by ${mins} minutes — not enough time left.`;
+      }
+
+      case 'reset':
+        await window.rhythmDesk.resetSession();
+        return 'Session reset. Starting fresh.';
+
+      case 'restart':
+        await window.rhythmDesk.restartCurrentActivity();
+        return 'Restarting the current activity.';
+
+      case 'shuffle':
+        await window.rhythmDesk.shuffleFlow();
+        return 'Flow shuffled. New order coming up.';
+
+      case 'reverse':
+        await window.rhythmDesk.reverseFlow();
+        return 'Flow reversed.';
+
+      case 'stopBreak':
+        await window.rhythmDesk.stopRestBlock();
+        return 'Break stopped. Back to work.';
+
+      case 'startRestBlock': {
+        const name = intent.restBlockName || 'Quick Rest';
+        const mins = intent.duration || 15;
+        await window.rhythmDesk.startRestBlock(name, mins, false);
+        return `Starting ${name} for ${mins} minutes. Take it easy.`;
+      }
+
+      case 'queryTimeLeft': {
+        if (!tick) return "No active session right now.";
+        const remaining = Math.ceil(tick.phaseRemainingMs / 60000);
+        const phase = tick.currentPhase === 'sit' ? 'sitting' :
+                      tick.currentPhase === 'stand' ? 'standing' :
+                      tick.currentPhase === 'short-break' ? 'short break' :
+                      tick.currentPhase === 'long-break' ? 'long break' :
+                      tick.currentPhase;
+        if (remaining <= 1) {
+          return `Less than a minute left in your ${phase} phase.`;
+        }
+        return `You have about ${remaining} minutes left in your ${phase} phase.`;
+      }
+
+      case 'queryStatus': {
+        if (!tick) return "No active session right now.";
+        const phase = PHASE_DISPLAY_NAMES[tick.currentPhase] || tick.currentPhase;
+        const remaining = Math.ceil(tick.phaseRemainingMs / 60000);
+        const pauseInfo = tick.isPaused ? ' The timer is paused.' : '';
+        return `Currently in ${phase} with ${remaining} minutes remaining.${pauseInfo}`;
+      }
+
+      case 'resetCounters':
+        await window.rhythmDesk.resetTodayCounters();
+        return "Today's counters have been reset.";
+
+      case 'resetPhaseDuration': {
+        const success = await window.rhythmDesk.resetPhaseDuration();
+        return success
+          ? 'Duration reset to the original configured time.'
+          : "Can't reset — no modification to undo.";
+      }
+
+      case 'completePhase':
+        await window.rhythmDesk.completePhase();
+        return 'Phase marked as complete. Moving on.';
+
+      case 'startNextActivity': {
+        if (!tick?.isWaitingForNextActivity) {
+          return "Not waiting for next activity right now.";
+        }
+        await window.rhythmDesk.startNextActivity();
+        return 'Starting the next activity.';
+      }
+
+      case 'triggerPendingBreak': {
+        const success = await window.rhythmDesk.triggerPendingBreakNow();
+        return success
+          ? 'Taking the pending break now.'
+          : 'No pending break to take right now.';
+      }
+
+      case 'postpone': {
+        const mins = intent.duration || 5;
+        const success = await window.rhythmDesk.postpone(mins);
+        return success
+          ? `Break postponed by ${mins} minutes.`
+          : "Can't postpone right now — limit reached or no break pending.";
+      }
+
+      case 'pauseForDuration': {
+        const mins = intent.duration || 10;
+        await window.rhythmDesk.pauseForDuration(mins);
+        return `Pausing for ${mins} minutes. Will resume automatically.`;
+      }
+
+      case 'startFocusMode': {
+        const mins = intent.duration || 60;
+        await window.rhythmDesk.startOfficeFocusLock('Focus Session', mins, false);
+        return `Starting Focus Mode for ${mins} minutes. Stay focused!`;
+      }
+
+      case 'stopFocusMode':
+        await window.rhythmDesk.stopOfficeFocusLock();
+        return 'Focus Mode stopped.';
+
+      case 'openSettings':
+        navigate('/settings');
+        return 'Opening settings.';
+
+      case 'minimize':
+        await window.rhythmDesk.minimizeToTray();
+        return 'Minimizing to tray.';
+
+      default:
+        return "Sorry, I didn't catch that. Try saying something like 'take a 5 minute break' or 'pause'.";
+    }
+  }, [tick, extendOptions, preponeOptions, navigate]);
+
+  const { state: voiceState, available: voiceAvailable, startListening, stopListening } = useVoiceCommand({
+    onIntent: handleVoiceIntent,
+    enabled: voiceMode !== 'off',
+    voiceMode,
+  });
+
+  // V key: push-to-talk (keydown = start, keyup = stop)
+  useEffect(() => {
+    const handleVoiceKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'v' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.repeat) {
+        // Don't activate voice if break options panel is capturing digits
+        if (!showBreakOptions) {
+          e.preventDefault();
+          startListening();
+        }
+      }
+    };
+    const handleVoiceKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'v') {
+        stopListening();
+      }
+    };
+    window.addEventListener('keydown', handleVoiceKeyDown);
+    window.addEventListener('keyup', handleVoiceKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleVoiceKeyDown);
+      window.removeEventListener('keyup', handleVoiceKeyUp);
+    };
+  }, [startListening, stopListening, showBreakOptions]);
 
   if (!tick || tick.currentPhase === 'idle') {
     // Show rest block UI even when no schedule is active
@@ -630,22 +847,39 @@ function DashboardPage({ tick }: DashboardPageProps) {
             <span style={{ fontSize: '1.25rem' }}>⚠️</span>
             <div>
               <div style={{ fontWeight: 600, color: '#fb923c' }}>Schedule flow updated</div>
-              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Reset session to apply the new flow order</div>
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Apply the new order — keep breaks or start fresh</div>
             </div>
           </div>
-          <button 
-            className="btn" 
-            onClick={handleResetSession}
-            style={{ 
-              padding: '0.5rem 1rem', 
-              backgroundColor: 'rgba(251, 146, 60, 0.2)', 
-              color: '#fb923c', 
-              border: '1px solid rgba(251, 146, 60, 0.4)',
-              fontWeight: 600
-            }}
-          >
-            Reset Now
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button 
+              className="btn" 
+              onClick={() => window.rhythmDesk.applyFlowOrder()}
+              title="Apply new flow order without resetting break timers"
+              style={{ 
+                padding: '0.5rem 1rem', 
+                backgroundColor: 'rgba(34, 197, 94, 0.15)', 
+                color: '#22c55e', 
+                border: '1px solid rgba(34, 197, 94, 0.4)',
+                fontWeight: 600
+              }}
+            >
+              Apply Order
+            </button>
+            <button 
+              className="btn" 
+              onClick={handleResetSession}
+              title="Full reset — new order + reset all break timers"
+              style={{ 
+                padding: '0.5rem 1rem', 
+                backgroundColor: 'rgba(251, 146, 60, 0.2)', 
+                color: '#fb923c', 
+                border: '1px solid rgba(251, 146, 60, 0.4)',
+                fontWeight: 600
+              }}
+            >
+              Full Reset
+            </button>
+          </div>
         </div>
       )}
 
@@ -810,31 +1044,36 @@ function DashboardPage({ tick }: DashboardPageProps) {
             )}
 
             {/* Separator between Extend and Reduce */}
-            {(tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && 
-              preponeOptions.some(m => tick.phaseRemainingMs > (m * 60000) + 30000) && (
+            {(tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && (
               <span style={{ color: '#475569', margin: '0 0.5rem', fontSize: '1.1rem' }}>|</span>
             )}
 
-            {/* Reduce buttons - inline, only for work phases with enough remaining time */}
-            {(tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && 
-              preponeOptions.some(m => tick.phaseRemainingMs > (m * 60000) + 30000) && (
+            {/* Reduce buttons - inline, for work phases; individual buttons disabled when not enough time */}
+            {(tick.currentPhase === 'sit' || tick.currentPhase === 'stand') && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'nowrap' }}>
                 <span style={{ color: '#e2e8f0', fontSize: '0.85rem', fontWeight: 600 }}>Reduce:</span>
-                {preponeOptions.filter(m => tick.phaseRemainingMs > (m * 60000) + 30000).map((minutes) => (
-                  <button 
-                    key={minutes}
-                    className="btn btn-secondary" 
-                    onClick={() => handlePreponePhase(minutes)}
-                    title={`Reduce current ${tick.currentPhase} phase by ${minutes} minutes`}
-                    style={{
-                      backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                      borderColor: 'rgba(239, 68, 68, 0.3)',
-                      color: '#ef4444',
-                    }}
-                  >
-                    -{minutes}
-                  </button>
-                ))}
+                {preponeOptions.map((minutes) => {
+                  const canReduce = tick.phaseRemainingMs > (minutes * 60000) + 30000;
+                  return (
+                    <button 
+                      key={minutes}
+                      className="btn btn-secondary" 
+                      onClick={() => handlePreponePhase(minutes)}
+                      disabled={!canReduce}
+                      title={canReduce 
+                        ? `Reduce current ${tick.currentPhase} phase by ${minutes} minutes`
+                        : `Not enough time remaining to reduce by ${minutes} minutes`}
+                      style={{
+                        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                        borderColor: 'rgba(239, 68, 68, 0.3)',
+                        color: '#ef4444',
+                        ...(canReduce ? {} : { opacity: 0.4, cursor: 'not-allowed' }),
+                      }}
+                    >
+                      -{minutes}
+                    </button>
+                  );
+                })}
               </span>
             )}
 
@@ -1266,6 +1505,9 @@ function DashboardPage({ tick }: DashboardPageProps) {
           </div>
         </div>
       )}
+
+      {/* Voice Command Indicator */}
+      <VoiceCommandIndicator state={voiceState} available={voiceAvailable} />
     </div>
   );
 }

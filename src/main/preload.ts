@@ -28,6 +28,7 @@ export interface RhythmDeskAPI {
   resetTodayCounters: () => Promise<void>;
   shuffleFlow: () => Promise<void>;
   reverseFlow: () => Promise<void>;
+  applyFlowOrder: () => Promise<void>;
   triggerPendingBreakNow: () => Promise<boolean>;
   startNextActivity: () => Promise<boolean>;
   restartCurrentActivity: () => Promise<boolean>;
@@ -58,6 +59,14 @@ export interface RhythmDeskAPI {
   // Sound management
   getAvailableSounds: () => Promise<string[]>;
   playTestSound: (filename: string, volume: number) => Promise<void>;
+  
+  // Voice commands
+  voiceTranscribe: (audioBuffer: ArrayBuffer) => Promise<{ success: boolean; text: string; error: string | null }>;
+  voiceTranscribeLocal: (audioBuffer: ArrayBuffer) => Promise<{ success: boolean; text: string; error: string | null }>;
+  
+  // Activity Log
+  getActivityLog: (fromTimestamp?: number, toTimestamp?: number) => Promise<any[]>;
+  clearActivityLog: () => Promise<void>;
   
   // Dev mode only
   devClearAllData: () => Promise<{ success: boolean; message: string }>;
@@ -110,6 +119,7 @@ const api: RhythmDeskAPI = {
   resetTodayCounters: () => ipcRenderer.invoke(IPC_CHANNELS.RESET_TODAY_COUNTERS),
   shuffleFlow: () => ipcRenderer.invoke(IPC_CHANNELS.SHUFFLE_FLOW),
   reverseFlow: () => ipcRenderer.invoke(IPC_CHANNELS.REVERSE_FLOW),
+  applyFlowOrder: () => ipcRenderer.invoke(IPC_CHANNELS.APPLY_FLOW_ORDER),
   triggerPendingBreakNow: () => ipcRenderer.invoke(IPC_CHANNELS.TRIGGER_PENDING_BREAK_NOW),
   startNextActivity: () => ipcRenderer.invoke(IPC_CHANNELS.START_NEXT_ACTIVITY),
   restartCurrentActivity: () => ipcRenderer.invoke(IPC_CHANNELS.RESTART_CURRENT_ACTIVITY),
@@ -146,6 +156,14 @@ const api: RhythmDeskAPI = {
   // Sound management
   getAvailableSounds: () => ipcRenderer.invoke(IPC_CHANNELS.GET_AVAILABLE_SOUNDS),
   playTestSound: (filename, volume) => ipcRenderer.invoke(IPC_CHANNELS.PLAY_TEST_SOUND, filename, volume),
+
+  // Voice commands
+  voiceTranscribe: (audioBuffer) => ipcRenderer.invoke(IPC_CHANNELS.VOICE_TRANSCRIBE, audioBuffer),
+  voiceTranscribeLocal: (audioBuffer) => ipcRenderer.invoke(IPC_CHANNELS.VOICE_TRANSCRIBE_LOCAL, audioBuffer),
+
+  // Activity Log
+  getActivityLog: (fromTimestamp?: number, toTimestamp?: number) => ipcRenderer.invoke(IPC_CHANNELS.GET_ACTIVITY_LOG, fromTimestamp, toTimestamp),
+  clearActivityLog: () => ipcRenderer.invoke(IPC_CHANNELS.CLEAR_ACTIVITY_LOG),
 
   // Dev mode only
   devClearAllData: () => ipcRenderer.invoke(IPC_CHANNELS.DEV_CLEAR_ALL_DATA),

@@ -133,6 +133,13 @@ export function createMainWindow(): BrowserWindow {
   });
 
   mainWindow.on('close', (event) => {
+    // Block close entirely during an active focus session — import is lazy to avoid
+    // circular dependency (focusLockdown imports from windowManager indirectly).
+    const { isFocusLockdownActive } = require('./focusLockdown') as typeof import('./focusLockdown');
+    if (isFocusLockdownActive()) {
+      event.preventDefault();
+      return; // Do NOT minimize either — window must stay fullscreen
+    }
     // If quitting, allow close; otherwise minimize to tray
     if (!isQuitting) {
       event.preventDefault();
@@ -271,10 +278,11 @@ export function onMainWindowHealthCheckResponse(): void {
  * Designed for Linux - stays on top and covers the screen
  * 
  * LINUX STRICT MODE BEHAVIOR:
- * - Uses kiosk mode for maximum blocking
  * - setAlwaysOnTop with 'screen-saver' level (highest)
  * - Visible on all workspaces
  * - Blocks close/minimize in strict mode
+ * - Refocuses on blur (with debounce) to prevent escape
+ * - NO kiosk mode (it blocks emergency kill shortcuts)
  * - Note: Some Linux WMs may still allow Alt+Tab; this is a WM limitation
  */
 export function createOverlayWindow(strictMode: boolean = false): BrowserWindow {
@@ -309,8 +317,10 @@ export function createOverlayWindow(strictMode: boolean = false): BrowserWindow 
     maximizable: false,
     closable: !strictMode,
     focusable: true,
-    // Kiosk mode for strict - provides strongest blocking on Linux
-    kiosk: strictMode,
+    // NEVER use kiosk mode — it captures ALL keyboard input on Linux,
+    // preventing emergency kill shortcuts (Super+Shift+Q) from firing.
+    // alwaysOnTop='screen-saver' + fullscreen + blur-refocus is sufficient.
+    kiosk: false,
     title: 'RhythmDesk Overlay',
     icon: getAppIconPath(),
     webPreferences: {
@@ -471,9 +481,6 @@ export function showOverlay(strictMode: boolean = false): void {
   } else {
     overlayWindow.setAlwaysOnTop(true, 'screen-saver');
     overlayWindow.setFullScreen(true);
-    if (strictMode) {
-      overlayWindow.setKiosk(true);
-    }
     overlayWindow.show();
     overlayWindow.focus();
     logger.info('WindowManager', 'Overlay window shown', { strictMode });
