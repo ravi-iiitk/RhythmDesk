@@ -36,6 +36,10 @@ import { getIdleDetector } from '../core/idleDetector';
 import { isBreakPhase } from '../core/transitions';
 // Autostart
 import { syncLoginItemWithSettings } from './autostart';
+// Focus Sessions
+import { getFocusSessionService } from '../core/focusSessionService';
+import { enterFocusLockdown, exitFocusLockdown, isFocusLockdownActive } from './focusLockdown';
+import { FocusSession } from '../shared/types';
 import { isPauseReminderShowing, setPauseReminderShowing, clearPauseReminderFlag } from './pauseReminderState';
 // Activity log
 import {
@@ -153,12 +157,12 @@ function initialize(): void {
       if (permission === 'media') {
         callback(true);
       } else {
-        callback(true);
+        callback(false);
       }
     });
     session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
       if (permission === 'media') return true;
-      return true;
+      return false;
     });
 
     // Initialize default schedules if none exist
@@ -332,12 +336,19 @@ function initialize(): void {
     
     logger.info('Main', 'Watchdogs and health monitor started');
     
+    // Declare overlaySyncService here (before any event handler closures that reference it)
+    // to avoid a Temporal Dead Zone hazard if timerEngine emits events before line 647.
+    const overlaySyncService = getOverlaySyncService();
+
     // Handle timer events
     timerEngine.on('tick', (tick: TimerTick) => {
       lastTimerTick = tick;
       // Report tick to watchdog for stall detection
       timerWatchdog.reportTick(tick.phaseRemainingMs);
       
+      // Check focus session on every tick (1 s) for precise start/end detection
+      getFocusSessionService().check(timerEngine.getCurrentSchedule(), Date.now());
+
       // Send tick to all renderer windows
       sendToAll(IPC_CHANNELS.TIMER_TICK, tick);
       // Update tray
@@ -644,7 +655,6 @@ function initialize(): void {
 
     // Initialize Rest Block service and handle its events
     const restBlockService = getRestBlockService();
-    const overlaySyncService = getOverlaySyncService();
 
     overlaySyncService.on('heartbeat-missed', (missedCount: number) => {
       logger.warn('Main', 'Overlay heartbeat missed during rest block', {
@@ -751,6 +761,75 @@ function initialize(): void {
     // Prune old activity log entries on startup
     const retentionDays = configService.getConfig()?.generalSettings?.logRetentionDays ?? 30;
     pruneActivityLog(retentionDays);
+
+    // ========================================
+    // FOCUS SESSION: Restore lockdown on startup
+    // If the app was restarted (e.g. after kill-9) while a focus session was
+    // active, immediately re-enter lockdown before the user can interact.
+    // ========================================
+    const focusSessionService = getFocusSessionService();
+    const persistedState = timerEngine.getState();
+    const now = Date.now();
+    if (
+      persistedState.isFocusSessionActive &&
+      persistedState.focusSessionEndsAt !== null &&
+      persistedState.focusSessionEndsAt > now
+    ) {
+      const mainWin = getMainWindow();
+      if (mainWin) {
+        logger.info('Main', 'Restoring focus lockdown from persisted state', {
+          endsAt: new Date(persistedState.focusSessionEndsAt).toISOString(),
+        });
+        enterFocusLockdown(mainWin);
+        // Schedule the auto-exit at the persisted end time
+        const msRemaining = persistedState.focusSessionEndsAt - now;
+        setTimeout(() => {
+          const win = getMainWindow();
+          if (win && isFocusLockdownActive()) {
+            logger.info('Main', 'Focus session time elapsed after restart — releasing lockdown');
+            exitFocusLockdown(win);
+            timerEngine.clearFocusSessionState();
+            sendToAll(IPC_CHANNELS.FOCUS_SESSION_CHANGED, { isActive: false, activeSession: null });
+          }
+        }, msRemaining);
+      }
+    } else if (persistedState.isFocusSessionActive) {
+      timerEngine.clearFocusSessionState();
+    }
+
+    // Wire focus session start/end events
+    focusSessionService.on('started', (session: FocusSession, endsAtMs: number) => {
+      const mainWin = getMainWindow();
+      if (!mainWin) return;
+      enterFocusLockdown(mainWin);
+      timerEngine.setFocusSessionState(session.id, endsAtMs);
+      sendToAll(IPC_CHANNELS.FOCUS_SESSION_CHANGED, {
+        isActive: true,
+        activeSession: session,
+        endsAtMs,
+      });
+      logger.info('Main', 'Focus session lockdown started', { name: session.name });
+    });
+
+    focusSessionService.on('ended', (session: FocusSession) => {
+      const mainWin = getMainWindow();
+      if (mainWin && isFocusLockdownActive()) {
+        exitFocusLockdown(mainWin);
+      }
+      timerEngine.clearFocusSessionState();
+      sendToAll(IPC_CHANNELS.FOCUS_SESSION_CHANGED, {
+        isActive: false,
+        activeSession: null,
+        endedSession: session,
+      });
+      logger.info('Main', 'Focus session lockdown ended', { name: session.name });
+    });
+
+    // Periodic focus session check (every 30 s) — also runs on tick for precision
+    setInterval(() => {
+      const schedule = timerEngine.getCurrentSchedule();
+      focusSessionService.check(schedule, Date.now());
+    }, 30_000);
 
     // Start the timer
     timerEngine.start();
@@ -1009,7 +1088,7 @@ function ensureOverlayIfRequired(): void {
     if (overlay && !overlay.isDestroyed()) {
       const waterActive = timerEngine.isWaterReminderActive();
       // Only close if no water reminder is active (water reminder uses non-strict overlay)
-      if (!waterActive) {
+      if (!waterActive && !isPauseReminderShowing()) {
         logger.warn('Main', 'Stale overlay detected - closing (no policy requires it)', {
           phase: currentPhase,
           isPaused: state.isPaused,

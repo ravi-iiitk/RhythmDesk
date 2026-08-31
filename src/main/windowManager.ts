@@ -133,6 +133,13 @@ export function createMainWindow(): BrowserWindow {
   });
 
   mainWindow.on('close', (event) => {
+    // Block close entirely during an active focus session — import is lazy to avoid
+    // circular dependency (focusLockdown imports from windowManager indirectly).
+    const { isFocusLockdownActive } = require('./focusLockdown') as typeof import('./focusLockdown');
+    if (isFocusLockdownActive()) {
+      event.preventDefault();
+      return; // Do NOT minimize either — window must stay fullscreen
+    }
     // If quitting, allow close; otherwise minimize to tray
     if (!isQuitting) {
       event.preventDefault();

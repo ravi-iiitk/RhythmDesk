@@ -106,6 +106,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
         // Cumulative work time settings
         transitionsCountAsCumulativeWork: rest.transitionsCountAsCumulativeWork ?? true,
         shortBreaksCountAsCumulativeWork: rest.shortBreaksCountAsCumulativeWork ?? true,
+        // Break spacing
+        minBreakGapMinutes: rest.minBreakGapMinutes ?? 0,
       });
       
       // Load transition allowPause from nested config
@@ -828,6 +830,40 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
           </div>
         </>
       )}
+
+      {/* Break Spacing - prevents back-to-back breaks (e.g. long break right after/before a short break) */}
+      <div className="form-group">
+        <label className="form-label">Minimum Gap Between Breaks (minutes)</label>
+        <input
+          type="number"
+          className="form-input"
+          value={formData.minBreakGapMinutes ?? 0}
+          onChange={(e) => handleChange('minBreakGapMinutes', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+          onBlur={(e) => !e.target.value && handleChange('minBreakGapMinutes', 0)}
+          min="0"
+        />
+        <p className="text-muted" style={{ fontSize: '0.7rem', marginTop: '0.25rem' }}>
+          Prevents two breaks firing back-to-back. If a long break is due but a short break just happened
+          within this gap, the long break is deferred. If the flow reaches a short break but a long break
+          just happened within this gap, that short break is skipped. Set to 0 to disable.
+        </p>
+        {scheduleMode === 'rule-based' &&
+          (formData.minBreakGapMinutes ?? 0) > 0 &&
+          (formData.minBreakGapMinutes ?? 0) >= (formData.shortBreakEveryMinutes ?? 60) && (
+            <p style={{ fontSize: '0.7rem', marginTop: '0.25rem', color: '#f59e0b' }}>
+              ⚠️ This gap is ≥ your short break interval ({formData.shortBreakEveryMinutes ?? 60} min).
+              A new short break will always happen before the gap elapses, so the long break may be
+              deferred for a very long time. Consider setting this below your short break interval.
+            </p>
+        )}
+        {scheduleMode === 'flow-based' && (formData.minBreakGapMinutes ?? 0) > 0 && (
+          <p style={{ fontSize: '0.7rem', marginTop: '0.25rem', color: '#f59e0b' }}>
+            ⚠️ In Flow Mode, keep this gap shorter than the time it takes your flow to complete one full
+            cycle (Sit → Transition → Stand → Transition → Short Break). If it's longer, the long break
+            may be deferred for a while (it will still eventually fire).
+          </p>
+        )}
+      </div>
 
       {/* Strict Mode */}
       <div className="form-group">

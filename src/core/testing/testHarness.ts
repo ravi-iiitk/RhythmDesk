@@ -119,6 +119,9 @@ function createMockSessionState(schedule: Schedule): SessionState {
     prePostponeWorkPhase: null,
     prePostponeWorkPhaseRemainingMs: 0,
     prePostponeFlowIndex: undefined,
+    isFocusSessionActive: false,
+    activeFocusSessionId: null,
+    focusSessionEndsAt: null,
   };
 }
 

@@ -23,6 +23,20 @@ export type BreakType = 'sitToStandTransition' | 'standToSitTransition' | 'short
 // Schedule mode: rule-based (existing) or flow-based (new)
 export type ScheduleMode = 'rule-based' | 'flow-based';
 
+/**
+ * Focus Session — a time-bounded strict-focus block within a schedule.
+ * While active the app takes over the screen: fullscreen, always-on-top,
+ * no close, no Alt-Tab. Normal breaks still run inside the session.
+ */
+export interface FocusSession {
+  id: string;
+  name: string;
+  startTime: string;    // "HH:MM" 24-hour format
+  endTime: string;      // "HH:MM" 24-hour format
+  daysOfWeek: number[]; // 0=Sun … 6=Sat; empty array = every day
+  enabled: boolean;
+}
+
 // Flow step types (subset of PhaseType, excluding idle and long-break which remains rule-based)
 export type FlowStepType = 
   | 'sit'
@@ -120,6 +134,13 @@ export interface Schedule {
   // Controls whether these phases count toward cumulative work time
   transitionsCountAsCumulativeWork?: boolean;  // default: true
   shortBreaksCountAsCumulativeWork?: boolean;  // default: true
+
+  // Minimum work-time gap required between a short break and a long break (in either order).
+  // Prevents two breaks firing back-to-back in flow-based schedules:
+  // - If a long break is due but a short break just happened within this gap, the long break is deferred.
+  // - If the flow reaches a short-break step but a long break just happened within this gap, the short break step is skipped.
+  // 0 or undefined = disabled (no suppression).
+  minBreakGapMinutes?: number;
   
   // Work phase durations (used in rule-based mode)
   sitMinutes: number;
@@ -167,6 +188,9 @@ export interface Schedule {
   maxSkipsPerDay?: number;
   // @deprecated
   lockOverlayInStrictMode?: boolean;
+  
+  // Focus Sessions — strict-focus time blocks that run inside this schedule
+  focusSessions?: FocusSession[];
   
   // Metadata
   createdAt: number;
@@ -288,6 +312,11 @@ export interface SessionState {
   prePostponeWorkPhase: PhaseType | null;
   prePostponeWorkPhaseRemainingMs: number;
   prePostponeFlowIndex: number | undefined; // Flow index to restore after postpone
+
+  // Focus Session lockdown state (persisted so app re-locks after restart/kill)
+  isFocusSessionActive: boolean;
+  activeFocusSessionId: string | null;
+  focusSessionEndsAt: number | null; // Unix ms when session ends; null = not active
 }
 
 // App configuration
@@ -583,6 +612,10 @@ export const IPC_CHANNELS = {
   GET_ACTIVITY_LOG: 'activityLog:get',
   CLEAR_ACTIVITY_LOG: 'activityLog:clear',
   
+  // Focus Session
+  FOCUS_SESSION_CHANGED: 'focusSession:changed',
+  GET_FOCUS_SESSION_STATE: 'focusSession:getState',
+  
   // Dev mode only
   DEV_CLEAR_ALL_DATA: 'dev:clearAllData',
 } as const;
@@ -651,6 +684,7 @@ export const DEFAULT_SCHEDULE: Omit<Schedule, 'id' | 'name' | 'createdAt'> = {
   allowPostpone: true,
   postponeOptionsMinutes: [2, 5, 10],
   maxPostponesPerDay: 4,
+  minBreakGapMinutes: 0,
 };
 
 // Initial postpone counts
@@ -699,6 +733,9 @@ export const INITIAL_SESSION_STATE: SessionState = {
   prePostponeWorkPhase: null,
   prePostponeWorkPhaseRemainingMs: 0,
   prePostponeFlowIndex: undefined,
+  isFocusSessionActive: false,
+  activeFocusSessionId: null,
+  focusSessionEndsAt: null,
 };
 
 // Default general settings

@@ -15,7 +15,7 @@ export const KEYBOARD_SHORTCUTS = {
     { keys: 'Super+Shift+Escape', action: '🚨 Emergency kill (backup) — same as Super+Shift+Q', context: 'System-wide' },
   ],
   dashboard: [
-    { keys: 'Space', action: 'Pause / Resume schedule', context: 'Dashboard' },
+    { keys: 'Shift+Space', action: 'Pause / Resume schedule', context: 'Dashboard' },
     { keys: 'S', action: 'Skip current phase', context: 'Dashboard' },
     { keys: 'R', action: 'Reset session', context: 'Dashboard' },
     { keys: 'N', action: 'Start next activity (when waiting)', context: 'Dashboard' },
@@ -30,7 +30,7 @@ export const KEYBOARD_SHORTCUTS = {
     { keys: 'V (hold)', action: 'Push-to-talk voice command', context: 'Dashboard' },
   ],
   overlay: [
-    { keys: 'Space', action: 'Pause / Resume schedule', context: 'Overlay' },
+    { keys: 'Shift+Space', action: 'Pause / Resume schedule', context: 'Overlay' },
     { keys: 'Enter', action: 'Complete / Done (mark phase complete)', context: 'Overlay' },
     { keys: 'S', action: 'Skip current break/transition', context: 'Overlay' },
     { keys: 'E', action: 'Extend break (+X minutes, breaks only)', context: 'Overlay' },
@@ -154,7 +154,7 @@ function HelpPage() {
 
         <h4 style={{ color: '#22c55e', marginBottom: '0.5rem' }}>Quick Actions</h4>
         <ul style={{ marginLeft: '1.5rem', marginBottom: '1rem' }}>
-          <li><strong>Pause/Resume</strong> - Temporarily stop the timer (keyboard: <code style={codeStyle}>Space</code>)</li>
+          <li><strong>Pause/Resume</strong> - Temporarily stop the timer (keyboard: <code style={codeStyle}>Shift+Space</code>)</li>
           <li><strong>Skip</strong> - Skip the current phase (keyboard: <code style={codeStyle}>S</code>)</li>
           <li><strong>Reset Session</strong> - Start the schedule from the beginning (keyboard: <code style={codeStyle}>R</code>)</li>
           <li><strong>Reset Today's Counters</strong> - Reset daily break/skip counters</li>
@@ -205,6 +205,13 @@ function HelpPage() {
           <li><strong>Long Break</strong> - Extended rest (e.g., 15 minutes every 2 hours of work)</li>
           <li><strong>Break Duration</strong> - How long each break lasts</li>
           <li><strong>Break Interval</strong> - How often breaks occur (based on work time)</li>
+          <li>
+            <strong>Minimum Gap Between Breaks</strong> - Prevents two breaks firing back-to-back
+            (e.g. a long break right after a short break in Flow Mode). If a long break is due but a
+            short break just happened within this gap, the long break is deferred. If the flow reaches
+            a short break step but a long break just happened within this gap, that short break is
+            skipped. Set to 0 to disable.
+          </li>
         </ul>
 
         <h4 style={{ color: '#f59e0b', marginBottom: '0.5rem' }}>Schedule Modes</h4>

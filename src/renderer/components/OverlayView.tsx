@@ -226,7 +226,8 @@ function OverlayView({ tick }: OverlayViewProps) {
     if (pauseReminderData) return;
 
     switch (e.key) {
-      case ' ': // Space - pause/resume
+      case ' ': // Shift+Space - pause/resume (requires Shift to avoid accidental pause while typing)
+        if (!e.shiftKey) break;
         e.preventDefault();
         if (tick.isPaused) {
           window.rhythmDesk.resume();

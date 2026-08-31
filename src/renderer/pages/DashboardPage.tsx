@@ -114,7 +114,8 @@ function DashboardPage({ tick }: DashboardPageProps) {
     if (!tick || tick.currentPhase === 'idle') return;
 
     switch (e.key.toLowerCase()) {
-      case ' ': // Space - pause/resume
+      case ' ': // Shift+Space - pause/resume (requires Shift to avoid accidental pause while typing)
+        if (!e.shiftKey) break;
         e.preventDefault();
         if (tick.isPaused) {
           window.rhythmDesk.resume();

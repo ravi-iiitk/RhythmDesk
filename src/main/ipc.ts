@@ -10,7 +10,9 @@ import { getTimerEngine } from '../core/timerEngine';
 import { getOfficeFocusLockService } from '../core/officeFocusLockService';
 import { getRestBlockService } from '../core/restBlockService';
 import { showMainWindow, closeOverlay, showOverlay, hideMainWindow, onMainWindowHealthCheckResponse } from './windowManager';
-import { getOverlayPolicy, OverlayPolicyInput } from '../core/overlayPolicy';
+import { getOverlayPolicy, OverlayPolicyInput, isBreakOrTransitionPhase } from '../core/overlayPolicy';
+import { isFocusLockdownActive } from './focusLockdown';
+import { getFocusSessionService } from '../core/focusSessionService';
 import { app } from 'electron';
 import { getOverlaySyncService, OVERLAY_SYNC_CHANNELS } from '../core/overlaySync';
 import { syncLoginItemWithSettings } from './autostart';
@@ -75,10 +77,14 @@ export function registerIpcHandlers(): void {
     const state = timerEngine.getState();
     timerEngine.pause();
     logSessionPaused(state.currentPhase, (timerEngine as any).currentSchedule?.name);
-    // Only close overlay during work phases (sit/stand) - user shouldn't be trapped
-    // Keep overlay open during transitions/breaks so user sees the paused state
-    const workPhases = ['sit', 'stand', 'idle'];
-    if (workPhases.includes(state.currentPhase)) {
+    // Only close overlay during work/idle phases — keep it open for breaks, transitions,
+    // and custom steps with showOverlay so the user sees the paused state on the overlay.
+    const schedule = timerEngine.getCurrentSchedule();
+    const currentFlowStep = schedule?.mode === 'flow-based' && schedule.flowSteps
+      && state.currentFlowStepIndex !== undefined
+      ? schedule.flowSteps[state.currentFlowStepIndex]
+      : undefined;
+    if (!isBreakOrTransitionPhase(state.currentPhase, currentFlowStep)) {
       closeOverlay();
     }
   });
@@ -233,7 +239,20 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.QUIT_APP, () => {
+    if (isFocusLockdownActive()) {
+      logger.warn('IPC', 'QUIT_APP blocked — focus session is active');
+      return; // silently reject
+    }
     app.quit();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GET_FOCUS_SESSION_STATE, () => {
+    const svc = getFocusSessionService();
+    return {
+      isActive: svc.isActive(),
+      activeSession: svc.getActiveSession(),
+      timeUntilEndMs: svc.getTimeUntilEndMs(),
+    };
   });
 
   // Office Focus Lock handlers

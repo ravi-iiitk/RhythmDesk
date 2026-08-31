@@ -114,12 +114,13 @@ const DEFAULT_POLICY: OverlayPolicy = {
  * Central overlay policy function
  * 
  * RULES:
- * 1. Work phases (sit/stand): overlay only if Focus Lock is active
- * 2. Break/transition phases: always show overlay
- * 3. Strict mode comes from per-break config (or Focus Lock overrides to strict)
- * 4. Paused: no overlay
+ * 1. Work phases (sit/stand): overlay only if Focus Lock is active. Paused = no overlay
+ *    (don't trap the user in a fullscreen overlay while they're paused during work).
+ * 2. Break/transition phases: always show overlay, even when paused — but paused
+ *    shows a non-strict "Paused" state (with Resume) instead of the normal strict overlay.
  *    NOTE: postponed breaks should NOT suppress transition overlays
- * 5. Idle: no overlay
+ * 3. Strict mode comes from per-break config (or Focus Lock overrides to strict)
+ * 4. Idle: no overlay
  */
 export function getOverlayPolicy(input: OverlayPolicyInput): OverlayPolicy {
   const { phase, schedule, focusLockActive, isPaused, isPostponed, isWaitingForNextActivity } = input;
@@ -134,11 +135,6 @@ export function getOverlayPolicy(input: OverlayPolicyInput): OverlayPolicy {
     return { ...DEFAULT_POLICY };
   }
 
-  // Paused = no overlay
-  if (isPaused) {
-    return { ...DEFAULT_POLICY };
-  }
-
   // Waiting for user to start next activity = no overlay
   // The timer is between activities; showing overlay makes no sense
   if (isWaitingForNextActivity) {
@@ -147,6 +143,10 @@ export function getOverlayPolicy(input: OverlayPolicyInput): OverlayPolicy {
 
   // Work phases (sit/stand)
   if (isWorkPhase(phase)) {
+    // Paused during work = no overlay (don't trap the user)
+    if (isPaused) {
+      return { ...DEFAULT_POLICY };
+    }
     // If a break is postponed, the user explicitly chose to keep working.
     // Do NOT show the overlay even if Focus Lock is active — otherwise
     // ensureOverlayIfRequired will re-open the overlay within seconds
@@ -176,6 +176,19 @@ export function getOverlayPolicy(input: OverlayPolicyInput): OverlayPolicy {
   if (phase === 'custom') {
     const flowStep = input.currentFlowStep;
     if (flowStep?.showOverlay) {
+      // Paused = keep overlay open but non-strict, showing paused state (with Resume)
+      if (isPaused) {
+        return {
+          showOverlay: true,
+          fullscreen: true,
+          strictMode: false,
+          allowPostpone: false,
+          allowClose: true,
+          allowSkip: false,
+          postponeOptions: [],
+          maxPostpones: 0,
+        };
+      }
       const strictMode = focusLockActive || (flowStep.strictMode ?? false);
       return {
         showOverlay: true,
@@ -192,12 +205,28 @@ export function getOverlayPolicy(input: OverlayPolicyInput): OverlayPolicy {
     return { ...DEFAULT_POLICY };
   }
 
-  // Break/transition phases - always show overlay
+  // Break/transition phases - always show overlay (even when paused, see below)
   const phaseConfig = getPhaseConfig(schedule, phase);
   
   if (!phaseConfig) {
     // Unknown phase type - shouldn't happen
     return { ...DEFAULT_POLICY };
+  }
+
+  // Paused during a break/transition: keep the overlay open (user shouldn't lose
+  // context/be dropped back to their desktop mid-break) but downgrade to a
+  // non-strict "Paused" state with Resume, and disable skip/postpone until resumed.
+  if (isPaused) {
+    return {
+      showOverlay: true,
+      fullscreen: true,
+      strictMode: false,
+      allowPostpone: false,
+      allowClose: true,
+      allowSkip: false,
+      postponeOptions: [],
+      maxPostpones: 0,
+    };
   }
 
   // CRITICAL: Transitions must NEVER use strict/kiosk mode.

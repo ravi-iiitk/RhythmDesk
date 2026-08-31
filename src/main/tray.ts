@@ -29,6 +29,7 @@ import { TimerTick, OFFICE_FOCUS_LOCK_DURATIONS, PhaseType } from '../shared/typ
 import { PHASE_DISPLAY_NAMES } from '../shared/constants';
 import { formatDurationHuman } from '../shared/timeUtils';
 import { showMainWindow, setQuitting, closeOverlay, getOverlayWindow } from './windowManager';
+import { isFocusLockdownActive } from './focusLockdown';
 
 /**
  * Format milliseconds to minutes only (rounded) for tray display
@@ -601,9 +602,9 @@ function buildStaticTrayMenu(): Electron.Menu {
     label: '⏱️ Extend Phase...',
     enabled: !!canExtend,
     submenu: [
-      { label: '+2 minutes', click: () => timerEngine.extendPhase(2) },
-      { label: '+5 minutes', click: () => timerEngine.extendPhase(5) },
-      { label: '+10 minutes', click: () => timerEngine.extendPhase(10) },
+      { label: '+2 minutes', click: () => timerEngine.extendBreak(2) },
+      { label: '+5 minutes', click: () => timerEngine.extendBreak(5) },
+      { label: '+10 minutes', click: () => timerEngine.extendBreak(10) },
     ],
   });
   menuItems.push({
@@ -718,7 +719,15 @@ function buildStaticTrayMenu(): Electron.Menu {
     },
   });
   menuItems.push({ type: 'separator' });
-  menuItems.push({ label: '❌ Quit RhythmDesk', click: () => { setQuitting(true); app.quit(); } });
+
+  if (isFocusLockdownActive()) {
+    menuItems.push({
+      label: '🔒 Focus Session Active — Quit Locked',
+      enabled: false,
+    });
+  } else {
+    menuItems.push({ label: '❌ Quit RhythmDesk', click: () => { setQuitting(true); app.quit(); } });
+  }
 
   return Menu.buildFromTemplate(menuItems);
 }
