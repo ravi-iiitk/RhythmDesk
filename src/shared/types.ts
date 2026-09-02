@@ -33,7 +33,8 @@ export interface FocusSession {
   name: string;
   startTime: string;    // "HH:MM" 24-hour format
   endTime: string;      // "HH:MM" 24-hour format
-  daysOfWeek: number[]; // 0=Sun … 6=Sat; empty array = every day
+  daysOfWeek: number[]; // 0=Sun … 6=Sat; empty array = every day (used when dates is empty)
+  dates?: string[];     // "YYYY-MM-DD" specific calendar dates; when non-empty, takes priority over daysOfWeek
   enabled: boolean;
 }
 
@@ -339,6 +340,7 @@ export interface GeneralSettings {
   idleThresholdMinutes: number; // Minutes of idle before auto-pause (default: 3)
   waterReminderEnabled: boolean;  // Show water reminder overlay
   waterReminderIntervalMinutes: number; // Minutes between water reminders (default: 10)
+  waterReminderAutoDismissSeconds: number; // Seconds before water overlay auto-dismisses (default: 30)
   breakExtendMinutes: number; // Minutes to extend a break by (default: 2) - deprecated, use extendOptions
   extendOptions: number[]; // Array of extend duration options in minutes (default: [2, 5, 10])
   preponeOptions: number[]; // Array of prepone (reduce) duration options in minutes (default: [1, 2, 5])
@@ -751,6 +753,7 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   idleThresholdMinutes: 3,
   waterReminderEnabled: false,
   waterReminderIntervalMinutes: 10,
+  waterReminderAutoDismissSeconds: 30,
   breakExtendMinutes: 2,
   extendOptions: [2, 5, 10],
   preponeOptions: [1, 2, 5],

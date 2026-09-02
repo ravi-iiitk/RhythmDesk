@@ -55,6 +55,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
     startTime: string;
     endTime: string;
     daysOfWeek: number[];
+    dateMode: 'recurring' | 'specific'; // 'recurring' uses daysOfWeek, 'specific' uses dates
+    dates: string[];     // YYYY-MM-DD list for specific-date mode
     enabled: boolean;
   }>({
     open: false,
@@ -63,6 +65,8 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
     startTime: '09:00',
     endTime: '17:00',
     daysOfWeek: [1, 2, 3, 4, 5],
+    dateMode: 'recurring',
+    dates: [],
     enabled: true,
   });
 
@@ -1036,7 +1040,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
             type="button"
             className="btn btn-primary"
             style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', whiteSpace: 'nowrap', marginLeft: '1rem' }}
-            onClick={() => setFocusSessionForm({ open: true, editId: null, name: '', startTime: '09:00', endTime: '17:00', daysOfWeek: [1,2,3,4,5], enabled: true })}
+            onClick={() => setFocusSessionForm({ open: true, editId: null, name: '', startTime: '09:00', endTime: '17:00', daysOfWeek: [1,2,3,4,5], dateMode: 'recurring', dates: [], enabled: true })}
           >
             + Add Session
           </button>
@@ -1062,17 +1066,20 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                     {fs.startTime} – {fs.endTime}
                     {' · '}
-                    {fs.daysOfWeek.length === 0
-                      ? 'Every day'
-                      : fs.daysOfWeek.length === 7
+                    {fs.dates && fs.dates.length > 0
+                      ? fs.dates.join(', ')
+                      : fs.daysOfWeek.length === 0 || fs.daysOfWeek.length === 7
                       ? 'Every day'
                       : fs.daysOfWeek.map(d => ['Su','Mo','Tu','We','Th','Fr','Sa'][d]).join(', ')}
                     {!fs.enabled && <span style={{ marginLeft: '0.4rem', opacity: 0.6 }}>(disabled)</span>}
+                    {fs.dates && fs.dates.length > 0 && fs.dates.every(d => d < new Date().toISOString().slice(0, 10)) && (
+                      <span style={{ marginLeft: '0.4rem', color: '#f87171', opacity: 0.8 }}>(expired)</span>
+                    )}
                   </span>
                 </div>
                 <div style={{ display: 'flex', gap: '0.4rem' }}>
                   <button type="button" className="btn btn-secondary" style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}
-                    onClick={() => setFocusSessionForm({ open: true, editId: fs.id, name: fs.name, startTime: fs.startTime, endTime: fs.endTime, daysOfWeek: fs.daysOfWeek, enabled: fs.enabled })}
+                    onClick={() => setFocusSessionForm({ open: true, editId: fs.id, name: fs.name, startTime: fs.startTime, endTime: fs.endTime, daysOfWeek: fs.daysOfWeek, dateMode: (fs.dates && fs.dates.length > 0) ? 'specific' : 'recurring', dates: fs.dates ?? [], enabled: fs.enabled })}
                   >Edit</button>
                   <button type="button" className="btn btn-secondary" style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem', color: '#f87171', borderColor: 'rgba(248,113,113,0.3)' }}
                     onClick={() => setFocusSessions(prev => prev.filter(s => s.id !== fs.id))}
@@ -1123,22 +1130,78 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
               </div>
             </div>
 
-            {/* Day picker */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Days (empty = every day)</label>
-              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                {['Su','Mo','Tu','We','Th','Fr','Sa'].map((label, dow) => (
-                  <button key={dow} type="button"
-                    className={`day-toggle ${focusSessionForm.daysOfWeek.includes(dow) ? 'selected' : ''}`}
-                    onClick={() => setFocusSessionForm(f => ({
-                      ...f,
-                      daysOfWeek: f.daysOfWeek.includes(dow)
-                        ? f.daysOfWeek.filter(d => d !== dow)
-                        : [...f.daysOfWeek, dow].sort(),
-                    }))}
-                  >{label}</button>
+            {/* Schedule mode toggle: recurring vs specific dates */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>When</label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                {(['recurring', 'specific'] as const).map(mode => (
+                  <button key={mode} type="button"
+                    className={`btn ${focusSessionForm.dateMode === mode ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ fontSize: '0.78rem', padding: '0.25rem 0.75rem' }}
+                    onClick={() => setFocusSessionForm(f => ({ ...f, dateMode: mode }))}
+                  >
+                    {mode === 'recurring' ? '🔁 Recurring days' : '📅 Specific dates'}
+                  </button>
                 ))}
               </div>
+
+              {focusSessionForm.dateMode === 'recurring' ? (
+                <div>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Days (empty = every day)</label>
+                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.3rem' }}>
+                    {['Su','Mo','Tu','We','Th','Fr','Sa'].map((label, dow) => (
+                      <button key={dow} type="button"
+                        className={`day-toggle ${focusSessionForm.daysOfWeek.includes(dow) ? 'selected' : ''}`}
+                        onClick={() => setFocusSessionForm(f => ({
+                          ...f,
+                          daysOfWeek: f.daysOfWeek.includes(dow)
+                            ? f.daysOfWeek.filter(d => d !== dow)
+                            : [...f.daysOfWeek, dow].sort(),
+                        }))}
+                      >{label}</button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Pick one or more dates</label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    style={{ maxWidth: '180px' }}
+                    min={new Date().toISOString().slice(0, 10)}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (!val) return;
+                      setFocusSessionForm(f => ({
+                        ...f,
+                        dates: f.dates.includes(val) ? f.dates : [...f.dates, val].sort(),
+                      }));
+                      e.target.value = ''; // reset picker so user can add another
+                    }}
+                  />
+                  {focusSessionForm.dates.length > 0 && (
+                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                      {focusSessionForm.dates.map(d => (
+                        <span key={d} style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                          background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.35)',
+                          borderRadius: '6px', padding: '0.15rem 0.5rem', fontSize: '0.78rem',
+                        }}>
+                          {d}
+                          <button type="button"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f87171', padding: 0, lineHeight: 1 }}
+                            onClick={() => setFocusSessionForm(f => ({ ...f, dates: f.dates.filter(x => x !== d) }))}
+                          >✕</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {focusSessionForm.dates.length === 0 && (
+                    <p style={{ fontSize: '0.73rem', color: '#f87171', margin: 0 }}>⚠ Add at least one date.</p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Enabled toggle */}
@@ -1170,14 +1233,32 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
               ) : null;
             })()}
             {focusSessionForm.startTime < focusSessionForm.endTime && (() => {
-              const fsDays = focusSessionForm.daysOfWeek;
+              const timeOverlaps = (s: FocusSession) =>
+                focusSessionForm.startTime < s.endTime && focusSessionForm.endTime > s.startTime;
               const overlap = focusSessions.find(s => {
                 if (s.id === focusSessionForm.editId) return false;
-                const sDays = s.daysOfWeek;
-                const daysOverlap = fsDays.length === 0 || sDays.length === 0
-                  || fsDays.some(d => sDays.includes(d));
-                if (!daysOverlap) return false;
-                return focusSessionForm.startTime < s.endTime && focusSessionForm.endTime > s.startTime;
+                if (!timeOverlaps(s)) return false;
+                if (focusSessionForm.dateMode === 'specific') {
+                  // Specific-date: overlap only if other session shares at least one date
+                  const otherDates = s.dates ?? [];
+                  if (otherDates.length > 0) return focusSessionForm.dates.some(d => otherDates.includes(d));
+                  // Specific vs recurring: check if any of our dates fall on a matching day-of-week
+                  return focusSessionForm.dates.some(d => {
+                    const dow = new Date(d + 'T00:00:00').getDay();
+                    return s.daysOfWeek.length === 0 || s.daysOfWeek.includes(dow);
+                  });
+                } else {
+                  // Recurring: existing date-specific sessions — check if any date falls on our days
+                  if (s.dates && s.dates.length > 0) {
+                    return s.dates.some(d => {
+                      const dow = new Date(d + 'T00:00:00').getDay();
+                      return focusSessionForm.daysOfWeek.length === 0 || focusSessionForm.daysOfWeek.includes(dow);
+                    });
+                  }
+                  const fsDays = focusSessionForm.daysOfWeek;
+                  const sDays = s.daysOfWeek;
+                  return fsDays.length === 0 || sDays.length === 0 || fsDays.some(d => sDays.includes(d));
+                }
               });
               return overlap ? (
                 <p style={{ fontSize: '0.75rem', color: '#f87171', margin: 0 }}>
@@ -1195,6 +1276,7 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
                 disabled={
                   !focusSessionForm.name.trim()
                   || focusSessionForm.startTime >= focusSessionForm.endTime
+                  || (focusSessionForm.dateMode === 'specific' && focusSessionForm.dates.length === 0)
                   || (() => {
                     const schedStart = formData.startTime;
                     const schedEnd = formData.endTime;
@@ -1207,20 +1289,37 @@ function ScheduleForm({ schedule, onSave, onCancel }: ScheduleFormProps) {
                   })()
                   || focusSessions.some(s => {
                     if (s.id === focusSessionForm.editId) return false;
+                    if (!(focusSessionForm.startTime < s.endTime && focusSessionForm.endTime > s.startTime)) return false;
+                    if (focusSessionForm.dateMode === 'specific') {
+                      const otherDates = s.dates ?? [];
+                      if (otherDates.length > 0) return focusSessionForm.dates.some(d => otherDates.includes(d));
+                      return focusSessionForm.dates.some(d => {
+                        const dow = new Date(d + 'T00:00:00').getDay();
+                        return s.daysOfWeek.length === 0 || s.daysOfWeek.includes(dow);
+                      });
+                    }
+                    if (s.dates && s.dates.length > 0) {
+                      return s.dates.some(d => {
+                        const dow = new Date(d + 'T00:00:00').getDay();
+                        return focusSessionForm.daysOfWeek.length === 0 || focusSessionForm.daysOfWeek.includes(dow);
+                      });
+                    }
                     const fsDays = focusSessionForm.daysOfWeek;
                     const sDays = s.daysOfWeek;
-                    const daysOverlap = fsDays.length === 0 || sDays.length === 0
-                      || fsDays.some(d => sDays.includes(d));
-                    if (!daysOverlap) return false;
-                    return focusSessionForm.startTime < s.endTime && focusSessionForm.endTime > s.startTime;
+                    return fsDays.length === 0 || sDays.length === 0 || fsDays.some(d => sDays.includes(d));
                   })
                 }
                 onClick={() => {
-                  const { open, editId, ...fields } = focusSessionForm;
+                  const { open, editId, dateMode, dates, daysOfWeek, ...rest } = focusSessionForm;
+                  const sessionData: Omit<FocusSession, 'id'> = {
+                    ...rest,
+                    daysOfWeek: dateMode === 'specific' ? [] : daysOfWeek,
+                    dates: dateMode === 'specific' ? dates : [],
+                  };
                   if (editId) {
-                    setFocusSessions(prev => prev.map(s => s.id === editId ? { ...s, ...fields } : s));
+                    setFocusSessions(prev => prev.map(s => s.id === editId ? { ...s, ...sessionData } : s));
                   } else {
-                    setFocusSessions(prev => [...prev, { id: uuidv4(), ...fields }]);
+                    setFocusSessions(prev => [...prev, { id: uuidv4(), ...sessionData }]);
                   }
                   setFocusSessionForm(f => ({ ...f, open: false, editId: null }));
                 }}

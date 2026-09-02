@@ -28,8 +28,8 @@ import * as path from 'path';
 import { TimerTick, OFFICE_FOCUS_LOCK_DURATIONS, PhaseType } from '../shared/types';
 import { PHASE_DISPLAY_NAMES } from '../shared/constants';
 import { formatDurationHuman } from '../shared/timeUtils';
-import { showMainWindow, setQuitting, closeOverlay, getOverlayWindow } from './windowManager';
-import { isFocusLockdownActive } from './focusLockdown';
+import { showMainWindow, setQuitting, closeOverlay, getOverlayWindow, getMainWindow } from './windowManager';
+import { isFocusLockdownActive, startQuickFocusLockdown } from './focusLockdown';
 
 /**
  * Format milliseconds to minutes only (rounded) for tray display
@@ -79,6 +79,7 @@ interface TrayMenuState {
   isPostponed: boolean;
   focusLockActive: boolean;
   focusLockLabel: string;
+  focusSessionLockdown: boolean; // hard lockdown from focus sessions
 }
 
 let previousMenuState: TrayMenuState | null = null;
@@ -423,6 +424,7 @@ function extractMenuState(tick: TimerTick): TrayMenuState {
     isPostponed: tick.isPostponed,
     focusLockActive: tick.officeFocusLock.isActive,
     focusLockLabel: tick.officeFocusLock.label,
+    focusSessionLockdown: isFocusLockdownActive(),
   };
 }
 
@@ -438,7 +440,8 @@ function hasMenuStateChanged(current: TrayMenuState, previous: TrayMenuState | n
     current.isPaused !== previous.isPaused ||
     current.isPostponed !== previous.isPostponed ||
     current.focusLockActive !== previous.focusLockActive ||
-    current.focusLockLabel !== previous.focusLockLabel
+    current.focusLockLabel !== previous.focusLockLabel ||
+    current.focusSessionLockdown !== previous.focusSessionLockdown
   );
 }
 
@@ -658,6 +661,20 @@ function buildStaticTrayMenu(): Electron.Menu {
   // ============================================================
   // 4. FOCUS LOCK — show/hide based on state
   // ============================================================
+  // Quick Focus Session (full-screen lockdown for a fixed duration)
+  if (!isFocusLockdownActive()) {
+    menuItems.push({
+      label: '🎯 Quick Focus Session',
+      submenu: [
+        { label: '10 minutes', click: () => { const w = getMainWindow(); if (w) startQuickFocusLockdown(10, w); } },
+        { label: '20 minutes', click: () => { const w = getMainWindow(); if (w) startQuickFocusLockdown(20, w); } },
+        { label: '30 minutes', click: () => { const w = getMainWindow(); if (w) startQuickFocusLockdown(30, w); } },
+        { label: '1 hour',     click: () => { const w = getMainWindow(); if (w) startQuickFocusLockdown(60, w); } },
+        { label: '2 hours',    click: () => { const w = getMainWindow(); if (w) startQuickFocusLockdown(120, w); } },
+      ],
+    });
+  }
+
   if (focusLockActive) {
     menuItems.push({ label: '🔓 Stop Focus Lock', click: () => officeFocusLockService.stop() });
   } else {

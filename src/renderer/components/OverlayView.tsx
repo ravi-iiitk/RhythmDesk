@@ -59,6 +59,8 @@ function OverlayView({ tick }: OverlayViewProps) {
   const [pauseReminderShownAt, setPauseReminderShownAt] = useState<number | null>(null);
   // Water reminder state
   const [waterReminderActive, setWaterReminderActive] = useState(false);
+  const [waterAutoDismissSec, setWaterAutoDismissSec] = useState(30);
+  const [waterCountdown, setWaterCountdown] = useState<number | null>(null);
   // Break extend minutes from settings (use first option)
   const [breakExtendMinutes, setBreakExtendMinutes] = useState(2);
   // All extend options from settings
@@ -101,13 +103,42 @@ function OverlayView({ tick }: OverlayViewProps) {
     return () => window.removeEventListener('rhythmdesk:pauseReminder', handler);
   }, []);
 
+  // Fetch auto-dismiss seconds from settings
+  useEffect(() => {
+    window.rhythmDesk.getConfig()
+      .then((config) => {
+        const secs = config?.generalSettings?.waterReminderAutoDismissSeconds ?? 30;
+        setWaterAutoDismissSec(secs);
+      })
+      .catch(() => {});
+  }, []);
+
   // Listen for water reminder events
   useEffect(() => {
-    const cleanup = window.rhythmDesk.onShowWaterReminder(() => {
+    const cleanup = window.rhythmDesk.onShowWaterReminder((data: any) => {
+      if (data?.autoDismissed) {
+        setWaterReminderActive(false);
+        setWaterCountdown(null);
+        return;
+      }
+      // Prefer autoDismissSec sent from main (authoritative), fall back to loaded setting
+      const secs = (typeof data?.autoDismissSec === 'number' && data.autoDismissSec > 0)
+        ? data.autoDismissSec
+        : waterAutoDismissSec;
+      setWaterAutoDismissSec(secs);
       setWaterReminderActive(true);
+      setWaterCountdown(secs);
     });
     return cleanup;
-  }, []);
+  }, [waterAutoDismissSec]);
+
+  // Countdown timer while water reminder is active
+  useEffect(() => {
+    if (!waterReminderActive || waterCountdown === null) return;
+    if (waterCountdown <= 0) return;
+    const t = setTimeout(() => setWaterCountdown(c => (c !== null ? c - 1 : null)), 1000);
+    return () => clearTimeout(t);
+  }, [waterReminderActive, waterCountdown]);
 
   // Sync water reminder state from tick data (handles overlay recreation)
   // If tick says water reminder is active but our local state doesn't know, sync it
@@ -115,6 +146,10 @@ function OverlayView({ tick }: OverlayViewProps) {
     if (tick?.waterReminderActive && !waterReminderActive) {
       console.log('[OverlayView] Restoring water reminder state from tick');
       setWaterReminderActive(true);
+      // Also start countdown — it was never started because the IPC event was missed
+      if (waterCountdown === null) {
+        setWaterCountdown(waterAutoDismissSec);
+      }
     }
   }, [tick?.waterReminderActive]);
 
@@ -444,7 +479,7 @@ function OverlayView({ tick }: OverlayViewProps) {
             Staying hydrated improves focus and energy
           </div>
 
-          <div className="overlay-actions" style={{ marginTop: '2rem' }}>
+          <div className="overlay-actions" style={{ marginTop: '2rem', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
             <button
               className="btn"
               style={{
@@ -460,11 +495,21 @@ function OverlayView({ tick }: OverlayViewProps) {
               }}
               onClick={() => {
                 setWaterReminderActive(false);
+                setWaterCountdown(null);
                 window.rhythmDesk.dismissWaterReminder();
               }}
             >
-              ✓ I Drank Water
+              💧 I Drank Water
             </button>
+            {waterCountdown !== null && waterCountdown > 0 && (
+              <div style={{
+                fontSize: '0.9rem',
+                color: 'rgba(255, 255, 255, 0.7)',
+                fontVariantNumeric: 'tabular-nums',
+              }}>
+                Auto-dismissing in {waterCountdown}s
+              </div>
+            )}
           </div>
         </div>
       </div>

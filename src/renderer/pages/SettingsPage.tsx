@@ -472,22 +472,40 @@ function SettingsPage() {
         </div>
 
         {settings.waterReminderEnabled && (
-          <div className="form-group">
-            <label className="form-label">Reminder interval: {settings.waterReminderIntervalMinutes ?? 10} minute{(settings.waterReminderIntervalMinutes ?? 10) !== 1 ? 's' : ''}</label>
-            <input
-              type="range"
-              className="form-input"
-              min="5"
-              max="60"
-              step="5"
-              value={settings.waterReminderIntervalMinutes ?? 10}
-              onChange={(e) => handleChange('waterReminderIntervalMinutes', parseInt(e.target.value, 10))}
-              style={{ cursor: 'pointer' }}
-            />
-            <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
-              How often to remind you to drink water (5-60 minutes).
-            </p>
-          </div>
+          <>
+            <div className="form-group">
+              <label className="form-label">Reminder interval: {settings.waterReminderIntervalMinutes ?? 10} minute{(settings.waterReminderIntervalMinutes ?? 10) !== 1 ? 's' : ''}</label>
+              <input
+                type="range"
+                className="form-input"
+                min="5"
+                max="60"
+                step="5"
+                value={settings.waterReminderIntervalMinutes ?? 10}
+                onChange={(e) => handleChange('waterReminderIntervalMinutes', parseInt(e.target.value, 10))}
+                style={{ cursor: 'pointer' }}
+              />
+              <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                How often to remind you to drink water (5-60 minutes).
+              </p>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Auto-dismiss after: {settings.waterReminderAutoDismissSeconds ?? 30} second{(settings.waterReminderAutoDismissSeconds ?? 30) !== 1 ? 's' : ''}</label>
+              <input
+                type="range"
+                className="form-input"
+                min="10"
+                max="120"
+                step="5"
+                value={settings.waterReminderAutoDismissSeconds ?? 30}
+                onChange={(e) => handleChange('waterReminderAutoDismissSeconds', parseInt(e.target.value, 10))}
+                style={{ cursor: 'pointer' }}
+              />
+              <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                Overlay auto-dismisses if you don't interact with it (10-120 seconds).
+              </p>
+            </div>
+          </>
         )}
       </div>
 

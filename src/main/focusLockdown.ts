@@ -153,6 +153,47 @@ export function isFocusLockdownActive(): boolean {
   return isLockdownActive;
 }
 
+/**
+ * Start a quick (ad-hoc) focus lockdown for a fixed duration with no schedule backing.
+ * Automatically exits lockdown when the duration elapses.
+ * Persists state via timerEngine so kill-9 + restart re-detects an expired session
+ * rather than locking the user in forever.
+ * No-op if lockdown is already active.
+ */
+export function startQuickFocusLockdown(durationMinutes: number, mainWindow: BrowserWindow): void {
+  if (isLockdownActive) {
+    logger.warn('FocusLockdown', 'Quick focus session ignored — lockdown already active');
+    return;
+  }
+
+  const endsAtMs = Date.now() + durationMinutes * 60 * 1000;
+  const quickSessionId = `quick-${Date.now()}`;
+
+  enterFocusLockdown(mainWindow);
+
+  // Persist so that if the app is killed and restarted within the window,
+  // the restart path sees focusSessionEndsAt and either re-locks (time remains)
+  // or clears (time already elapsed).
+  const timerEngine = require('../core/timerEngine').getTimerEngine();
+  timerEngine.setFocusSessionState(quickSessionId, endsAtMs);
+
+  // Notify renderer
+  const { sendToAll } = require('./windowManager');
+  const { IPC_CHANNELS } = require('../shared/types');
+  sendToAll(IPC_CHANNELS.FOCUS_SESSION_CHANGED, { isActive: true, activeSession: { id: quickSessionId, name: `Quick Focus (${durationMinutes} min)` }, endsAtMs });
+
+  logger.info('FocusLockdown', 'Quick focus session started', { durationMinutes, endsAtMs });
+
+  setTimeout(() => {
+    if (isLockdownActive) {
+      logger.info('FocusLockdown', 'Quick focus session elapsed — releasing lockdown', { durationMinutes });
+      exitFocusLockdown(mainWindow);
+      timerEngine.clearFocusSessionState();
+      sendToAll(IPC_CHANNELS.FOCUS_SESSION_CHANGED, { isActive: false, activeSession: null });
+    }
+  }, durationMinutes * 60 * 1000);
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

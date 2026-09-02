@@ -85,7 +85,7 @@ export class FocusSessionService extends EventEmitter {
   private computeEndMs(session: FocusSession, now: number): number {
     const date = new Date(now);
     const [h, m] = session.endTime.split(':').map(Number);
-    return new Date(
+    let endMs = new Date(
       date.getFullYear(),
       date.getMonth(),
       date.getDate(),
@@ -94,6 +94,11 @@ export class FocusSessionService extends EventEmitter {
       0,
       0,
     ).getTime();
+    // For overnight sessions (endTime < startTime), end is on the next calendar day
+    if (endMs <= now) {
+      endMs += 24 * 60 * 60 * 1000;
+    }
+    return endMs;
   }
 
   // ---------------------------------------------------------------------------
@@ -104,10 +109,18 @@ export class FocusSessionService extends EventEmitter {
     const hh = String(date.getHours()).padStart(2, '0');
     const mm = String(date.getMinutes()).padStart(2, '0');
     const timeStr = `${hh}:${mm}`;
+    // YYYY-MM-DD in local time (not UTC) for date-specific sessions
+    const todayStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
     for (const s of sessions) {
       if (!s.enabled) continue;
-      if (s.daysOfWeek.length > 0 && !s.daysOfWeek.includes(dow)) continue;
+      // Date-specific mode: dates array takes priority over daysOfWeek
+      if (s.dates && s.dates.length > 0) {
+        if (!s.dates.includes(todayStr)) continue;
+      } else {
+        // Recurring mode: daysOfWeek (empty = every day)
+        if (s.daysOfWeek.length > 0 && !s.daysOfWeek.includes(dow)) continue;
+      }
       if (timeStr >= s.startTime && timeStr < s.endTime) return s;
     }
     return null;

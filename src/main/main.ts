@@ -561,6 +561,9 @@ function initialize(): void {
     timerEngine.on('waterReminder', (data: { triggeredAt: number }) => {
       logger.info('Main', 'Showing water reminder overlay (non-strict)');
       showOverlay(false); // NON-strict — user can always escape
+
+      // Read setting once at the top so both sendEvent and setTimeout use same value
+      const autoDismissSec = configService.getGeneralSettings().waterReminderAutoDismissSeconds ?? 30;
       
       // Wait for overlay to fully load before sending the event.
       // The old 500ms delay was a race condition — overlay might not be loaded yet.
@@ -568,7 +571,7 @@ function initialize(): void {
       if (overlay && !overlay.isDestroyed()) {
         const webContents = overlay.webContents;
         const sendEvent = () => {
-          sendToAll(IPC_CHANNELS.SHOW_WATER_REMINDER, data);
+          sendToAll(IPC_CHANNELS.SHOW_WATER_REMINDER, { ...data, autoDismissSec });
         };
         // If already loaded, send immediately; otherwise wait for load
         if (!webContents.isLoading()) {
@@ -578,22 +581,19 @@ function initialize(): void {
         }
       }
       
-      // Safety net: auto-dismiss water reminder after 2 minutes if user doesn't interact
-      // This prevents any scenario where the overlay gets stuck
+      // Auto-dismiss water reminder after configurable timeout
       setTimeout(() => {
         if (timerEngine.isWaterReminderActive()) {
-          logger.warn('Main', 'Water reminder auto-dismissed after 2 minute timeout');
+          logger.info('Main', 'Water reminder auto-dismissed after timeout', { seconds: autoDismissSec });
           timerEngine.dismissWaterReminder();
-          // Only close overlay if no break/transition phase or pause reminder needs it.
-          // This prevents accidentally closing a break overlay that replaced the water one,
-          // or a pause reminder overlay that's coexisting with the water reminder.
+          sendToAll(IPC_CHANNELS.SHOW_WATER_REMINDER, { autoDismissed: true });
           const currentPhase = timerEngine.getState().currentPhase;
           const policy = getOverlayPolicyForState(currentPhase);
           if (!policy.showOverlay && !isPauseReminderShowing()) {
             safeCloseOverlay();
           }
         }
-      }, 120000);
+      }, autoDismissSec * 1000);
     });
 
     // ========================================
