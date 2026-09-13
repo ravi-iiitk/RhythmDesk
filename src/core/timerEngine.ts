@@ -551,6 +551,15 @@ export class TimerEngine extends EventEmitter {
         
         if (pendingBreak) {
           logger.info('TimerEngine', `Postponed break triggering: ${pendingBreak}`);
+          
+          // Increment break counter (was missing — caused Dashboard to show 0 breaks)
+          if (pendingBreak === 'short-break') {
+            this.state.shortBreakCountToday = (this.state.shortBreakCountToday ?? 0) + 1;
+          } else if (pendingBreak === 'long-break') {
+            this.state.longBreakCountToday = (this.state.longBreakCountToday ?? 0) + 1;
+          }
+          this.stateChanged = true;
+          
           // FIX: Restore flow index to the break step BEFORE startPhase so that
           // getPhaseDurationMs reads the correct duration from the flow step,
           // not the rule-based fallback (which defaults to 5 min).
@@ -1713,6 +1722,14 @@ export class TimerEngine extends EventEmitter {
       this.state.interruptedPhaseRemainingMs = this.state.phaseRemainingMs;
       this.preBreakPhase = this.state.currentPhase;
     }
+
+    // Increment break counter (was missing — caused Dashboard to show 0 breaks)
+    if (pendingBreak === 'short-break') {
+      this.state.shortBreakCountToday = (this.state.shortBreakCountToday ?? 0) + 1;
+    } else if (pendingBreak === 'long-break') {
+      this.state.longBreakCountToday = (this.state.longBreakCountToday ?? 0) + 1;
+    }
+    this.stateChanged = true;
 
     // Start the break immediately - this emits phaseChange which shows the overlay
     this.startPhase(pendingBreak);

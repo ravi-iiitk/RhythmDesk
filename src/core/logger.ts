@@ -3,7 +3,7 @@
  * Lightweight logging utility for development and production
  * 
  * In development: logs to console
- * In production: logs to ~/.rhythmdesk/logs/app.log
+ * In production: logs to a new timestamped file in the app userData logs directory
  */
 
 import { app } from 'electron';
@@ -27,6 +27,7 @@ class Logger {
   private writeStream: fs.WriteStream | null = null;
   private buffer: string[] = [];
   private flushInterval: NodeJS.Timeout | null = null;
+  private consolePatched: boolean = false;
 
   private isDev(): boolean {
     return process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -43,7 +44,7 @@ class Logger {
         fs.mkdirSync(logsDir, { recursive: true });
       }
       
-      this.logPath = path.join(logsDir, 'app.log');
+      this.logPath = path.join(logsDir, `app-${this.getRunTimestamp()}.log`);
       
       // Rotate log if too large (> 5MB)
       this.rotateLogIfNeeded();
@@ -51,6 +52,7 @@ class Logger {
       // Open write stream for production
       if (!this.isDev()) {
         this.writeStream = fs.createWriteStream(this.logPath, { flags: 'a' });
+        this.patchConsoleForProduction();
       }
       
       // Flush buffer periodically
@@ -60,6 +62,59 @@ class Logger {
     } catch (error) {
       console.error('Failed to initialize logger:', error);
     }
+  }
+
+  private getRunTimestamp(): string {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = now.toLocaleString('en-US', { month: 'short' });
+    const year = now.getFullYear();
+    let hour = now.getHours();
+    const minute = String(now.getMinutes()).padStart(2, '0');
+    const second = String(now.getSeconds()).padStart(2, '0');
+    const meridiem = hour >= 12 ? 'PM' : 'AM';
+
+    hour = hour % 12 || 12;
+
+    return `${day}_${month}_${year}_${String(hour).padStart(2, '0')}-${minute}-${second}_${meridiem}`;
+  }
+
+  private patchConsoleForProduction(): void {
+    if (this.consolePatched) return;
+
+    const originalLog = console.log.bind(console);
+    const originalWarn = console.warn.bind(console);
+    const originalError = console.error.bind(console);
+
+    console.log = (...args: unknown[]) => {
+      this.appendConsoleLine('LOG', args);
+      originalLog(...args);
+    };
+
+    console.warn = (...args: unknown[]) => {
+      this.appendConsoleLine('WARN', args);
+      originalWarn(...args);
+    };
+
+    console.error = (...args: unknown[]) => {
+      this.appendConsoleLine('ERROR', args);
+      originalError(...args);
+    };
+
+    this.consolePatched = true;
+  }
+
+  private appendConsoleLine(level: string, args: unknown[]): void {
+    const message = args.map((arg) => {
+      if (typeof arg === 'string') return arg;
+      try {
+        return JSON.stringify(arg);
+      } catch {
+        return String(arg);
+      }
+    }).join(' ');
+
+    this.buffer.push(`[${new Date().toISOString()}] [${level}] [Console] ${message}`);
   }
 
   private rotateLogIfNeeded(): void {
