@@ -378,6 +378,9 @@ export function migrateSessionState(state: unknown): SessionState {
     breakCountResetDate: s.breakCountResetDate ?? today,
     interruptedPhase: s.interruptedPhase ?? null,
     interruptedPhaseRemainingMs: s.interruptedPhaseRemainingMs ?? 0,
+    deferredTransition: s.deferredTransition ?? null,
+    transitionExtensionsToday: s.transitionExtensionsToday ?? 0,
+    transitionExtensionsResetDate: s.transitionExtensionsResetDate ?? today,
     interruptedFlowIndex: s.interruptedFlowIndex,
     postponeCountsToday: s.postponeCountsToday ?? {
       sitToStandTransition: 0,

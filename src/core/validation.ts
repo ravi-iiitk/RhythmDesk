@@ -3,7 +3,7 @@
  * Validates schedule and configuration data
  */
 
-import { Schedule, TransitionConfig, BreakConfig } from '../shared/types';
+import { Schedule, TransitionConfig, BreakConfig, MAX_DAILY_ACTION_COUNT, MAX_TRANSITION_EXTENSIONS_PER_DAY } from '../shared/types';
 
 export interface ValidationError {
   field: string;
@@ -73,8 +73,8 @@ function validateTransitionConfig(
   // Max postpones validation
   if (config.maxPostponesPerDay < 0) {
     errors.push({ field: `${fieldPrefix}.maxPostponesPerDay`, message: 'Max postpones cannot be negative' });
-  } else if (config.maxPostponesPerDay > 20) {
-    errors.push({ field: `${fieldPrefix}.maxPostponesPerDay`, message: 'Max postpones must be 20 or less' });
+  } else if (config.maxPostponesPerDay > MAX_DAILY_ACTION_COUNT) {
+    errors.push({ field: `${fieldPrefix}.maxPostponesPerDay`, message: `Max postpones must be ${MAX_DAILY_ACTION_COUNT} or less` });
   }
 
   // Postpone options validation (only if postpone is allowed)
@@ -134,16 +134,16 @@ function validateBreakConfig(
   // Max postpones validation
   if (config.maxPostponesPerDay < 0) {
     errors.push({ field: `${fieldPrefix}.maxPostponesPerDay`, message: 'Max postpones cannot be negative' });
-  } else if (config.maxPostponesPerDay > 20) {
-    errors.push({ field: `${fieldPrefix}.maxPostponesPerDay`, message: 'Max postpones must be 20 or less' });
+  } else if (config.maxPostponesPerDay > MAX_DAILY_ACTION_COUNT) {
+    errors.push({ field: `${fieldPrefix}.maxPostponesPerDay`, message: `Max postpones must be ${MAX_DAILY_ACTION_COUNT} or less` });
   }
 
   // Max skips validation (optional, defaults handled elsewhere)
   if (config.maxSkipsPerDay !== undefined) {
     if (config.maxSkipsPerDay < 0) {
       errors.push({ field: `${fieldPrefix}.maxSkipsPerDay`, message: 'Max skips cannot be negative' });
-    } else if (config.maxSkipsPerDay > 20) {
-      errors.push({ field: `${fieldPrefix}.maxSkipsPerDay`, message: 'Max skips must be 20 or less' });
+    } else if (config.maxSkipsPerDay > MAX_DAILY_ACTION_COUNT) {
+      errors.push({ field: `${fieldPrefix}.maxSkipsPerDay`, message: `Max skips must be ${MAX_DAILY_ACTION_COUNT} or less` });
     }
   }
 
@@ -229,6 +229,19 @@ export function validateSchedule(schedule: Partial<Schedule>): ValidationResult 
   // Priority validation
   if (schedule.priority !== undefined && schedule.priority < 0) {
     errors.push({ field: 'priority', message: 'Priority cannot be negative' });
+  }
+
+  if (schedule.maxPostponesPerDay !== undefined
+    && (schedule.maxPostponesPerDay < 0 || schedule.maxPostponesPerDay > MAX_DAILY_ACTION_COUNT)) {
+    errors.push({ field: 'maxPostponesPerDay', message: `Max postpones must be between 0 and ${MAX_DAILY_ACTION_COUNT}` });
+  }
+  if (schedule.maxSkipsPerDay !== undefined
+    && (schedule.maxSkipsPerDay < 0 || schedule.maxSkipsPerDay > MAX_DAILY_ACTION_COUNT)) {
+    errors.push({ field: 'maxSkipsPerDay', message: `Max skips must be between 0 and ${MAX_DAILY_ACTION_COUNT}` });
+  }
+  if (schedule.maxTransitionExtensionsPerDay !== undefined
+    && (schedule.maxTransitionExtensionsPerDay < 0 || schedule.maxTransitionExtensionsPerDay > MAX_TRANSITION_EXTENSIONS_PER_DAY)) {
+    errors.push({ field: 'maxTransitionExtensionsPerDay', message: `Max activity extensions must be between 0 and ${MAX_TRANSITION_EXTENSIONS_PER_DAY}` });
   }
 
   // Sit/Stand duration validation

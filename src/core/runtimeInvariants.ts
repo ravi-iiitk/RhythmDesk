@@ -177,8 +177,13 @@ function checkFlowIndexPhaseConsistency(
   
   if (!schedule || !isFlowBasedSchedule(schedule)) return;
   
-  // Skip check during long-break (rule-based interrupt)
+  // Long breaks restart the flow. A short break can also interrupt a flow
+  // step (for example, an ad-hoc break), in which case its saved flow index
+  // intentionally remains on the interrupted work step.
   if (state.currentPhase === 'long-break') return;
+  if (state.currentPhase === 'short-break'
+    && state.interruptedPhase !== null
+    && state.interruptedFlowIndex === state.currentFlowStepIndex) return;
   
   // Skip check for idle
   if (state.currentPhase === 'idle') return;

@@ -21,18 +21,35 @@ import * as path from 'path';
 import * as child_process from 'child_process';
 import logger from '../core/logger';
 import { getIdleDetector } from '../core/idleDetector';
+import { getOfficeFocusLockService } from '../core/officeFocusLockService';
+import { getRestBlockService } from '../core/restBlockService';
+import { FocusLockdownSource, FocusLockdownState } from '../shared/types';
 
 let focusStealInterval: NodeJS.Timeout | null = null;
 let isLockdownActive = false;
 let idleWasRunning = false; // Track idle detector state so we can restore it on exit
+let guardianManagedForCurrentLock = false;
+let lockdownSource: FocusLockdownSource | null = null;
+let lockWindowForCurrentLock = true;
+
+export interface FocusLockdownOptions {
+  // Scheduled Focus Sessions need restart protection; manual Focus Mode does not.
+  manageGuardian?: boolean;
+  // false protects the session without turning the main Dashboard fullscreen.
+  lockWindow?: boolean;
+  source?: FocusLockdownSource;
+}
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-export function enterFocusLockdown(mainWindow: BrowserWindow): void {
+export function enterFocusLockdown(mainWindow: BrowserWindow, options: FocusLockdownOptions = {}): void {
   if (isLockdownActive) return;
   isLockdownActive = true;
+  guardianManagedForCurrentLock = options.manageGuardian !== false;
+  lockWindowForCurrentLock = options.lockWindow !== false;
+  lockdownSource = options.source ?? 'scheduled';
 
   logger.info('FocusLockdown', 'Entering focus lockdown');
 
@@ -48,27 +65,25 @@ export function enterFocusLockdown(mainWindow: BrowserWindow): void {
   safeRegisterShortcut('Super+d', () => {});     // show desktop (GNOME/KDE)
   safeRegisterShortcut('Super+h', () => {});     // hide window (some WMs)
 
-  // 2. Full-screen + highest z-order
-  mainWindow.setFullScreen(true);
-  mainWindow.setAlwaysOnTop(true, 'screen-saver');
-
-  // 3. Kiosk mode — prevents WM from switching windows on many compositors.
-  //    Wrapped in try/catch because some Wayland compositors reject kiosk.
-  try {
-    mainWindow.setKiosk(true);
-  } catch (err) {
-    logger.warn('FocusLockdown', 'setKiosk failed (non-fatal)', { err: String(err) });
-  }
-
-  // 4. Periodic focus steal — re-claim focus if something else gets it
-  focusStealInterval = setInterval(() => {
-    if (mainWindow.isDestroyed()) return;
-    if (!mainWindow.isFocused()) {
-      mainWindow.show();
-      mainWindow.focus();
-      try { app.focus({ steal: true }); } catch {}
+  if (lockWindowForCurrentLock) {
+    // Full-window lockdown remains available for quick-lockdown entry points.
+    mainWindow.setFullScreen(true);
+    mainWindow.setAlwaysOnTop(true, 'screen-saver');
+    try {
+      mainWindow.setKiosk(true);
+    } catch (err) {
+      logger.warn('FocusLockdown', 'setKiosk failed (non-fatal)', { err: String(err) });
     }
-  }, 500);
+
+    focusStealInterval = setInterval(() => {
+      if (mainWindow.isDestroyed()) return;
+      if (!mainWindow.isFocused()) {
+        mainWindow.show();
+        mainWindow.focus();
+        try { app.focus({ steal: true }); } catch {}
+      }
+    }, 500);
+  }
 
   // 5. Suspend idle detection — stillness during a focus session is not idleness
   const idleDetector = getIdleDetector();
@@ -78,11 +93,13 @@ export function enterFocusLockdown(mainWindow: BrowserWindow): void {
     logger.info('FocusLockdown', 'Idle detector suspended for focus session');
   }
 
-  // 6. Enable autostart so the app survives a reboot
-  ensureAutostart();
+  if (guardianManagedForCurrentLock) {
+    // 6. Enable autostart so scheduled sessions survive a reboot
+    ensureAutostart();
 
-  // 7. Enable systemd guardian so the app restarts after kill-9
-  enableSystemdGuardian();
+    // 7. Enable systemd guardian so scheduled sessions restart after kill-9
+    enableSystemdGuardian();
+  }
 
   logger.info('FocusLockdown', 'Focus lockdown active');
 }
@@ -101,9 +118,10 @@ export function setShortcutRestoreCallback(cb: () => void): void {
   shortcutRestoreCallback = cb;
 }
 
-export function exitFocusLockdown(mainWindow: BrowserWindow): void {
+export function exitFocusLockdown(mainWindow: BrowserWindow, _options: FocusLockdownOptions = {}): void {
   if (!isLockdownActive) return;
   isLockdownActive = false;
+  lockdownSource = null;
 
   logger.info('FocusLockdown', 'Exiting focus lockdown');
 
@@ -118,10 +136,13 @@ export function exitFocusLockdown(mainWindow: BrowserWindow): void {
   globalShortcut.unregister('Super+d');
   globalShortcut.unregister('Super+h');
 
-  // Restore window state
-  try { mainWindow.setKiosk(false); } catch {}
-  mainWindow.setFullScreen(false);
-  mainWindow.setAlwaysOnTop(false);
+  // Restore window state only when this lock changed the main window.
+  if (lockWindowForCurrentLock) {
+    try { mainWindow.setKiosk(false); } catch {}
+    mainWindow.setFullScreen(false);
+    mainWindow.setAlwaysOnTop(false);
+  }
+  lockWindowForCurrentLock = true;
 
   // Re-register global shortcuts (Super+Shift+Q, B, R) that were unregistered on entry
   if (shortcutRestoreCallback) {
@@ -142,8 +163,11 @@ export function exitFocusLockdown(mainWindow: BrowserWindow): void {
     logger.info('FocusLockdown', 'Idle detector restored after focus session');
   }
 
-  // Disable systemd guardian (unless user has regular autostart enabled — leave that alone)
-  disableSystemdGuardian();
+  // Disable the guardian only when this lockdown created it.
+  if (guardianManagedForCurrentLock) {
+    disableSystemdGuardian();
+    guardianManagedForCurrentLock = false;
+  }
 
   logger.info('FocusLockdown', 'Focus lockdown released');
 }
@@ -151,6 +175,61 @@ export function exitFocusLockdown(mainWindow: BrowserWindow): void {
 /** True while a focus session is being enforced. */
 export function isFocusLockdownActive(): boolean {
   return isLockdownActive;
+}
+
+export function getFocusLockdownState(): FocusLockdownState {
+  return {
+    isActive: isLockdownActive,
+    source: lockdownSource,
+  };
+}
+
+/**
+ * Start a quick (ad-hoc) focus lockdown for a fixed duration with no schedule backing.
+ * Automatically exits lockdown when the duration elapses.
+ * Persists state via timerEngine so kill-9 + restart re-detects an expired session
+ * rather than locking the user in forever.
+ * No-op if another lockdown or a Rest Block is already active.
+ */
+export function startQuickFocusLockdown(durationMinutes: number, mainWindow: BrowserWindow): void {
+  const timerEngine = require('../core/timerEngine').getTimerEngine();
+  if (
+    isLockdownActive
+    || timerEngine.getState().isFocusSessionActive
+    || getOfficeFocusLockService().isActive()
+    || getRestBlockService().isActive()
+  ) {
+    logger.warn('FocusLockdown', 'Quick focus session ignored — another focus/rest mode is active');
+    return;
+  }
+
+  const endsAtMs = Date.now() + durationMinutes * 60 * 1000;
+  const quickSessionId = `quick-${Date.now()}`;
+
+  enterFocusLockdown(mainWindow, { manageGuardian: false, source: 'quick' });
+
+  // Persist so that if the app is killed and restarted within the window,
+  // the restart path sees focusSessionEndsAt and either re-locks (time remains)
+  // or clears (time already elapsed).
+  timerEngine.setFocusSessionState(quickSessionId, endsAtMs);
+
+  // Notify renderer
+  const { sendToAll } = require('./windowManager');
+  const { IPC_CHANNELS } = require('../shared/types');
+  sendToAll(IPC_CHANNELS.FOCUS_LOCKDOWN_CHANGED, getFocusLockdownState());
+  sendToAll(IPC_CHANNELS.FOCUS_SESSION_CHANGED, { isActive: true, activeSession: { id: quickSessionId, name: `Quick Focus (${durationMinutes} min)` }, endsAtMs });
+
+  logger.info('FocusLockdown', 'Quick focus session started', { durationMinutes, endsAtMs });
+
+  setTimeout(() => {
+    if (isLockdownActive && getFocusLockdownState().source === 'quick') {
+      logger.info('FocusLockdown', 'Quick focus session elapsed — releasing lockdown', { durationMinutes });
+      exitFocusLockdown(mainWindow);
+      timerEngine.clearFocusSessionState();
+      sendToAll(IPC_CHANNELS.FOCUS_LOCKDOWN_CHANGED, getFocusLockdownState());
+      sendToAll(IPC_CHANNELS.FOCUS_SESSION_CHANGED, { isActive: false, activeSession: null });
+    }
+  }, durationMinutes * 60 * 1000);
 }
 
 // ---------------------------------------------------------------------------

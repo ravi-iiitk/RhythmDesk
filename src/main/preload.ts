@@ -16,6 +16,8 @@ export interface RhythmDeskAPI {
   saveSchedule: (schedule: any) => Promise<void>;
   deleteSchedule: (id: string) => Promise<void>;
   getSessionState: () => Promise<any>;
+  getFocusSessionState: () => Promise<any>;
+  getFocusLockdownState: () => Promise<any>;
   
   // Timer controls
   pause: () => Promise<void>;
@@ -33,12 +35,13 @@ export interface RhythmDeskAPI {
   startNextActivity: () => Promise<boolean>;
   restartCurrentActivity: () => Promise<boolean>;
   extendBreak: (minutes: number) => Promise<boolean>;
+  deferTransition: (minutes: number) => Promise<boolean>;
   preponePhase: (minutes: number) => Promise<boolean>;
   resetPhaseDuration: () => Promise<boolean>;
   startAdHocBreak: (durationMinutes: number) => Promise<boolean>;
   
   // Office Focus Lock controls
-  startOfficeFocusLock: (label: string, durationMinutes: number, isStrictMode?: boolean) => Promise<any>;
+  startOfficeFocusLock: (label: string, durationMinutes: number, isStrictMode?: boolean, focusSessionMode?: 'strict' | 'semi-strict' | null) => Promise<any>;
   stopOfficeFocusLock: () => Promise<any>;
   getOfficeFocusLockState: () => Promise<any>;
   
@@ -83,6 +86,8 @@ export interface RhythmDeskAPI {
   onShowOverlay: (callback: (data: any) => void) => () => void;
   onHideOverlay: (callback: () => void) => () => void;
   onConfigUpdated: (callback: (config: any) => void) => () => void;
+  onFocusLockdownChanged: (callback: (state: any) => void) => () => void;
+  onFocusSessionChanged: (callback: (state: any) => void) => () => void;
   onOfficeFocusLockChanged: (callback: (state: any) => void) => () => void;
   onRestBlockChanged: (callback: (state: any) => void) => () => void;
   onShowPauseReminder: (callback: (data: any) => void) => () => void;
@@ -107,6 +112,8 @@ const api: RhythmDeskAPI = {
   saveSchedule: (schedule) => ipcRenderer.invoke(IPC_CHANNELS.SAVE_SCHEDULE, schedule),
   deleteSchedule: (id) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_SCHEDULE, id),
   getSessionState: () => ipcRenderer.invoke(IPC_CHANNELS.GET_SESSION_STATE),
+  getFocusSessionState: () => ipcRenderer.invoke(IPC_CHANNELS.GET_FOCUS_SESSION_STATE),
+  getFocusLockdownState: () => ipcRenderer.invoke(IPC_CHANNELS.GET_FOCUS_LOCKDOWN_STATE),
 
   // Timer controls
   pause: () => ipcRenderer.invoke(IPC_CHANNELS.PAUSE),
@@ -124,12 +131,13 @@ const api: RhythmDeskAPI = {
   startNextActivity: () => ipcRenderer.invoke(IPC_CHANNELS.START_NEXT_ACTIVITY),
   restartCurrentActivity: () => ipcRenderer.invoke(IPC_CHANNELS.RESTART_CURRENT_ACTIVITY),
   extendBreak: (minutes) => ipcRenderer.invoke(IPC_CHANNELS.EXTEND_BREAK, minutes),
+  deferTransition: (minutes) => ipcRenderer.invoke(IPC_CHANNELS.DEFER_TRANSITION, minutes),
   preponePhase: (minutes) => ipcRenderer.invoke(IPC_CHANNELS.PREPONE_PHASE, minutes),
   resetPhaseDuration: () => ipcRenderer.invoke(IPC_CHANNELS.RESET_PHASE_DURATION),
   startAdHocBreak: (durationMinutes) => ipcRenderer.invoke(IPC_CHANNELS.START_AD_HOC_BREAK, durationMinutes),
 
   // Office Focus Lock controls
-  startOfficeFocusLock: (label, durationMinutes, isStrictMode = false) => ipcRenderer.invoke(IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes, isStrictMode),
+  startOfficeFocusLock: (label, durationMinutes, isStrictMode = false, focusSessionMode = null) => ipcRenderer.invoke(IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, label, durationMinutes, isStrictMode, focusSessionMode),
   stopOfficeFocusLock: () => ipcRenderer.invoke(IPC_CHANNELS.STOP_OFFICE_FOCUS_LOCK),
   getOfficeFocusLockState: () => ipcRenderer.invoke(IPC_CHANNELS.GET_OFFICE_FOCUS_LOCK_STATE),
 
@@ -197,6 +205,18 @@ const api: RhythmDeskAPI = {
     const handler = (_event: any, config: any) => callback(config);
     ipcRenderer.on(IPC_CHANNELS.CONFIG_UPDATED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.CONFIG_UPDATED, handler);
+  },
+
+  onFocusLockdownChanged: (callback) => {
+    const handler = (_event: any, state: any) => callback(state);
+    ipcRenderer.on(IPC_CHANNELS.FOCUS_LOCKDOWN_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.FOCUS_LOCKDOWN_CHANGED, handler);
+  },
+
+  onFocusSessionChanged: (callback) => {
+    const handler = (_event: any, state: any) => callback(state);
+    ipcRenderer.on(IPC_CHANNELS.FOCUS_SESSION_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.FOCUS_SESSION_CHANGED, handler);
   },
 
   onOfficeFocusLockChanged: (callback) => {

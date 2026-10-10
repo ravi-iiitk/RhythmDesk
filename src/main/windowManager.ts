@@ -49,6 +49,14 @@ function isDev(): boolean {
   return process.env.NODE_ENV === 'development' || !app.isPackaged;
 }
 
+function focusLockdownActive(): boolean {
+  try {
+    return require('./focusLockdown').isFocusLockdownActive();
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Get the app icon path for BrowserWindow (launcher/taskbar icon)
  * Uses 256x256 PNG for best Linux compatibility
@@ -286,6 +294,8 @@ export function onMainWindowHealthCheckResponse(): void {
  * - Note: Some Linux WMs may still allow Alt+Tab; this is a WM limitation
  */
 export function createOverlayWindow(strictMode: boolean = false): BrowserWindow {
+  strictMode = strictMode || focusLockdownActive();
+
   // If overlay exists with different strict mode, destroy and recreate
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     if (currentOverlayStrictMode !== strictMode) {
@@ -474,6 +484,7 @@ export function createOverlayWindow(strictMode: boolean = false): BrowserWindow 
  * Always recreates if strict mode changed to ensure correct behavior
  */
 export function showOverlay(strictMode: boolean = false): void {
+  strictMode = strictMode || focusLockdownActive();
   logOverlayShow('requested', strictMode);
   
   if (!overlayWindow || overlayWindow.isDestroyed() || currentOverlayStrictMode !== strictMode) {

@@ -23,15 +23,23 @@ import {
   PhaseType, 
   FlowStep,
   computeFlowConfigHash,
+  boundedDailyActionLimit,
+  hasDailyActionCapacity,
+  MAX_TRANSITION_EXTENSIONS_PER_DAY,
+  normalizePostponeDurationOptions,
+  TRANSITION_ACTIVITY_EXTENSION_OPTIONS,
 } from '../../shared/types';
 import { isFlowBasedSchedule, getFlowStepDurationMs } from '../flowUtils';
 import { 
+  computeNextFlowPhase,
   computeResetState, 
   findFirstWorkPhaseIndex,
   isBreakPhase,
 } from '../transitions';
+import { isBreakPhase as isBreakConflictPhase, resolveBreakConflict } from '../breakConflict';
 import { validateSessionState, normalizeSessionState } from '../sessionValidator';
 import { checkRuntimeInvariants, TransitionContext } from '../runtimeInvariants';
+import { getOverlayPolicy } from '../overlayPolicy';
 
 // ============================================================
 // TEST TYPES
@@ -99,6 +107,9 @@ function createMockSessionState(schedule: Schedule): SessionState {
     breakCountResetDate: today,
     interruptedPhase: null,
     interruptedPhaseRemainingMs: 0,
+    deferredTransition: null,
+    transitionExtensionsToday: 0,
+    transitionExtensionsResetDate: today,
     interruptedFlowIndex: undefined,
     postponeCountsToday: {
       sitToStandTransition: 0,
@@ -306,12 +317,38 @@ export class TestHarness {
    */
   advancePhase(): void {
     const before = this.captureState();
+
+    if (this.state.currentPhase === 'short-break'
+      && this.state.interruptedPhase !== null
+      && this.state.interruptedPhaseRemainingMs > 0) {
+      const phase = this.state.interruptedPhase;
+      const remainingMs = this.state.interruptedPhaseRemainingMs;
+      const flowIndex = this.state.interruptedFlowIndex;
+      this.state.lastShortBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
+      this.state.currentPhase = phase;
+      if (flowIndex !== undefined) this.state.currentFlowStepIndex = flowIndex;
+      this.state.phaseTotalMs = remainingMs;
+      this.state.phaseRemainingMs = remainingMs;
+      this.state.phaseStartedAt = Date.now();
+      this.state.phaseEndsAt = Date.now() + remainingMs;
+      this.state.interruptedPhase = null;
+      this.state.interruptedPhaseRemainingMs = 0;
+      this.state.interruptedFlowIndex = undefined;
+      this.prependAdvanceStep(before);
+      return;
+    }
     
     if (isFlowBasedSchedule(this.schedule)) {
       const flowSteps = this.runtimeFlowSnapshot || this.schedule.flowSteps!;
       const currentIndex = this.state.currentFlowStepIndex ?? 0;
       const nextIndex = (currentIndex + 1) % flowSteps.length;
       const nextStep = flowSteps[nextIndex];
+
+      if (isBreakPhase(nextStep.type) && !isBreakPhase(before.currentPhase!)) {
+        this.state.interruptedPhase = before.currentPhase ?? null;
+        this.state.interruptedPhaseRemainingMs = 0;
+        this.state.interruptedFlowIndex = currentIndex;
+      }
       
       this.state.currentFlowStepIndex = nextIndex;
       this.state.currentPhase = nextStep.type;
@@ -345,11 +382,14 @@ export class TestHarness {
       }
     }
     
-    const after = this.captureState();
+    this.prependAdvanceStep(before);
+  }
+
+  private prependAdvanceStep(before: Partial<SessionState>): void {
     this.steps.push({
       action: 'advancePhase',
       before,
-      after,
+      after: this.captureState(),
       passed: this.validateState(),
     });
   }
@@ -376,6 +416,30 @@ export class TestHarness {
    */
   triggerBreak(breakType: 'short-break' | 'long-break'): void {
     const before = this.captureState();
+
+    const conflict = resolveBreakConflict({
+      activeBreak: isBreakConflictPhase(this.state.currentPhase) ? this.state.currentPhase : null,
+      pendingBreak: this.state.isPostponed && this.state.postponedPhase && isBreakConflictPhase(this.state.postponedPhase)
+        ? this.state.postponedPhase
+        : null,
+      pendingBreakDueAt: this.state.postponedUntil,
+    }, breakType);
+    if (conflict.action === 'skip' || conflict.action === 'merge') {
+      this.steps.push({
+        action: `triggerBreak(${breakType})`,
+        before,
+        after: this.captureState(),
+        passed: this.validateState(),
+        assertion: conflict.reason,
+      });
+      return;
+    }
+    if (conflict.shouldClearPending) {
+      this.state.isPostponed = false;
+      this.state.postponedPhase = null;
+      this.state.postponedUntil = null;
+      this.state.postponedBreakType = null;
+    }
     
     // Store interrupted phase
     this.state.interruptedPhase = this.state.currentPhase;
@@ -430,16 +494,33 @@ export class TestHarness {
     this.state.prePostponeWorkPhaseRemainingMs = this.state.interruptedPhaseRemainingMs;
     this.state.prePostponeFlowIndex = this.state.interruptedFlowIndex;
     
-    // Restore to work phase
-    this.state.currentPhase = this.state.interruptedPhase || 'sit';
-    this.state.phaseRemainingMs = this.state.interruptedPhaseRemainingMs || this.getPhaseDuration(this.state.currentPhase);
-    this.state.phaseTotalMs = this.getPhaseDuration(this.state.currentPhase);
+    // A naturally scheduled flow break follows a completed step, so postpone
+    // resumes at the step after the break. An interrupt resumes saved time.
+    let restorePhase = this.state.interruptedPhase || 'sit';
+    let restoreFlowIndex = this.state.interruptedFlowIndex;
+    let restoreRemainingMs = this.state.interruptedPhaseRemainingMs;
+    if (isFlowBasedSchedule(this.schedule) && restoreRemainingMs === 0) {
+      const flowSteps = this.runtimeFlowSnapshot || this.schedule.flowSteps!;
+      let result = computeNextFlowPhase(this.state.currentFlowStepIndex ?? 0, flowSteps);
+      for (let attempts = 0; isBreakPhase(result.nextPhase) && attempts < flowSteps.length; attempts++) {
+        result = computeNextFlowPhase(result.nextIndex, flowSteps);
+      }
+      restorePhase = result.nextPhase;
+      restoreFlowIndex = result.nextIndex;
+      restoreRemainingMs = getFlowStepDurationMs(flowSteps[result.nextIndex]);
+    }
+
+    this.state.currentPhase = restorePhase;
+    this.state.phaseRemainingMs = restoreRemainingMs || this.getPhaseDuration(restorePhase);
+    this.state.phaseTotalMs = isFlowBasedSchedule(this.schedule) && restoreFlowIndex !== undefined
+      ? getFlowStepDurationMs((this.runtimeFlowSnapshot || this.schedule.flowSteps!)[restoreFlowIndex])
+      : this.getPhaseDuration(restorePhase);
     this.state.phaseStartedAt = Date.now();
     this.state.phaseEndsAt = Date.now() + this.state.phaseRemainingMs;
     
     // Restore flow index
-    if (this.state.interruptedFlowIndex !== undefined) {
-      this.state.currentFlowStepIndex = this.state.interruptedFlowIndex;
+    if (restoreFlowIndex !== undefined) {
+      this.state.currentFlowStepIndex = restoreFlowIndex;
     }
     
     // Clear interrupted state
@@ -498,6 +579,8 @@ export class TestHarness {
    */
   setSkipGuards(paused: boolean, noSkipEnabled: boolean): void {
     this.state.isPaused = paused;
+    this.state.pausedAt = paused ? Date.now() : null;
+    if (!paused) this.state.pauseResumeAt = null;
     this.schedule = {
       ...this.schedule,
       noSkipEnabled,
@@ -1488,6 +1571,64 @@ export const TEST_SCENARIOS: TestScenario[] = [
       return {
         name: 'Scenario 19: Pending Break Skip Ignores Pause and No-Skip Guards',
         passed: harness.getSteps().every(s => s.passed),
+        duration: Date.now() - startTime,
+        steps: harness.getSteps(),
+      };
+    },
+  },
+  {
+    name: 'Scenario 20: Daily Action Limits Are Capped At Fifteen',
+    description: 'Configured postpone and skip caps cannot exceed fifteen',
+    run: async (harness: TestHarness) => {
+      const startTime = Date.now();
+      harness.assert(boundedDailyActionLimit(30) === 15, 'Legacy daily limit of 30 should be bounded to 15');
+      harness.assert(boundedDailyActionLimit(30, 3, MAX_TRANSITION_EXTENSIONS_PER_DAY) === 10, 'Activity-extension limit should remain capped at 10');
+      harness.assert(boundedDailyActionLimit(-1) === 0, 'Negative daily limits should become zero');
+      harness.assert(hasDailyActionCapacity(14, 15), 'Fourteen uses should leave capacity under a limit of fifteen');
+      harness.assert(!hasDailyActionCapacity(15, 15), 'Fifteen uses should exhaust a limit of fifteen');
+      return {
+        name: 'Scenario 20: Daily Action Limits Are Capped At Fifteen',
+        passed: harness.getSteps().every((step) => step.passed),
+        duration: Date.now() - startTime,
+        steps: harness.getSteps(),
+      };
+    },
+  },
+  {
+    name: 'Scenario 21: Postpone Presets Normalize Legacy Ranges',
+    description: 'Legacy generated minute ranges are replaced with the compact approved presets',
+    run: async (harness: TestHarness) => {
+      const startTime = Date.now();
+      const normalized = normalizePostponeDurationOptions(Array.from({ length: 40 }, (_, index) => 2 + index * 3));
+      harness.assert(normalized.join(',') === '5,10,15,20,30,45,60', 'Legacy ranges should normalize to the approved preset set');
+      harness.assert(normalizePostponeDurationOptions([5, 20]).join(',') === '5,20', 'Existing selections within the preset set should be preserved');
+      harness.assert(TRANSITION_ACTIVITY_EXTENSION_OPTIONS.join(',') === '2,5,10,15', 'Transition overlay should expose exactly 2, 5, 10, and 15 minute choices');
+      return {
+        name: 'Scenario 21: Postpone Presets Normalize Legacy Ranges',
+        passed: harness.getSteps().every((step) => step.passed),
+        duration: Date.now() - startTime,
+        steps: harness.getSteps(),
+      };
+    },
+  },
+  {
+    name: 'Scenario 22: Water Reminder Dismissal Preserves Focus Overlay',
+    description: 'Dismissing a water reminder does not close an overlay still required by Focus Mode',
+    run: async (harness: TestHarness) => {
+      const startTime = Date.now();
+      const policy = getOverlayPolicy({
+        phase: 'sit',
+        schedule: harness.getSchedule(),
+        focusLockActive: true,
+        focusSessionMode: 'strict',
+        isPaused: false,
+        isPostponed: false,
+        isWaitingForNextActivity: false,
+      });
+      harness.assert(policy.showOverlay, 'Focus Mode overlay must remain visible after water reminder dismissal');
+      return {
+        name: 'Scenario 22: Water Reminder Dismissal Preserves Focus Overlay',
+        passed: harness.getSteps().every((step) => step.passed),
         duration: Date.now() - startTime,
         steps: harness.getSteps(),
       };

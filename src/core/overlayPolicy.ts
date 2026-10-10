@@ -7,7 +7,7 @@
  * This removes duplicate overlay logic scattered across windowManager and timerEngine.
  */
 
-import { PhaseType, Schedule, BreakType, FlowStep } from '../shared/types';
+import { PhaseType, Schedule, BreakType, FlowStep, FocusSessionMode, boundedDailyActionLimit, normalizePostponeDurationOptions } from '../shared/types';
 import { OfficeFocusLockState } from '../shared/types';
 
 /**
@@ -18,6 +18,7 @@ export interface OverlayPolicyInput {
   schedule: Schedule | null;
   focusLockActive: boolean;
   focusLockState?: OfficeFocusLockState;
+  focusSessionMode?: FocusSessionMode | null;
   isPaused: boolean;
   isPostponed: boolean;
   isWaitingForNextActivity: boolean;
@@ -124,10 +125,27 @@ const DEFAULT_POLICY: OverlayPolicy = {
  */
 export function getOverlayPolicy(input: OverlayPolicyInput): OverlayPolicy {
   const { phase, schedule, focusLockActive, isPaused, isPostponed, isWaitingForNextActivity } = input;
+  const semiStrictFocus = focusLockActive && input.focusSessionMode === 'semi-strict';
+  const focusPostponeOptions = schedule?.postponeOptionsMinutes ?? [];
 
   // No schedule = no overlay
   if (!schedule) {
     return { ...DEFAULT_POLICY };
+  }
+
+  // Focus sessions keep the dedicated overlay present for their full duration.
+  // Semi-strict mode changes break controls, not the overlay's locked lifecycle.
+  if (focusLockActive) {
+    return {
+      showOverlay: true,
+      fullscreen: true,
+      strictMode: !semiStrictFocus,
+      allowPostpone: false,
+      allowClose: false,
+      allowSkip: false,
+      postponeOptions: [],
+      maxPostpones: 0,
+    };
   }
 
   // Idle = no overlay
@@ -159,7 +177,7 @@ export function getOverlayPolicy(input: OverlayPolicyInput): OverlayPolicy {
       return {
         showOverlay: true,
         fullscreen: true,
-        strictMode: true,
+        strictMode: !semiStrictFocus,
         allowPostpone: false,
         allowClose: false,
         allowSkip: false,
@@ -235,16 +253,20 @@ export function getOverlayPolicy(input: OverlayPolicyInput): OverlayPolicy {
   // 2. User lockout if overlay fails to render
   // 3. No escape mechanism during the brief transition period
   const isTransition = phase === 'sit-to-stand-transition' || phase === 'stand-to-sit-transition';
-  const strictMode = isTransition ? false : (focusLockActive || phaseConfig.strictModeEnabled);
+  const strictMode = isTransition
+    ? false
+    : (focusLockActive ? !semiStrictFocus : phaseConfig.strictModeEnabled);
 
   return {
     showOverlay: true,
     fullscreen: true,
     strictMode,
-    allowPostpone: phaseConfig.allowPostpone && !focusLockActive,
+    allowPostpone: semiStrictFocus
+      ? !isTransition && focusPostponeOptions.length > 0
+      : phaseConfig.allowPostpone && !focusLockActive,
     allowClose: !strictMode,
     allowSkip: !strictMode,
-    postponeOptions: phaseConfig.postponeOptionsMinutes,
+    postponeOptions: semiStrictFocus ? focusPostponeOptions : phaseConfig.postponeOptionsMinutes,
     maxPostpones: phaseConfig.maxPostponesPerDay,
   };
 }
@@ -268,13 +290,13 @@ export function getMaxPostponesForBreakType(
 
   switch (breakType) {
     case 'sitToStandTransition':
-      return schedule.transitions.sitToStand.maxPostponesPerDay;
+    return boundedDailyActionLimit(schedule.transitions.sitToStand.maxPostponesPerDay);
     case 'standToSitTransition':
-      return schedule.transitions.standToSit.maxPostponesPerDay;
+    return boundedDailyActionLimit(schedule.transitions.standToSit.maxPostponesPerDay);
     case 'shortBreak':
-      return schedule.shortBreak.maxPostponesPerDay;
+    return boundedDailyActionLimit(schedule.shortBreak.maxPostponesPerDay);
     case 'longBreak':
-      return schedule.longBreak.maxPostponesPerDay;
+    return boundedDailyActionLimit(schedule.longBreak.maxPostponesPerDay);
     default:
       return 0;
   }
@@ -291,13 +313,13 @@ export function getPostponeOptionsForBreakType(
 
   switch (breakType) {
     case 'sitToStandTransition':
-      return schedule.transitions.sitToStand.postponeOptionsMinutes;
+      return normalizePostponeDurationOptions(schedule.transitions.sitToStand.postponeOptionsMinutes);
     case 'standToSitTransition':
-      return schedule.transitions.standToSit.postponeOptionsMinutes;
+      return normalizePostponeDurationOptions(schedule.transitions.standToSit.postponeOptionsMinutes);
     case 'shortBreak':
-      return schedule.shortBreak.postponeOptionsMinutes;
+      return normalizePostponeDurationOptions(schedule.shortBreak.postponeOptionsMinutes);
     case 'longBreak':
-      return schedule.longBreak.postponeOptionsMinutes;
+      return normalizePostponeDurationOptions(schedule.longBreak.postponeOptionsMinutes);
     default:
       return [];
   }

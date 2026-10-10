@@ -342,6 +342,9 @@ function createResetState(schedule: Schedule): SessionState {
     breakCountResetDate: today,
     interruptedPhase: null,
     interruptedPhaseRemainingMs: 0,
+    deferredTransition: null,
+    transitionExtensionsToday: 0,
+    transitionExtensionsResetDate: today,
     interruptedFlowIndex: undefined,
     postponeCountsToday: {
       sitToStandTransition: 0,
