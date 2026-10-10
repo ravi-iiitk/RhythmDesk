@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TimerTick, OFFICE_FOCUS_LOCK_DURATIONS, PhaseType, ConfiguredDurations, DEFAULT_REST_BLOCK_PRESETS, Schedule } from '../../shared/types';
+import { TimerTick, OFFICE_FOCUS_LOCK_DURATIONS, PhaseType, ConfiguredDurations, DEFAULT_REST_BLOCK_PRESETS, Schedule, FocusSessionMode, DEFAULT_EXTEND_DURATION_OPTIONS, normalizePostponeDurationOptions } from '../../shared/types';
 import { PHASE_DISPLAY_NAMES, PHASE_COLORS } from '../../shared/constants';
 import { formatDurationHuman, formatDuration } from '../../shared/timeUtils';
 import { useVoiceCommand } from '../hooks/useVoiceCommand';
@@ -58,14 +58,15 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const [showLockOptions, setShowLockOptions] = useState(false);
   const [scheduleNames, setScheduleNames] = useState<string[]>([]);
   const [selectedLabel, setSelectedLabel] = useState<string>('');
+  const [focusSessionName, setFocusSessionName] = useState<string>('Focus Session');
   const [customHours, setCustomHours] = useState<number>(0);
   const [customMinutes, setCustomMinutes] = useState<number>(30);
-  const [focusStrictMode, setFocusStrictMode] = useState<boolean>(false);
+  const [focusSessionMode, setFocusSessionMode] = useState<FocusSessionMode>('strict');
   const [restStrictMode, setRestStrictMode] = useState<boolean>(false);
   const [restCustomHours, setRestCustomHours] = useState<number>(0);
   const [restCustomMinutes, setRestCustomMinutes] = useState<number>(15);
   const [restCustomName, setRestCustomName] = useState<string>('My Break');
-  const [extendOptions, setExtendOptions] = useState<number[]>([2, 5, 10]);
+  const [extendOptions, setExtendOptions] = useState<number[]>([...DEFAULT_EXTEND_DURATION_OPTIONS]);
   const [preponeOptions, setPreponeOptions] = useState<number[]>([1, 2, 5]);
   const [showBreakOptions, setShowBreakOptions] = useState(false);
   const [breakDurationInput, setBreakDurationInput] = useState<string>('');
@@ -75,7 +76,7 @@ function DashboardPage({ tick }: DashboardPageProps) {
   useEffect(() => {
     window.rhythmDesk.getConfig().then((config) => {
       if (config?.generalSettings?.extendOptions && config.generalSettings.extendOptions.length > 0) {
-        setExtendOptions(config.generalSettings.extendOptions);
+        setExtendOptions(normalizePostponeDurationOptions(config.generalSettings.extendOptions, DEFAULT_EXTEND_DURATION_OPTIONS));
       }
       if (config?.generalSettings?.preponeOptions && config.generalSettings.preponeOptions.length > 0) {
         setPreponeOptions(config.generalSettings.preponeOptions);
@@ -256,9 +257,18 @@ function DashboardPage({ tick }: DashboardPageProps) {
   const handleStartNextActivity = () => window.rhythmDesk.startNextActivity();
   const handleRestartCurrentActivity = () => window.rhythmDesk.restartCurrentActivity();
   
-  const handleStartOfficeFocusLock = (minutes: number) => {
-    window.rhythmDesk.startOfficeFocusLock(selectedLabel, minutes, focusStrictMode);
+  const handleStartOfficeFocusLock = async (minutes: number) => {
+    const label = focusSessionName.trim() || 'Focus Session';
+    const result = await window.rhythmDesk.startOfficeFocusLock(
+      label,
+      minutes,
+      focusSessionMode === 'strict',
+      focusSessionMode,
+    );
     setShowLockOptions(false);
+    if (result?.blocked) {
+      alert(result.reason || 'Focus Mode cannot start right now.');
+    }
   };
   
   const handleStopOfficeFocusLock = () => {
@@ -266,8 +276,11 @@ function DashboardPage({ tick }: DashboardPageProps) {
   };
 
   // Rest Block handlers
-  const handleStartRestBlock = (name: string, minutes: number, strictMode: boolean) => {
-    window.rhythmDesk.startRestBlock(name, minutes, strictMode);
+  const handleStartRestBlock = async (name: string, minutes: number, strictMode: boolean) => {
+    const result = await window.rhythmDesk.startRestBlock(name, minutes, strictMode);
+    if (result?.blocked) {
+      alert(result.reason || 'Rest Block cannot start right now.');
+    }
   };
 
   const handleStopRestBlock = () => {
@@ -344,7 +357,8 @@ function DashboardPage({ tick }: DashboardPageProps) {
       case 'startRestBlock': {
         const name = intent.restBlockName || 'Quick Rest';
         const mins = intent.duration || 15;
-        await window.rhythmDesk.startRestBlock(name, mins, false);
+        const result = await window.rhythmDesk.startRestBlock(name, mins, false);
+        if (result?.blocked) return result.reason || 'Rest Block cannot start right now.';
         return `Starting ${name} for ${mins} minutes. Take it easy.`;
       }
 
@@ -416,7 +430,8 @@ function DashboardPage({ tick }: DashboardPageProps) {
 
       case 'startFocusMode': {
         const mins = intent.duration || 60;
-        await window.rhythmDesk.startOfficeFocusLock('Focus Session', mins, false);
+        const result = await window.rhythmDesk.startOfficeFocusLock('Focus Session', mins, false);
+        if (result?.blocked) return result.reason || 'Focus Mode cannot start right now.';
         return `Starting Focus Mode for ${mins} minutes. Stay focused!`;
       }
 
@@ -586,21 +601,12 @@ function DashboardPage({ tick }: DashboardPageProps) {
         <div className="card" style={{ padding: '0.75rem 1rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
             <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#e2e8f0' }}>🎯 Focus Mode</div>
-            {tick?.officeFocusLock?.isActive ? (
-              <span style={{ fontSize: '0.75rem', color: '#fb923c', fontWeight: 500 }}>
-                Active: {tick.officeFocusLock.label}
-              </span>
-            ) : (
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: focusStrictMode ? '#ef4444' : '#94a3b8' }}>
-                <input
-                  type="checkbox"
-                  checked={focusStrictMode}
-                  onChange={(e) => setFocusStrictMode(e.target.checked)}
-                  style={{ width: '14px', height: '14px' }}
-                />
-                🔒 Strict Mode
-              </label>
-            )}
+          {tick?.officeFocusLock?.isActive ? (
+            <span style={{ fontSize: '0.75rem', color: '#fb923c', fontWeight: 500 }}>
+              Active: {tick.officeFocusLock.label}
+              {tick.officeFocusLock.focusSessionMode && ` · ${tick.officeFocusLock.focusSessionMode === 'semi-strict' ? 'Semi-Strict' : 'Strict'}`}
+            </span>
+            ) : null}
           </div>
           
           {tick?.officeFocusLock?.isActive ? (
@@ -619,21 +625,37 @@ function DashboardPage({ tick }: DashboardPageProps) {
             </div>
           ) : (
             <>
-              {/* Label selector and quick durations */}
+              {/* Schedule context and separate Focus Session name */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
-                <select 
+                <select
                   value={selectedLabel} 
                   onChange={(e) => setSelectedLabel(e.target.value)}
-                  style={{ padding: '0.4rem', borderRadius: '6px', backgroundColor: '#2a2a3e', color: '#e2e8f0', border: '1px solid #444', fontSize: '0.85rem' }}
+                  aria-label="Schedule"
                   disabled={scheduleNames.length === 0}
+                  style={{ minWidth: '140px', padding: '0.4rem', borderRadius: '6px', backgroundColor: '#2a2a3e', color: '#e2e8f0', border: '1px solid #444', fontSize: '0.85rem' }}
                 >
                   {scheduleNames.length === 0 ? (
                     <option value="">No schedules</option>
-                  ) : (
-                    scheduleNames.map((name) => (
-                      <option key={name} value={name}>{name}</option>
-                    ))
-                  )}
+                  ) : scheduleNames.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  value={focusSessionName}
+                  onChange={(e) => setFocusSessionName(e.target.value)}
+                  placeholder="Focus session name"
+                  aria-label="Focus session name"
+                  style={{ minWidth: '140px', padding: '0.4rem', borderRadius: '6px', backgroundColor: '#2a2a3e', color: '#e2e8f0', border: '1px solid #444', fontSize: '0.85rem' }}
+                />
+                <select
+                  value={focusSessionMode}
+                  onChange={(e) => setFocusSessionMode(e.target.value as FocusSessionMode)}
+                  aria-label="Focus Mode behavior"
+                  style={{ minWidth: '115px', padding: '0.4rem', borderRadius: '6px', backgroundColor: '#2a2a3e', color: focusSessionMode === 'strict' ? '#ef4444' : '#fbbf24', border: '1px solid #444', fontSize: '0.85rem' }}
+                >
+                  <option value="strict">🔒 Strict</option>
+                  <option value="semi-strict">Semi-Strict</option>
                 </select>
                 {OFFICE_FOCUS_LOCK_DURATIONS.slice(0, 4).map((minutes) => (
                   <button 
@@ -711,9 +733,18 @@ function DashboardPage({ tick }: DashboardPageProps) {
     <div className="page" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', height: '100%' }}>
       {/* Row 1: Header - Schedule Name (left) + Office Focus Lock (right) */}
       <div className="card" style={{ padding: '1rem', marginBottom: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: showLockOptions ? '0.75rem' : '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', flex: showLockOptions ? '1 1 auto' : '0 1 auto' }}>
             <span style={{ fontSize: '1.5rem', fontWeight: 700, color: '#e2e8f0' }}>{tick.scheduleName}</span>
+            {tick.focusSessionActive && tick.focusSessionName && (
+              <span
+                className="status-badge"
+                title="Active scheduled Focus Session"
+                style={{ backgroundColor: 'rgba(251, 146, 60, 0.2)', color: '#fb923c', fontSize: '0.875rem' }}
+              >
+                🎯 {tick.focusSessionName}
+              </span>
+            )}
             {tick.isPaused && <span className="status-badge status-paused" style={{ fontSize: '0.875rem' }}>⏸️ Paused</span>}
             {tick.isWaitingForNextActivity && tick.waitingNextPhase && (
               <span className="status-badge" style={{ backgroundColor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontSize: '0.875rem' }}>
@@ -738,13 +769,19 @@ function DashboardPage({ tick }: DashboardPageProps) {
           </div>
           
           {/* Office Focus Mode - Top Right */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: showLockOptions ? 'wrap' : 'nowrap', justifyContent: showLockOptions ? 'flex-end' : 'initial', flex: showLockOptions ? '1 1 100%' : '0 0 auto', width: showLockOptions ? '100%' : undefined }}>
             {tick.officeFocusLock.isActive ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.75rem', backgroundColor: 'rgba(251, 146, 60, 0.15)', borderRadius: '8px', border: '1px solid rgba(251, 146, 60, 0.3)' }}>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '0.7rem', color: '#fb923c', fontWeight: 500 }}>
                     {tick.officeFocusLock.isStrictMode ? '🔒' : '🎯'} {tick.officeFocusLock.label} Focus
-                    {tick.officeFocusLock.isStrictMode && <span style={{ color: '#ef4444', marginLeft: '0.25rem' }}>(Strict)</span>}
+                    {tick.officeFocusLock.focusSessionMode ? (
+                      <span style={{ color: tick.officeFocusLock.focusSessionMode === 'strict' ? '#ef4444' : '#fbbf24', marginLeft: '0.25rem' }}>
+                        ({tick.officeFocusLock.focusSessionMode === 'semi-strict' ? 'Semi-Strict' : 'Strict'})
+                      </span>
+                    ) : tick.officeFocusLock.isStrictMode ? (
+                      <span style={{ color: '#ef4444', marginLeft: '0.25rem' }}>(Strict)</span>
+                    ) : null}
                   </div>
                   <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#fb923c', fontFamily: 'monospace' }}>{formatDuration(tick.officeFocusLock.remainingMs)}</div>
                 </div>
@@ -759,20 +796,27 @@ function DashboardPage({ tick }: DashboardPageProps) {
                 </button>
               ) : (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderRadius: '8px', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
-                  <select 
+                  <select
                     value={selectedLabel} 
                     onChange={(e) => setSelectedLabel(e.target.value)}
-                    style={{ padding: '0.4rem', borderRadius: '6px', backgroundColor: '#2a2a3e', color: '#e2e8f0', border: '1px solid #444', fontSize: '0.85rem' }}
+                    aria-label="Schedule"
                     disabled={scheduleNames.length === 0}
+                    style={{ minWidth: '125px', padding: '0.4rem', borderRadius: '6px', backgroundColor: '#2a2a3e', color: '#e2e8f0', border: '1px solid #444', fontSize: '0.85rem' }}
                   >
                     {scheduleNames.length === 0 ? (
                       <option value="">No schedules</option>
-                    ) : (
-                      scheduleNames.map((name) => (
-                        <option key={name} value={name}>{name}</option>
-                      ))
-                    )}
+                    ) : scheduleNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
                   </select>
+                  <input
+                    type="text"
+                    value={focusSessionName}
+                    onChange={(e) => setFocusSessionName(e.target.value)}
+                    placeholder="Focus session name"
+                    aria-label="Focus session name"
+                    style={{ minWidth: '125px', padding: '0.4rem', borderRadius: '6px', backgroundColor: '#2a2a3e', color: '#e2e8f0', border: '1px solid #444', fontSize: '0.85rem' }}
+                  />
                   <span style={{ color: '#64748b', fontSize: '0.8rem' }}>|</span>
                   {OFFICE_FOCUS_LOCK_DURATIONS.slice(0, 3).map((minutes) => (
                     <button key={minutes} className="btn btn-secondary" onClick={() => handleStartOfficeFocusLock(minutes)} style={{ padding: '0.35rem 0.6rem', fontSize: '0.8rem' }}>
@@ -807,15 +851,15 @@ function DashboardPage({ tick }: DashboardPageProps) {
                     </button>
                   </div>
                   <span style={{ color: '#64748b', fontSize: '0.8rem' }}>|</span>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', fontSize: '0.75rem', color: focusStrictMode ? '#ef4444' : '#94a3b8' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={focusStrictMode} 
-                      onChange={(e) => setFocusStrictMode(e.target.checked)}
-                      style={{ cursor: 'pointer' }}
-                    />
-                    🔒 Strict
-                  </label>
+                  <select
+                    value={focusSessionMode}
+                    onChange={(e) => setFocusSessionMode(e.target.value as FocusSessionMode)}
+                    aria-label="Focus Mode behavior"
+                    style={{ padding: '0.35rem 0.45rem', borderRadius: '4px', backgroundColor: '#2a2a3e', color: focusSessionMode === 'strict' ? '#ef4444' : '#fbbf24', border: '1px solid #444', fontSize: '0.75rem' }}
+                  >
+                    <option value="strict">🔒 Strict</option>
+                    <option value="semi-strict">Semi-Strict</option>
+                  </select>
                   <button className="btn btn-secondary" onClick={() => setShowLockOptions(false)} style={{ padding: '0.3rem 0.5rem', fontSize: '0.8rem' }}>✕</button>
                 </div>
               )

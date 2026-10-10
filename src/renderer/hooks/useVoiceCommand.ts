@@ -202,7 +202,7 @@ export function useVoiceCommand({ onIntent, enabled = true, voiceMode = 'off' }:
       }));
       clearFeedback();
     }
-  }, [onIntent, clearFeedback]);
+  }, [onIntent, clearFeedback, voiceMode]);
 
   const startListening = useCallback(async () => {
     if (!available || !enabled || isRecordingRef.current) return;

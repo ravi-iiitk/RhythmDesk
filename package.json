@@ -1,6 +1,6 @@
 {
   "name": "rhythmdesk",
-  "version": "2.0.1",
+  "version": "2.0.5",
   "description": "A strict sit/stand posture and break enforcement desktop app for Linux",
   "main": "dist/main/main/main.js",
   "scripts": {
@@ -16,6 +16,7 @@
     "dist:linux": "npm run build && electron-builder --linux AppImage deb",
     "dist:appimage": "npm run build && electron-builder --linux AppImage",
     "dist:deb": "npm run build && electron-builder --linux deb",
+    "test": "npm run build:main && node scripts/run-session-tests.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx"
   },
@@ -79,12 +80,16 @@
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "@types/uuid": "^9.0.7",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
     "@vitejs/plugin-react": "^4.2.1",
     "concurrently": "^8.2.2",
     "electron": "^27.3.0",
     "electron-builder": "^24.9.1",
     "electron-vite": "^5.0.0",
     "eslint": "^8.56.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.21.1",

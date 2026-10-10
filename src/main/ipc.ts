@@ -11,7 +11,7 @@ import { getOfficeFocusLockService } from '../core/officeFocusLockService';
 import { getRestBlockService } from '../core/restBlockService';
 import { showMainWindow, closeOverlay, showOverlay, hideMainWindow, onMainWindowHealthCheckResponse } from './windowManager';
 import { getOverlayPolicy, OverlayPolicyInput, isBreakOrTransitionPhase } from '../core/overlayPolicy';
-import { isFocusLockdownActive } from './focusLockdown';
+import { getFocusLockdownState, isFocusLockdownActive } from './focusLockdown';
 import { getFocusSessionService } from '../core/focusSessionService';
 import { app } from 'electron';
 import { getOverlaySyncService, OVERLAY_SYNC_CHANNELS } from '../core/overlaySync';
@@ -59,17 +59,29 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.SAVE_SCHEDULE, (_event, schedule) => {
+    if (isFocusLockdownActive() || getFocusSessionService().isActive()) {
+      logger.warn('IPC', 'SAVE_SCHEDULE blocked — scheduled focus session is active');
+      throw new Error('Schedule changes are blocked while a Focus Session is active.');
+    }
     configService.saveSchedule(schedule);
     // Notify timer engine if this is the active schedule
     timerEngine.onScheduleUpdated(schedule);
   });
 
   ipcMain.handle(IPC_CHANNELS.DELETE_SCHEDULE, (_event, id) => {
+    if (isFocusLockdownActive() || getFocusSessionService().isActive()) {
+      logger.warn('IPC', 'DELETE_SCHEDULE blocked — scheduled focus session is active', { id });
+      throw new Error('Schedule changes are blocked while a Focus Session is active.');
+    }
     configService.deleteSchedule(id);
   });
 
   ipcMain.handle(IPC_CHANNELS.GET_SESSION_STATE, () => {
     return timerEngine.getState();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GET_FOCUS_LOCKDOWN_STATE, () => {
+    return getFocusLockdownState();
   });
 
   // Timer control handlers
@@ -110,8 +122,13 @@ export function registerIpcHandlers(): void {
     const input: OverlayPolicyInput = {
       phase: state.currentPhase,
       schedule,
-      focusLockActive: officeFocusLockService.isActive(),
+      focusLockActive: officeFocusLockService.isActive()
+        || getFocusSessionService().isActive()
+        || state.isFocusSessionActive,
       focusLockState: officeFocusLockService.getState(),
+      focusSessionMode: getFocusSessionService().getActiveSession()?.mode
+        ?? officeFocusLockService.getState().focusSessionMode
+        ?? null,
       isPaused: false,
       isPostponed: state.isPostponed,
       isWaitingForNextActivity: state.isWaitingForNextActivity,
@@ -130,6 +147,10 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.PAUSE_FOR_DURATION, (_event, minutes: number) => {
+    if (isFocusLockdownActive()) {
+      logger.warn('IPC', 'PAUSE_FOR_DURATION blocked — focus lockdown is active');
+      return;
+    }
     timerEngine.pauseForDuration(minutes);
     // Close overlay when user pauses
     closeOverlay();
@@ -195,6 +216,10 @@ export function registerIpcHandlers(): void {
     return timerEngine.extendBreak(minutes);
   });
 
+  ipcMain.handle(IPC_CHANNELS.DEFER_TRANSITION, (_event, minutes: number) => {
+    return timerEngine.deferTransition(minutes);
+  });
+
   ipcMain.handle(IPC_CHANNELS.PREPONE_PHASE, (_event, minutes: number) => {
     return timerEngine.preponePhase(minutes);
   });
@@ -213,6 +238,10 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.CLOSE_OVERLAY, () => {
+    if (isFocusLockdownActive()) {
+      logger.warn('IPC', 'CLOSE_OVERLAY blocked — focus session is active');
+      return;
+    }
     const syncService = getOverlaySyncService();
     if (syncService.getState().isOverlayActive) {
       syncService.stop();
@@ -222,6 +251,10 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.DISMISS_PAUSE_REMINDER, () => {
+    if (isFocusLockdownActive()) {
+      logger.warn('IPC', 'DISMISS_PAUSE_REMINDER blocked — focus session is active');
+      return;
+    }
     const syncService = getOverlaySyncService();
     if (syncService.getState().isOverlayActive) {
       syncService.stop();
@@ -232,8 +265,30 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.DISMISS_WATER_REMINDER, () => {
     timerEngine.dismissWaterReminder();
-    // Don't close overlay if pause reminder is still showing
-    if (!isPauseReminderShowing()) {
+    const state = timerEngine.getState();
+    const schedule = timerEngine.getCurrentSchedule();
+    const officeFocusLock = getOfficeFocusLockService();
+    const currentFlowStep = schedule?.mode === 'flow-based' && schedule.flowSteps
+      && state.currentFlowStepIndex !== undefined
+      ? schedule.flowSteps[state.currentFlowStepIndex]
+      : undefined;
+    const policy = getOverlayPolicy({
+      phase: state.currentPhase,
+      schedule,
+      focusLockActive: officeFocusLock.isActive()
+        || getFocusSessionService().isActive()
+        || state.isFocusSessionActive,
+      focusLockState: officeFocusLock.getState(),
+      focusSessionMode: getFocusSessionService().getActiveSession()?.mode
+        ?? officeFocusLock.getState().focusSessionMode
+        ?? null,
+      isPaused: state.isPaused,
+      isPostponed: state.isPostponed,
+      isWaitingForNextActivity: state.isWaitingForNextActivity,
+      currentFlowStep,
+    });
+    // Keep any schedule/focus overlay that should still be visible after the reminder.
+    if (!policy.showOverlay && !isPauseReminderShowing()) {
       closeOverlay();
     }
   });
@@ -266,8 +321,18 @@ export function registerIpcHandlers(): void {
   // Office Focus Lock handlers
   const officeFocusLockService = getOfficeFocusLockService();
 
-  ipcMain.handle(IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, (_event, label: string, durationMinutes: number, isStrictMode: boolean = false) => {
-    officeFocusLockService.start(label, durationMinutes, isStrictMode);
+  ipcMain.handle(IPC_CHANNELS.START_OFFICE_FOCUS_LOCK, (_event, label: string, durationMinutes: number, isStrictMode: boolean = false, focusSessionMode: 'strict' | 'semi-strict' | null = null) => {
+    if (isFocusLockdownActive() || getFocusSessionService().isActive()) {
+      const reason = 'Another Focus Session is already active.';
+      logger.warn('IPC', 'START_OFFICE_FOCUS_LOCK blocked — focus lockdown is active', { reason });
+      return { ...officeFocusLockService.getState(), blocked: true, reason };
+    }
+    if (getRestBlockService().isActive()) {
+      const reason = 'End the active Rest Block before starting Focus Mode.';
+      logger.warn('IPC', 'START_OFFICE_FOCUS_LOCK blocked — rest block is active', { reason });
+      return { ...officeFocusLockService.getState(), blocked: true, reason };
+    }
+    officeFocusLockService.start(label, durationMinutes, isStrictMode, focusSessionMode);
     return officeFocusLockService.getState();
   });
 
@@ -284,6 +349,16 @@ export function registerIpcHandlers(): void {
   const restBlockService = getRestBlockService();
 
   ipcMain.handle(IPC_CHANNELS.START_REST_BLOCK, (_event, name: string, durationMinutes: number, isStrictMode: boolean = false, presetId: string | null = null) => {
+    if (isFocusLockdownActive() || getFocusSessionService().isActive()) {
+      const reason = 'Rest Blocks cannot start while Focus Mode is active.';
+      logger.warn('IPC', 'START_REST_BLOCK blocked — focus lockdown is active', { reason });
+      return { ...restBlockService.getState(), blocked: true, reason };
+    }
+    if (restBlockService.isActive()) {
+      const reason = 'Another Rest Block is already active.';
+      logger.warn('IPC', 'START_REST_BLOCK blocked — rest block is already active', { reason });
+      return { ...restBlockService.getState(), blocked: true, reason };
+    }
     restBlockService.start(name, durationMinutes, isStrictMode, presetId);
     return restBlockService.getState();
   });

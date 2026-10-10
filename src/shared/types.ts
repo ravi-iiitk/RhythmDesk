@@ -23,18 +23,57 @@ export type BreakType = 'sitToStandTransition' | 'standToSitTransition' | 'short
 // Schedule mode: rule-based (existing) or flow-based (new)
 export type ScheduleMode = 'rule-based' | 'flow-based';
 
+export const POSTPONE_DURATION_PRESETS = [5, 10, 15, 20, 30, 45, 60] as const;
+export const DEFAULT_POSTPONE_DURATION_OPTIONS = [...POSTPONE_DURATION_PRESETS];
+export const DEFAULT_EXTEND_DURATION_OPTIONS = [5, 10, 15];
+export const TRANSITION_ACTIVITY_EXTENSION_OPTIONS = [2, 5, 10, 15];
+export const MAX_DAILY_ACTION_COUNT = 15;
+export const MAX_TRANSITION_EXTENSIONS_PER_DAY = 10;
+
+export function boundedDailyActionLimit(
+  value: number | undefined,
+  fallback = 0,
+  maximum = MAX_DAILY_ACTION_COUNT,
+): number {
+  const numericValue = value ?? fallback;
+  if (!Number.isFinite(numericValue)) return 0;
+  return Math.min(maximum, Math.max(0, Math.floor(numericValue)));
+}
+
+export function hasDailyActionCapacity(count: number, limit: number): boolean {
+  return Number.isFinite(count) && count >= 0 && count < boundedDailyActionLimit(limit);
+}
+
+export function normalizePostponeDurationOptions(
+  options?: number[],
+  fallback: number[] = DEFAULT_POSTPONE_DURATION_OPTIONS,
+): number[] {
+  const values = options ?? [];
+  const isPresetList = values.length > 0 && values.every((value) =>
+    POSTPONE_DURATION_PRESETS.includes(value as (typeof POSTPONE_DURATION_PRESETS)[number]),
+  );
+  if (!isPresetList) return [...fallback];
+  const selected = new Set(values);
+  return POSTPONE_DURATION_PRESETS.filter((value) => selected.has(value));
+}
+
 /**
  * Focus Session — a time-bounded strict-focus block within a schedule.
  * While active the app takes over the screen: fullscreen, always-on-top,
  * no close, no Alt-Tab. Normal breaks still run inside the session.
  */
+export type FocusSessionMode = 'strict' | 'semi-strict';
+
 export interface FocusSession {
   id: string;
   name: string;
   startTime: string;    // "HH:MM" 24-hour format
   endTime: string;      // "HH:MM" 24-hour format
-  daysOfWeek: number[]; // 0=Sun … 6=Sat; empty array = every day
+  daysOfWeek: number[]; // 0=Sun … 6=Sat; empty array = every day (used when dates is empty)
+  dates?: string[];     // "YYYY-MM-DD" specific calendar dates; when non-empty, takes priority over daysOfWeek
   enabled: boolean;
+  // Legacy sessions without this field remain Strict.
+  mode?: FocusSessionMode;
 }
 
 // Flow step types (subset of PhaseType, excluding idle and long-break which remains rule-based)
@@ -141,6 +180,9 @@ export interface Schedule {
   // - If the flow reaches a short-break step but a long break just happened within this gap, the short break step is skipped.
   // 0 or undefined = disabled (no suppression).
   minBreakGapMinutes?: number;
+
+  // Maximum times a transition activity can be deferred per day.
+  maxTransitionExtensionsPerDay?: number;
   
   // Work phase durations (used in rule-based mode)
   sitMinutes: number;
@@ -276,6 +318,11 @@ export interface SessionState {
   interruptedPhase: PhaseType | null;
   interruptedPhaseRemainingMs: number;
   interruptedFlowIndex: number | undefined; // Flow index when break interrupted work
+
+  // Transition the user deferred while continuing the preceding work activity.
+  deferredTransition: DeferredTransitionState | null;
+  transitionExtensionsToday: number;
+  transitionExtensionsResetDate: string;
   
   // Per-break-type postpone tracking
   postponeCountsToday: PostponeCountsToday;
@@ -319,6 +366,13 @@ export interface SessionState {
   focusSessionEndsAt: number | null; // Unix ms when session ends; null = not active
 }
 
+export interface DeferredTransitionState {
+  sourcePhase: 'sit' | 'stand';
+  transitionPhase: 'sit-to-stand-transition' | 'stand-to-sit-transition';
+  sourceFlowIndex?: number;
+  transitionFlowIndex?: number;
+}
+
 // App configuration
 export interface AppConfig {
   schedules: Schedule[];
@@ -339,6 +393,7 @@ export interface GeneralSettings {
   idleThresholdMinutes: number; // Minutes of idle before auto-pause (default: 3)
   waterReminderEnabled: boolean;  // Show water reminder overlay
   waterReminderIntervalMinutes: number; // Minutes between water reminders (default: 10)
+  waterReminderAutoDismissSeconds: number; // Seconds before water overlay auto-dismisses (default: 30)
   breakExtendMinutes: number; // Minutes to extend a break by (default: 2) - deprecated, use extendOptions
   extendOptions: number[]; // Array of extend duration options in minutes (default: [2, 5, 10])
   preponeOptions: number[]; // Array of prepone (reduce) duration options in minutes (default: [1, 2, 5])
@@ -389,6 +444,15 @@ export interface OfficeFocusLockState {
   durationMs: number;            // total duration in milliseconds
   remainingMs: number;           // remaining time
   isStrictMode: boolean;         // if true, cannot stop focus mode early
+  // Optional mode for adhoc Focus Mode. Legacy locks without this remain unchanged.
+  focusSessionMode?: FocusSessionMode | null;
+}
+
+export type FocusLockdownSource = 'scheduled' | 'manual' | 'quick';
+
+export interface FocusLockdownState {
+  isActive: boolean;
+  source: FocusLockdownSource | null;
 }
 
 // Preset work labels for Office Focus Lock
@@ -510,8 +574,15 @@ export interface TimerTick {
   breakSkipCountToday?: number;
   maxBreakSkipsPerDay?: number;
   canSkipCurrentBreak?: boolean;
+  transitionExtensionsToday?: number;
+  maxTransitionExtensionsPerDay?: number;
   // Office Focus Lock state
   officeFocusLock: OfficeFocusLockState;
+  // Active Focus Session context, scheduled or adhoc, if any
+  focusSessionActive?: boolean;
+  focusSessionName?: string | null;
+  focusSessionMode?: FocusSessionMode | null;
+  focusSessionRemainingMs?: number | null;
   // Rest Block state
   restBlock: RestBlockState;
   // Break progress information
@@ -543,6 +614,7 @@ export const IPC_CHANNELS = {
   HIDE_OVERLAY: 'overlay:hide',
   CONFIG_UPDATED: 'config:updated',
   OFFICE_FOCUS_LOCK_CHANGED: 'officeFocusLock:changed',
+  FOCUS_LOCKDOWN_CHANGED: 'focusLockdown:changed',
   
   // Renderer -> Main
   GET_CONFIG: 'config:get',
@@ -568,6 +640,7 @@ export const IPC_CHANNELS = {
   START_NEXT_ACTIVITY: 'timer:startNextActivity',
   RESTART_CURRENT_ACTIVITY: 'timer:restartCurrentActivity',
   EXTEND_BREAK: 'timer:extendBreak',
+  DEFER_TRANSITION: 'timer:deferTransition',
   PREPONE_PHASE: 'timer:preponePhase',
   RESET_PHASE_DURATION: 'timer:resetPhaseDuration',
   START_AD_HOC_BREAK: 'timer:startAdHocBreak',
@@ -615,6 +688,7 @@ export const IPC_CHANNELS = {
   // Focus Session
   FOCUS_SESSION_CHANGED: 'focusSession:changed',
   GET_FOCUS_SESSION_STATE: 'focusSession:getState',
+  GET_FOCUS_LOCKDOWN_STATE: 'focusLockdown:getState',
   
   // Dev mode only
   DEV_CLEAR_ALL_DATA: 'dev:clearAllData',
@@ -626,7 +700,7 @@ export const DEFAULT_TRANSITION_CONFIG: TransitionConfig = {
   strictModeEnabled: false,
   allowPostpone: true,
   allowPause: true,
-  postponeOptionsMinutes: [2, 5, 10],
+  postponeOptionsMinutes: [...DEFAULT_POSTPONE_DURATION_OPTIONS],
   maxPostponesPerDay: 4,
 };
 
@@ -637,7 +711,7 @@ export const DEFAULT_SHORT_BREAK_CONFIG: BreakConfig = {
   durationMinutes: 5,
   strictModeEnabled: true,
   allowPostpone: true,
-  postponeOptionsMinutes: [2, 5, 10],
+  postponeOptionsMinutes: [...DEFAULT_POSTPONE_DURATION_OPTIONS],
   maxPostponesPerDay: 4,
   maxSkipsPerDay: 2,
 };
@@ -648,7 +722,7 @@ export const DEFAULT_LONG_BREAK_CONFIG: BreakConfig = {
   durationMinutes: 15,
   strictModeEnabled: true,
   allowPostpone: true,
-  postponeOptionsMinutes: [2, 5, 10],
+  postponeOptionsMinutes: [...DEFAULT_POSTPONE_DURATION_OPTIONS],
   maxPostponesPerDay: 2,
   maxSkipsPerDay: 1,
 };
@@ -682,9 +756,10 @@ export const DEFAULT_SCHEDULE: Omit<Schedule, 'id' | 'name' | 'createdAt'> = {
   noSkipEnabled: false,
   autoStartNextActivity: true,
   allowPostpone: true,
-  postponeOptionsMinutes: [2, 5, 10],
+  postponeOptionsMinutes: [...DEFAULT_POSTPONE_DURATION_OPTIONS],
   maxPostponesPerDay: 4,
   minBreakGapMinutes: 0,
+  maxTransitionExtensionsPerDay: 3,
 };
 
 // Initial postpone counts
@@ -718,6 +793,9 @@ export const INITIAL_SESSION_STATE: SessionState = {
   interruptedPhase: null,
   interruptedPhaseRemainingMs: 0,
   interruptedFlowIndex: undefined,
+  deferredTransition: null,
+  transitionExtensionsToday: 0,
+  transitionExtensionsResetDate: new Date().toISOString().split('T')[0],
   postponeCountsToday: { ...INITIAL_POSTPONE_COUNTS },
   postponeResetDate: new Date().toISOString().split('T')[0],
   breakSkipCountsToday: { ...INITIAL_BREAK_SKIP_COUNTS },
@@ -751,8 +829,9 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   idleThresholdMinutes: 3,
   waterReminderEnabled: false,
   waterReminderIntervalMinutes: 10,
+  waterReminderAutoDismissSeconds: 30,
   breakExtendMinutes: 2,
-  extendOptions: [2, 5, 10],
+  extendOptions: [...DEFAULT_EXTEND_DURATION_OPTIONS],
   preponeOptions: [1, 2, 5],
   openaiApiKey: '',
   voiceMode: 'off' as const,
@@ -767,6 +846,7 @@ export const INITIAL_OFFICE_FOCUS_LOCK_STATE: OfficeFocusLockState = {
   durationMs: 0,
   remainingMs: 0,
   isStrictMode: false,
+  focusSessionMode: null,
 };
 
 // Office Focus Lock duration presets (in minutes)

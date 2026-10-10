@@ -21,11 +21,18 @@ import {
   BreakProgress,
   ConfiguredDurations,
   FlowStep,
+  FocusSessionMode,
+  DeferredTransitionState,
   INITIAL_BREAK_SKIP_COUNTS,
   INITIAL_POSTPONE_COUNTS,
   computeFlowConfigHash,
+  normalizePostponeDurationOptions,
+  boundedDailyActionLimit,
+  MAX_TRANSITION_EXTENSIONS_PER_DAY,
+  hasDailyActionCapacity,
 } from '../shared/types';
 import { getOfficeFocusLockService } from './officeFocusLockService';
+import { getFocusSessionService } from './focusSessionService';
 import { getRestBlockService } from './restBlockService';
 import { 
   minutesToMs, 
@@ -184,9 +191,36 @@ export class TimerEngine extends EventEmitter {
     return { allowed: true };
   }
 
+  /** User actions that mutate the timer are locked during any Focus mode. */
+  private isFocusLocked(): boolean {
+    return this.state.isFocusSessionActive
+      || getFocusSessionService().isActive()
+      || getOfficeFocusLockService().isActive();
+  }
+
+  private getFocusSessionMode(): FocusSessionMode | null {
+    return getFocusSessionService().getActiveSession()?.mode
+      ?? getOfficeFocusLockService().getState().focusSessionMode
+      ?? null;
+  }
+
+  private isSemiStrictFocusSession(): boolean {
+    return this.getFocusSessionMode() === 'semi-strict';
+  }
+
+  private blockIfFocusLocked(action: string): boolean {
+    if (!this.isFocusLocked()) return false;
+    if (this.isSemiStrictFocusSession() && (action === 'skipPhase' || action === 'postpone')) {
+      return false;
+    }
+    logger.warn('TimerEngine', `${action} blocked — focus mode is active`);
+    return true;
+  }
+
   constructor() {
     super();
     this.state = configService.getSessionState();
+    this.state.deferredTransition ??= null;
     this.validateAndResetDailyCounters();
     this.recoverStateFromTimestamps();
     this.setupPowerMonitor();
@@ -328,6 +362,7 @@ export class TimerEngine extends EventEmitter {
           });
           // Reset to fresh state - will be handled by checkScheduleChange in first tick
           this.state.currentPhase = 'idle';
+          this.state.deferredTransition = null;
           this.state.phaseEndsAt = 0;
           this.state.phaseRemainingMs = 0;
           this.state.currentFlowStepIndex = undefined;
@@ -377,6 +412,12 @@ export class TimerEngine extends EventEmitter {
       this.state.longBreakCountToday = 0;
       this.state.breakSkipCountsToday = { ...INITIAL_BREAK_SKIP_COUNTS };
       this.state.breakCountResetDate = today;
+      changed = true;
+    }
+
+    if ((this.state.transitionExtensionsResetDate ?? '') !== today) {
+      this.state.transitionExtensionsToday = 0;
+      this.state.transitionExtensionsResetDate = today;
       changed = true;
     }
     
@@ -551,6 +592,15 @@ export class TimerEngine extends EventEmitter {
         
         if (pendingBreak) {
           logger.info('TimerEngine', `Postponed break triggering: ${pendingBreak}`);
+          
+          // Increment break counter (was missing — caused Dashboard to show 0 breaks)
+          if (pendingBreak === 'short-break') {
+            this.state.shortBreakCountToday = (this.state.shortBreakCountToday ?? 0) + 1;
+          } else if (pendingBreak === 'long-break') {
+            this.state.longBreakCountToday = (this.state.longBreakCountToday ?? 0) + 1;
+          }
+          this.stateChanged = true;
+          
           // FIX: Restore flow index to the break step BEFORE startPhase so that
           // getPhaseDurationMs reads the correct duration from the flow step,
           // not the rule-based fallback (which defaults to 5 min).
@@ -608,6 +658,7 @@ export class TimerEngine extends EventEmitter {
       
       if (activeSchedule) {
         // Starting a new schedule
+        this.state.deferredTransition = null;
         this.state.activeScheduleId = activeSchedule.id;
         this.state.cumulativeWorkTimeMs = 0;
         this.state.lastShortBreakAtWorkTimeMs = 0;
@@ -859,9 +910,17 @@ export class TimerEngine extends EventEmitter {
   private advancePhase(): void {
     const prevPhase = this.state.currentPhase;
     const prevIndex = this.state.currentFlowStepIndex;
-    
-    // Handle flow-based mode
-    if (isFlowBasedSchedule(this.currentSchedule)) {
+    const deferredTransition = this.state.deferredTransition;
+
+    if (deferredTransition && prevPhase === deferredTransition.sourcePhase) {
+      this.startDeferredTransition();
+    } else if (deferredTransition && isBreakPhaseType(prevPhase)) {
+      this.resumeDeferredActivityAfterBreak(prevPhase, deferredTransition);
+    } else if (prevPhase === 'short-break'
+      && this.isWorkPhase(this.state.interruptedPhase ?? 'idle')
+      && this.state.interruptedPhaseRemainingMs > 0) {
+      this.resumeInterruptedWorkAfterShortBreak();
+    } else if (isFlowBasedSchedule(this.currentSchedule)) {
       this.advanceFlowBasedPhase(prevPhase);
     } else {
       // Rule-based mode (existing behavior)
@@ -879,6 +938,63 @@ export class TimerEngine extends EventEmitter {
       cumulativeWorkMs: this.state.cumulativeWorkTimeMs,
       scheduleId: this.currentSchedule?.id,
     });
+  }
+
+  private startDeferredTransition(): void {
+    const deferred = this.state.deferredTransition;
+    if (!deferred) return;
+
+    this.state.deferredTransition = null;
+    if (deferred.transitionFlowIndex !== undefined) {
+      this.state.currentFlowStepIndex = deferred.transitionFlowIndex;
+    }
+    this.state.interruptedPhase = null;
+    this.state.interruptedPhaseRemainingMs = 0;
+    this.state.interruptedFlowIndex = undefined;
+    this.preBreakPhase = null;
+    this.maybeStartPhase(deferred.transitionPhase);
+  }
+
+  private resumeDeferredActivityAfterBreak(
+    breakPhase: PhaseType,
+    deferred: DeferredTransitionState,
+  ): void {
+    if (breakPhase === 'short-break') {
+      this.state.lastShortBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
+    } else if (breakPhase === 'long-break') {
+      this.state.lastLongBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
+      this.state.lastShortBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
+    }
+
+    const remainingMs = Math.max(0, this.state.interruptedPhaseRemainingMs);
+    this.state.interruptedPhase = null;
+    this.state.interruptedPhaseRemainingMs = 0;
+    this.state.interruptedFlowIndex = undefined;
+    this.preBreakPhase = null;
+
+    if (deferred.sourceFlowIndex !== undefined) {
+      this.state.currentFlowStepIndex = deferred.sourceFlowIndex;
+    }
+
+    if (remainingMs === 0) {
+      this.startDeferredTransition();
+    } else {
+      this.startPhase(deferred.sourcePhase, remainingMs);
+    }
+  }
+
+  private resumeInterruptedWorkAfterShortBreak(): void {
+    this.state.lastShortBreakAtWorkTimeMs = this.state.cumulativeWorkTimeMs;
+    const phase = this.state.interruptedPhase as 'sit' | 'stand';
+    const remainingMs = this.state.interruptedPhaseRemainingMs;
+    const flowIndex = this.state.interruptedFlowIndex;
+
+    this.state.interruptedPhase = null;
+    this.state.interruptedPhaseRemainingMs = 0;
+    this.state.interruptedFlowIndex = undefined;
+    this.preBreakPhase = null;
+    if (flowIndex !== undefined) this.state.currentFlowStepIndex = flowIndex;
+    this.startPhase(phase, remainingMs);
   }
   
   /**
@@ -1135,6 +1251,7 @@ export class TimerEngine extends EventEmitter {
    * Returns true if a queued phase was started, false if nothing was waiting.
    */
   startNextActivity(): boolean {
+    if (this.blockIfFocusLocked('startNextActivity')) return false;
     if (!this.state.isWaitingForNextActivity || !this.state.waitingNextPhase) {
       logger.debug('TimerEngine', 'startNextActivity: nothing waiting');
       return false;
@@ -1156,10 +1273,10 @@ export class TimerEngine extends EventEmitter {
    * When entering a break phase, check if pending break should be cleared
    * to prevent conflicting break states (active + pending of same type)
    */
-  private startPhase(phase: PhaseType): void {
+  private startPhase(phase: PhaseType, durationOverrideMs?: number): void {
     const prevPhase = this.state.currentPhase;
     const now = Date.now();
-    const duration = this.getPhaseDurationMs(phase);
+    const duration = durationOverrideMs ?? this.getPhaseDurationMs(phase);
     
     // BREAK CONFLICT RESOLUTION: Clear pending break when entering a break phase
     // This prevents the "active break + same-type pending break" conflict
@@ -1324,6 +1441,11 @@ export class TimerEngine extends EventEmitter {
     // Flow-based mode: use transition model
     if (isFlowBasedSchedule(schedule)) {
       const flowSteps = schedule.flowSteps!;
+      const deferred = this.state.deferredTransition;
+      if (deferred && this.state.currentPhase === deferred.sourcePhase
+        && deferred.transitionFlowIndex !== undefined) {
+        return computeNextFlowPhase(deferred.transitionFlowIndex, flowSteps, false).nextPhase;
+      }
       const currentIndex = this.state.currentFlowStepIndex ?? 0;
       const result = computeThenFlowPhase(currentIndex, flowSteps);
       return result.nextPhase;
@@ -1378,6 +1500,7 @@ export class TimerEngine extends EventEmitter {
    * Set idle state when no schedule is active
    */
   private setIdleState(): void {
+    this.state.deferredTransition = null;
     this.state.activeScheduleId = null;
     this.state.currentPhase = 'idle';
     this.state.phaseStartedAt = 0;
@@ -1394,6 +1517,11 @@ export class TimerEngine extends EventEmitter {
    */
   getNextPhase(): PhaseType {
     if (!this.currentSchedule) return 'idle';
+
+    const deferred = this.state.deferredTransition;
+    if (deferred && this.state.currentPhase === deferred.sourcePhase) {
+      return deferred.transitionPhase;
+    }
 
     // Flow-based mode: use transition model with runtime snapshot
     if (isFlowBasedSchedule(this.currentSchedule)) {
@@ -1421,7 +1549,11 @@ export class TimerEngine extends EventEmitter {
   /**
    * Pause the timer
    */
-  pause(): void {
+  pause(allowDuringFocus = false): void {
+    if (!allowDuringFocus && this.isFocusLocked()) {
+      logger.warn('TimerEngine', 'pause blocked — focus mode is active');
+      return;
+    }
     if (this.state.isPaused) return;
     this.state.isPaused = true;
     this.state.pausedAt = Date.now();
@@ -1434,6 +1566,7 @@ export class TimerEngine extends EventEmitter {
    * Pause for a specific duration in minutes
    */
   pauseForDuration(minutes: number): void {
+    if (this.blockIfFocusLocked('pauseForDuration')) return;
     if (this.state.isPaused) return;
     this.state.isPaused = true;
     this.state.pausedAt = Date.now();
@@ -1447,8 +1580,10 @@ export class TimerEngine extends EventEmitter {
    * Called when user confirms they drank water
    */
   dismissWaterReminder(): void {
+    const wasActive = this.waterReminderActive;
     this.waterReminderActive = false;
     logger.info('TimerEngine', 'Water reminder dismissed');
+    if (wasActive) this.emitTick();
   }
 
   /**
@@ -1460,12 +1595,19 @@ export class TimerEngine extends EventEmitter {
 
   /**
    * Extend the current phase by a specified number of minutes.
-   * Works for breaks (short-break, long-break) and work phases (sit, stand).
-   * Does NOT work for transitions (they're too short to need extending).
+   * Transition deferrals use deferTransition() so the source activity remains accurate.
    * Returns true if phase was extended, false if not in an extendable phase.
    */
   extendPhase(minutes: number): boolean {
-    const extendablePhases = ['short-break', 'long-break', 'sit', 'stand', 'custom'];
+    if (this.blockIfFocusLocked('extendPhase')) return false;
+    if (!Number.isFinite(minutes) || minutes <= 0) return false;
+    const extendablePhases = [
+      'short-break',
+      'long-break',
+      'sit',
+      'stand',
+      'custom',
+    ];
     if (!extendablePhases.includes(this.state.currentPhase)) {
       logger.debug('TimerEngine', 'extendPhase: not in an extendable phase', { 
         currentPhase: this.state.currentPhase 
@@ -1476,6 +1618,9 @@ export class TimerEngine extends EventEmitter {
     const extensionMs = minutes * 60 * 1000;
     this.state.phaseRemainingMs += extensionMs;
     this.state.phaseTotalMs += extensionMs;
+    this.state.phaseEndsAt = this.state.isPaused
+      ? this.state.phaseEndsAt + extensionMs
+      : Date.now() + this.state.phaseRemainingMs;
 
     logger.info('TimerEngine', 'Phase extended', {
       phase: this.state.currentPhase,
@@ -1496,6 +1641,66 @@ export class TimerEngine extends EventEmitter {
     return this.extendPhase(minutes);
   }
 
+  /** Return to the activity before a transition briefly, then replay that transition. */
+  deferTransition(minutes: number): boolean {
+    if (this.blockIfFocusLocked('deferTransition')) return false;
+    if (!Number.isFinite(minutes) || minutes <= 0 || this.state.isPaused
+      || this.state.deferredTransition || !this.currentSchedule) {
+      return false;
+    }
+    const extensionLimit = boundedDailyActionLimit(this.currentSchedule.maxTransitionExtensionsPerDay, 3, MAX_TRANSITION_EXTENSIONS_PER_DAY);
+    if (!hasDailyActionCapacity(this.state.transitionExtensionsToday ?? 0, extensionLimit)) return false;
+
+    const transitionPhase = this.state.currentPhase;
+    if (transitionPhase !== 'sit-to-stand-transition' && transitionPhase !== 'stand-to-sit-transition') {
+      return false;
+    }
+
+    const sourcePhase = transitionPhase === 'sit-to-stand-transition' ? 'sit' : 'stand';
+    const deferred: DeferredTransitionState = { sourcePhase, transitionPhase };
+
+    if (isFlowBasedSchedule(this.currentSchedule)) {
+      const flowSteps = this.getRuntimeFlowSteps();
+      const transitionIndex = this.state.currentFlowStepIndex;
+      if (!flowSteps?.length || transitionIndex === undefined
+        || flowSteps[transitionIndex]?.type !== transitionPhase) {
+        logger.warn('TimerEngine', 'Cannot defer transition: flow position is invalid', {
+          transitionPhase,
+          transitionIndex,
+        });
+        return false;
+      }
+
+      const sourceIndex = Array.from({ length: flowSteps.length }, (_, offset) =>
+        (transitionIndex - offset - 1 + flowSteps.length) % flowSteps.length,
+      ).find((index) => flowSteps[index]?.type === sourcePhase);
+      if (sourceIndex === undefined) {
+        logger.warn('TimerEngine', 'Cannot defer transition: preceding work phase is missing', {
+          transitionPhase,
+          sourcePhase,
+        });
+        return false;
+      }
+
+      deferred.sourceFlowIndex = sourceIndex;
+      deferred.transitionFlowIndex = transitionIndex;
+      this.state.currentFlowStepIndex = sourceIndex;
+    }
+
+    this.state.deferredTransition = deferred;
+    this.state.transitionExtensionsToday = (this.state.transitionExtensionsToday ?? 0) + 1;
+    this.state.transitionExtensionsResetDate = getTodayDateString();
+    this.preBreakPhase = null;
+    const extensionMs = minutes * 60 * 1000;
+    logger.info('TimerEngine', 'Transition deferred by continuing prior activity', {
+      sourcePhase,
+      transitionPhase,
+      minutes,
+    });
+    this.startPhase(sourcePhase, extensionMs);
+    return true;
+  }
+
   /**
    * Reset the current phase duration back to original configured duration.
    * Calculates: newRemaining = originalDuration - elapsed
@@ -1504,6 +1709,7 @@ export class TimerEngine extends EventEmitter {
    * Returns true if reset was applied, false if not in a resettable phase or no modification exists.
    */
   resetPhaseDuration(): boolean {
+    if (this.blockIfFocusLocked('resetPhaseDuration')) return false;
     const resettablePhases = ['short-break', 'long-break', 'sit', 'stand', 'custom'];
     if (!resettablePhases.includes(this.state.currentPhase)) {
       logger.debug('TimerEngine', 'resetPhaseDuration: not in a resettable phase');
@@ -1558,6 +1764,7 @@ export class TimerEngine extends EventEmitter {
    * Returns true if phase was preponed, false if not valid.
    */
   preponePhase(minutes: number): boolean {
+    if (this.blockIfFocusLocked('preponePhase')) return false;
     logger.info('TimerEngine', 'preponePhase called', {
       minutes,
       currentPhase: this.state.currentPhase,
@@ -1617,6 +1824,7 @@ export class TimerEngine extends EventEmitter {
    * @returns true if break was started, false if not in a valid state to take a break
    */
   startAdHocBreak(durationMinutes: number): boolean {
+    if (this.blockIfFocusLocked('startAdHocBreak')) return false;
     // Allow ad-hoc breaks during work phases (sit/stand) and transitions
     const isTransition = this.state.currentPhase === 'sit-to-stand-transition' || this.state.currentPhase === 'stand-to-sit-transition';
     if (!this.isWorkPhase(this.state.currentPhase) && !isTransition) {
@@ -1689,6 +1897,7 @@ export class TimerEngine extends EventEmitter {
    * Returns true if a pending break was triggered, false if nothing to trigger.
    */
   triggerPendingBreakNow(): boolean {
+    if (this.blockIfFocusLocked('triggerPendingBreakNow')) return false;
     if (!this.state.isPostponed || !this.state.postponedPhase) {
       logger.debug('TimerEngine', 'triggerPendingBreakNow: no pending break to trigger');
       return false;
@@ -1714,6 +1923,14 @@ export class TimerEngine extends EventEmitter {
       this.preBreakPhase = this.state.currentPhase;
     }
 
+    // Increment break counter (was missing — caused Dashboard to show 0 breaks)
+    if (pendingBreak === 'short-break') {
+      this.state.shortBreakCountToday = (this.state.shortBreakCountToday ?? 0) + 1;
+    } else if (pendingBreak === 'long-break') {
+      this.state.longBreakCountToday = (this.state.longBreakCountToday ?? 0) + 1;
+    }
+    this.stateChanged = true;
+
     // Start the break immediately - this emits phaseChange which shows the overlay
     this.startPhase(pendingBreak);
     this.emitTick();
@@ -1733,7 +1950,11 @@ export class TimerEngine extends EventEmitter {
   /**
    * Resume from pause
    */
-  resume(): void {
+  resume(allowDuringFocus = false): void {
+    if (!allowDuringFocus && this.isFocusLocked()) {
+      logger.warn('TimerEngine', 'resume blocked — focus mode is active');
+      return;
+    }
     if (!this.state.isPaused) return;
     const now = Date.now();
     const pausedDurationMs = this.state.pausedAt ? now - this.state.pausedAt : 0;
@@ -1741,6 +1962,11 @@ export class TimerEngine extends EventEmitter {
     this.state.isPaused = false;
     this.state.pausedAt = null;
     this.state.pauseResumeAt = null;
+
+    // Deferred activity time should resume from now, not expire while paused.
+    if (this.state.deferredTransition) {
+      this.state.phaseEndsAt = now + this.state.phaseRemainingMs;
+    }
 
     // Extend postponedUntil by the paused duration so paused time doesn't
     // count against the pending break countdown
@@ -1769,7 +1995,9 @@ export class TimerEngine extends EventEmitter {
    * - postponedUntil -> when the pending break should trigger
    */
   postpone(minutes: number): boolean {
+    if (this.blockIfFocusLocked('postpone')) return false;
     if (!this.currentSchedule) return false;
+    const semiStrictFocus = this.isSemiStrictFocusSession();
     
     // ARCHITECTURE HARDENING: Pre-transition validation
     const precondCheck = this.canPerformTransition('postpone');
@@ -1781,14 +2009,24 @@ export class TimerEngine extends EventEmitter {
     const breakType = phaseToBreakType(this.state.currentPhase);
     if (!breakType) return false; // Can only postpone breaks/transitions
     
-    // Check if postpone is allowed for this break type
-    const allowPostpone = this.isPostponeAllowedForBreakType(breakType);
-    if (!allowPostpone) return false;
-    
-    // Check per-break-type limit
-    const maxPostpones = getMaxPostponesForBreakType(this.currentSchedule, breakType);
-    const currentCount = this.state.postponeCountsToday[breakType];
-    if (currentCount >= maxPostpones) return false;
+    const postponeOptions = semiStrictFocus
+      ? (this.currentSchedule.postponeOptionsMinutes ?? [])
+      : this.getPostponeOptionsForCurrentPhase();
+    if (semiStrictFocus) {
+      // Semi-Strict Focus may postpone only actual breaks, using the schedule's
+      // configured durations even when its normal postpone toggle is disabled.
+      if (breakType !== 'shortBreak' && breakType !== 'longBreak') return false;
+      if (!postponeOptions.includes(minutes)) return false;
+    } else {
+      // Check if postpone is allowed for this break type
+      const allowPostpone = this.isPostponeAllowedForBreakType(breakType);
+      if (!allowPostpone) return false;
+
+      // Check per-break-type limit
+      const maxPostpones = getMaxPostponesForBreakType(this.currentSchedule, breakType);
+      const currentCount = this.state.postponeCountsToday[breakType];
+      if (currentCount >= maxPostpones) return false;
+    }
 
     // Store the pending break
     const postponedBreakPhase = this.state.currentPhase;
@@ -1951,15 +2189,13 @@ export class TimerEngine extends EventEmitter {
     if (!this.currentSchedule) return 0;
 
     if (phase === 'short-break') {
-      return this.currentSchedule.shortBreak.maxSkipsPerDay
-        ?? this.currentSchedule.maxSkipsPerDay
-        ?? 2;
+      return boundedDailyActionLimit(this.currentSchedule.shortBreak.maxSkipsPerDay
+        ?? this.currentSchedule.maxSkipsPerDay, 2);
     }
 
     if (phase === 'long-break') {
-      return this.currentSchedule.longBreak.maxSkipsPerDay
-        ?? this.currentSchedule.maxSkipsPerDay
-        ?? 1;
+      return boundedDailyActionLimit(this.currentSchedule.longBreak.maxSkipsPerDay
+        ?? this.currentSchedule.maxSkipsPerDay, 1);
     }
 
     return 0;
@@ -2013,12 +2249,24 @@ export class TimerEngine extends EventEmitter {
    * INVARIANT: After skip, currentPhase MUST match flowSteps[currentFlowStepIndex] (in flow mode)
   */
   skipPhase(): void {
+    if (this.blockIfFocusLocked('skipPhase')) return;
     if (!this.currentSchedule) return;
+    const semiStrictFocus = this.isSemiStrictFocusSession();
+
+    // Semi-Strict Focus only permits skipping actual breaks. Work phases and
+    // transitions remain locked even though the schedule's no-skip setting is
+    // overridden for break actions.
+    if (semiStrictFocus
+      && this.state.currentPhase !== 'short-break'
+      && this.state.currentPhase !== 'long-break'
+      && !(this.state.isPostponed && this.state.postponedPhase)) {
+      return;
+    }
 
     // If waiting for user to start next activity, skip the queued phase
     // and advance to the one after it (treat it as if the queued phase completed)
     if (this.state.isWaitingForNextActivity && this.state.waitingNextPhase) {
-      if (this.currentSchedule.noSkipEnabled) return;
+      if (!semiStrictFocus && this.currentSchedule.noSkipEnabled) return;
       logger.info('TimerEngine', 'skipPhase: skipping queued waiting phase', {
         waitingNextPhase: this.state.waitingNextPhase,
       });
@@ -2072,7 +2320,7 @@ export class TimerEngine extends EventEmitter {
       return;
     }
 
-    if (this.currentSchedule.noSkipEnabled) return;
+    if (!semiStrictFocus && this.currentSchedule.noSkipEnabled) return;
     
     // ARCHITECTURE HARDENING: Pre-transition validation
     const precondCheck = this.canPerformTransition('skip');
@@ -2097,7 +2345,7 @@ export class TimerEngine extends EventEmitter {
 
     // Active break skip limit (short/long break only)
     if (phaseBefore === 'short-break' || phaseBefore === 'long-break') {
-      if (!this.canSkipCurrentBreak()) {
+      if (!semiStrictFocus && !this.canSkipCurrentBreak()) {
         logger.info('TimerEngine', 'Skip blocked: reached break skip limit', {
           phase: phaseBefore,
           currentCount: this.getCurrentBreakSkipCount(),
@@ -2176,6 +2424,7 @@ export class TimerEngine extends EventEmitter {
    * Complete current phase (user acknowledges they're done)
    */
   completePhase(): void {
+    if (this.blockIfFocusLocked('completePhase')) return;
     this.advancePhase();
   }
 
@@ -2194,6 +2443,7 @@ export class TimerEngine extends EventEmitter {
    * Returns true if the activity was restarted, false if blocked.
    */
   restartCurrentActivity(): boolean {
+    if (this.blockIfFocusLocked('restartCurrentActivity')) return false;
     if (!this.currentSchedule) {
       logger.warn('TimerEngine', 'Cannot restart activity - no active schedule');
       return false;
@@ -2276,6 +2526,7 @@ export class TimerEngine extends EventEmitter {
    * - Schedule configuration
    */
   resetSession(): void {
+    if (this.blockIfFocusLocked('resetSession')) return;
     if (!this.currentSchedule) {
       logger.warn('TimerEngine', 'Cannot reset session - no active schedule');
       return;
@@ -2318,6 +2569,7 @@ export class TimerEngine extends EventEmitter {
     this.state.phaseRemainingMs = resetState.phaseDurationMs;
     this.state.phaseTotalMs = resetState.phaseDurationMs;
     this.state.phaseOriginalDurationMs = resetState.phaseDurationMs;
+    this.state.deferredTransition = null;
     
     // Update flow config hash for flow-based schedules
     if (isFlowBasedSchedule(this.currentSchedule)) {
@@ -2410,6 +2662,7 @@ export class TimerEngine extends EventEmitter {
    * - Postponed break state (clears pending postpones since flow changed)
    */
   applyFlowOrder(): void {
+    if (this.blockIfFocusLocked('applyFlowOrder')) return;
     if (!this.currentSchedule || !isFlowBasedSchedule(this.currentSchedule)) {
       logger.warn('TimerEngine', 'Cannot apply flow order - no flow-based schedule active');
       return;
@@ -2435,6 +2688,7 @@ export class TimerEngine extends EventEmitter {
     this.state.phaseRemainingMs = resetState.phaseDurationMs;
     this.state.phaseTotalMs = resetState.phaseDurationMs;
     this.state.phaseOriginalDurationMs = resetState.phaseDurationMs;
+    this.state.deferredTransition = null;
 
     // Update flow config hash and re-freeze snapshot
     this.state.flowConfigHash = computeFlowConfigHash(this.currentSchedule.flowSteps);
@@ -2513,6 +2767,7 @@ export class TimerEngine extends EventEmitter {
    * - Work time toward breaks (those are relative to cumulative work time)
    */
   resetTodayCounters(): void {
+    if (this.blockIfFocusLocked('resetTodayCounters')) return;
     logger.info('TimerEngine', 'Resetting today\'s counters');
     
     const today = getTodayDateString();
@@ -2527,6 +2782,8 @@ export class TimerEngine extends EventEmitter {
     // Reset postpone counts
     this.state.postponeCountsToday = { ...INITIAL_POSTPONE_COUNTS };
     this.state.postponeResetDate = today;
+    this.state.transitionExtensionsToday = 0;
+    this.state.transitionExtensionsResetDate = today;
     
     // Reset break counts
     this.state.shortBreakCountToday = 0;
@@ -2553,6 +2810,7 @@ export class TimerEngine extends EventEmitter {
    * Saves to config file - user must click "Reset Now" to apply
    */
   shuffleFlow(): { success: boolean; message: string } {
+    if (this.blockIfFocusLocked('shuffleFlow')) return { success: false, message: 'Focus mode is active' };
     if (!this.currentSchedule || !isFlowBasedSchedule(this.currentSchedule)) {
       logger.warn('TimerEngine', 'Cannot shuffle - no flow-based schedule active');
       return { success: false, message: 'No flow-based schedule active' };
@@ -2630,6 +2888,7 @@ export class TimerEngine extends EventEmitter {
    * Saves to config file - user must click "Reset Now" to apply
    */
   reverseFlow(): { success: boolean; message: string } {
+    if (this.blockIfFocusLocked('reverseFlow')) return { success: false, message: 'Focus mode is active' };
     if (!this.currentSchedule || !isFlowBasedSchedule(this.currentSchedule)) {
       logger.warn('TimerEngine', 'Cannot reverse - no flow-based schedule active');
       return { success: false, message: 'No flow-based schedule active' };
@@ -2845,6 +3104,19 @@ export class TimerEngine extends EventEmitter {
   private emitTick(): void {
     const officeFocusLockService = getOfficeFocusLockService();
     const schedule = this.currentSchedule;
+    const focusSessionService = getFocusSessionService();
+    const activeFocusSession = focusSessionService.getActiveSession();
+    const officeFocusLock = officeFocusLockService.getState();
+    const focusSessionMode = activeFocusSession?.mode
+      ?? officeFocusLock.focusSessionMode
+      ?? null;
+    const semiStrictFocus = focusSessionMode === 'semi-strict';
+    const focusSessionRemainingMs = focusSessionService.getTimeUntilEndMs()
+      ?? (officeFocusLock.isActive
+        ? officeFocusLock.remainingMs
+        : (this.state.isFocusSessionActive && this.state.focusSessionEndsAt
+          ? Math.max(0, this.state.focusSessionEndsAt - Date.now())
+          : null));
     const breakType = phaseToBreakType(this.state.currentPhase);
     
     // Calculate total postpone count across all break types
@@ -2853,22 +3125,29 @@ export class TimerEngine extends EventEmitter {
     // Get max postpones for current break type (or legacy global value)
     const maxPostpones = breakType 
       ? getMaxPostponesForBreakType(schedule, breakType)
-      : (schedule?.maxPostponesPerDay ?? 0);
+      : boundedDailyActionLimit(schedule?.maxPostponesPerDay);
     
     // Get postpone options for current break type
-    const postponeOptions = this.getPostponeOptionsForCurrentPhase();
+    const postponeOptions = focusSessionMode === 'semi-strict'
+      ? normalizePostponeDurationOptions(schedule?.postponeOptionsMinutes)
+      : this.getPostponeOptionsForCurrentPhase();
     
     // Get strict mode for current phase
     const isStrictMode = this.getStrictModeForCurrentPhase();
     
     // Get no skip setting from schedule
-    const noSkipEnabled = schedule?.noSkipEnabled ?? false;
+    const noSkipEnabled = semiStrictFocus ? false : (schedule?.noSkipEnabled ?? false);
 
     // Active break skip limit info (only applies to short/long break phases)
     const isActiveBreakPhase = this.state.currentPhase === 'short-break' || this.state.currentPhase === 'long-break';
     const breakSkipCountToday = isActiveBreakPhase ? this.getCurrentBreakSkipCount() : 0;
     const maxBreakSkipsPerDay = isActiveBreakPhase ? this.getMaxSkipsForBreakPhase(this.state.currentPhase) : 0;
-    const canSkipCurrentBreak = isActiveBreakPhase ? this.canSkipCurrentBreak() : true;
+    const canSkipCurrentBreak = isActiveBreakPhase
+      ? (semiStrictFocus ? true : this.canSkipCurrentBreak())
+      : true;
+    const canPostpone = semiStrictFocus
+      ? (isActiveBreakPhase && postponeOptions.length > 0)
+      : this.canPostpone();
     
     // Calculate break progress
     const breakProgress = this.calculateBreakProgress();
@@ -2954,8 +3233,12 @@ export class TimerEngine extends EventEmitter {
     
     // Get custom display labels for phases
     const currentIndex = this.state.currentFlowStepIndex;
+    const deferred = this.state.deferredTransition;
     const nextIndex = schedule && isFlowBasedSchedule(schedule) && schedule.flowSteps
-      ? ((currentIndex ?? 0) + 1) % schedule.flowSteps.length
+      ? deferred && this.state.currentPhase === deferred.sourcePhase
+        && deferred.transitionFlowIndex !== undefined
+        ? deferred.transitionFlowIndex
+        : ((currentIndex ?? 0) + 1) % schedule.flowSteps.length
       : undefined;
     const thenIndex = schedule && isFlowBasedSchedule(schedule) && schedule.flowSteps && nextIndex !== undefined
       ? (nextIndex + 1) % schedule.flowSteps.length
@@ -3001,14 +3284,21 @@ export class TimerEngine extends EventEmitter {
       isFlowStale: this.isFlowSessionStale(),
       postponeCountToday: totalPostponeCount,
       maxPostponesPerDay: maxPostpones,
-      canPostpone: this.canPostpone(),
+      canPostpone,
       postponeOptions,
       isStrictMode,
       noSkipEnabled,
       breakSkipCountToday,
       maxBreakSkipsPerDay,
       canSkipCurrentBreak,
+      transitionExtensionsToday: this.state.transitionExtensionsToday ?? 0,
+      maxTransitionExtensionsPerDay: boundedDailyActionLimit(schedule?.maxTransitionExtensionsPerDay, 3, MAX_TRANSITION_EXTENSIONS_PER_DAY),
       officeFocusLock: officeFocusLockService.getState(),
+      focusSessionActive: this.state.isFocusSessionActive || !!activeFocusSession || !!officeFocusLock.focusSessionMode,
+      focusSessionName: activeFocusSession?.name
+        ?? (officeFocusLock.focusSessionMode ? officeFocusLock.label : null),
+      focusSessionMode,
+      focusSessionRemainingMs,
       restBlock: getRestBlockService().getState(),
       breakProgress,
       configuredDurations,
@@ -3121,19 +3411,19 @@ export class TimerEngine extends EventEmitter {
     
     const breakType = phaseToBreakType(this.state.currentPhase);
     
-    if (!breakType) return schedule.postponeOptionsMinutes ?? [];
+    if (!breakType) return normalizePostponeDurationOptions(schedule.postponeOptionsMinutes);
     
     switch (breakType) {
       case 'sitToStandTransition':
-        return schedule.transitions?.sitToStand?.postponeOptionsMinutes ?? schedule.postponeOptionsMinutes ?? [];
+        return normalizePostponeDurationOptions(schedule.transitions?.sitToStand?.postponeOptionsMinutes ?? schedule.postponeOptionsMinutes);
       case 'standToSitTransition':
-        return schedule.transitions?.standToSit?.postponeOptionsMinutes ?? schedule.postponeOptionsMinutes ?? [];
+        return normalizePostponeDurationOptions(schedule.transitions?.standToSit?.postponeOptionsMinutes ?? schedule.postponeOptionsMinutes);
       case 'shortBreak':
-        return schedule.shortBreak?.postponeOptionsMinutes ?? schedule.postponeOptionsMinutes ?? [];
+        return normalizePostponeDurationOptions(schedule.shortBreak?.postponeOptionsMinutes ?? schedule.postponeOptionsMinutes);
       case 'longBreak':
-        return schedule.longBreak?.postponeOptionsMinutes ?? schedule.postponeOptionsMinutes ?? [];
+        return normalizePostponeDurationOptions(schedule.longBreak?.postponeOptionsMinutes ?? schedule.postponeOptionsMinutes);
       default:
-        return schedule.postponeOptionsMinutes ?? [];
+        return normalizePostponeDurationOptions(schedule.postponeOptionsMinutes);
     }
   }
   

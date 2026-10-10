@@ -75,8 +75,13 @@ export function validateSessionState(
     }
   }
   
-  // Invariant 2: Flow index-phase consistency (only for flow-based, not during long-break)
-  if (isFlowBasedSchedule(schedule) && state.currentPhase !== 'long-break') {
+  // An interrupted short break keeps the index of the work step it paused.
+  const shortBreakInterrupt = state.currentPhase === 'short-break'
+    && state.interruptedPhase !== null
+    && state.interruptedFlowIndex === state.currentFlowStepIndex;
+
+  // Invariant 2: Flow index-phase consistency (not during long breaks or interrupted short breaks)
+  if (isFlowBasedSchedule(schedule) && state.currentPhase !== 'long-break' && !shortBreakInterrupt) {
     const flowSteps = schedule.flowSteps!;
     const index = state.currentFlowStepIndex ?? 0;
     if (index >= 0 && index < flowSteps.length) {
@@ -190,8 +195,12 @@ export function normalizeSessionState(
       changes.push(`Fixed out-of-bounds index, reset to ${firstWorkIndex}`);
     }
     
-    // Fix flow desync (only if not in long-break)
-    if (newState.currentPhase !== 'long-break') {
+    const shortBreakInterrupt = newState.currentPhase === 'short-break'
+      && newState.interruptedPhase !== null
+      && newState.interruptedFlowIndex === newState.currentFlowStepIndex;
+
+    // Fix flow desync unless the phase is a long break or interrupted short break.
+    if (newState.currentPhase !== 'long-break' && !shortBreakInterrupt) {
       const expectedPhase = flowSteps[newState.currentFlowStepIndex].type;
       if (expectedPhase !== newState.currentPhase) {
         // Try to find correct index for current phase
