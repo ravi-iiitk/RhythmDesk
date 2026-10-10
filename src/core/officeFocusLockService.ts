@@ -8,7 +8,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { OfficeFocusLockState, INITIAL_OFFICE_FOCUS_LOCK_STATE } from '../shared/types';
+import { OfficeFocusLockState, INITIAL_OFFICE_FOCUS_LOCK_STATE, FocusSessionMode } from '../shared/types';
 import { minutesToMs } from '../shared/timeUtils';
 
 class OfficeFocusLockService extends EventEmitter {
@@ -26,8 +26,14 @@ class OfficeFocusLockService extends EventEmitter {
    * @param label Work label (e.g., "Deep Work", "Meeting", or custom)
    * @param durationMinutes Duration in minutes
    * @param isStrictMode If true, cannot stop focus mode early
+   * @param focusSessionMode Optional Strict/Semi-Strict behavior for adhoc Focus Mode
    */
-  start(label: string, durationMinutes: number, isStrictMode: boolean = false): void {
+  start(label: string, durationMinutes: number, isStrictMode: boolean = false, focusSessionMode: FocusSessionMode | null = null): boolean {
+    // A second start must not replace the active lock's timer or ownership.
+    if (this.state.isActive) {
+      return false;
+    }
+
     const durationMs = minutesToMs(durationMinutes);
     
     this.state = {
@@ -37,11 +43,13 @@ class OfficeFocusLockService extends EventEmitter {
       durationMs,
       remainingMs: durationMs,
       isStrictMode,
+      focusSessionMode,
     };
 
     this.startTicking();
     this.emit('started', this.state);
     this.emit('changed', this.state);
+    return true;
   }
 
   /**

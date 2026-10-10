@@ -6,7 +6,7 @@
  */
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { TimerTick, PhaseType } from '../../shared/types';
+import { TimerTick, PhaseType, FocusSessionMode, DEFAULT_EXTEND_DURATION_OPTIONS, TRANSITION_ACTIVITY_EXTENSION_OPTIONS, normalizePostponeDurationOptions } from '../../shared/types';
 import { PHASE_DISPLAY_NAMES, PHASE_COLORS } from '../../shared/constants';
 import { formatDuration, formatDurationHuman } from '../../shared/timeUtils';
 
@@ -23,6 +23,7 @@ function formatCurrentTime(): string {
 
 interface OverlayViewProps {
   tick: TimerTick | null;
+  focusSession?: { name: string; mode?: FocusSessionMode | null } | null;
 }
 
 // Format minutes into human-readable format (e.g., "1h 15m" or "30m")
@@ -38,6 +39,57 @@ function formatPostponeMinutes(minutes: number): string {
   return `${hours}h ${mins}m`;
 }
 
+function CompactDurationActions({
+  options,
+  onSelect,
+  title,
+  style,
+  disabled = false,
+  className,
+  visibleCount = 3,
+}: {
+  options: number[];
+  onSelect: (minutes: number) => void;
+  title: (minutes: number) => string;
+  style?: React.CSSProperties;
+  disabled?: boolean;
+  className?: string;
+  visibleCount?: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const ordered = [...new Set(options)].sort((a, b) => a - b);
+  const visible = expanded ? ordered : ordered.slice(0, visibleCount);
+  const hasMore = ordered.length > visibleCount;
+
+  return (
+    <div className={className} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+      {visible.map((minutes) => (
+        <button
+          key={minutes}
+          className="btn btn-secondary"
+          onClick={() => onSelect(minutes)}
+          disabled={disabled}
+          title={title(minutes)}
+          style={style}
+        >
+          +{formatPostponeMinutes(minutes)}
+        </button>
+      ))}
+      {hasMore && (
+        <button
+          type="button"
+          className="btn btn-secondary"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+          style={{ color: 'var(--text-muted)', borderColor: 'rgba(148,163,184,0.3)', fontSize: '0.85rem' }}
+        >
+          {expanded ? 'Less' : 'More'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // Phase-specific messages
 const PHASE_MESSAGES: Record<PhaseType, string> = {
   'sit': 'Time to work while sitting',
@@ -50,7 +102,7 @@ const PHASE_MESSAGES: Record<PhaseType, string> = {
   'idle': 'No active schedule',
 };
 
-function OverlayView({ tick }: OverlayViewProps) {
+function OverlayView({ tick, focusSession }: OverlayViewProps) {
   // Current time state - updates every second
   const [currentTime, setCurrentTime] = useState(formatCurrentTime());
   // Pause reminder state
@@ -61,16 +113,13 @@ function OverlayView({ tick }: OverlayViewProps) {
   const [waterReminderActive, setWaterReminderActive] = useState(false);
   const [waterAutoDismissSec, setWaterAutoDismissSec] = useState(30);
   const [waterCountdown, setWaterCountdown] = useState<number | null>(null);
+  const waterReminderDismissedRef = useRef(false);
   // Break extend minutes from settings (use first option)
-  const [breakExtendMinutes, setBreakExtendMinutes] = useState(2);
+  const [breakExtendMinutes, setBreakExtendMinutes] = useState(5);
   // All extend options from settings
-  const [extendOptions, setExtendOptions] = useState<number[]>([2, 5, 10]);
+  const [extendOptions, setExtendOptions] = useState<number[]>([...DEFAULT_EXTEND_DURATION_OPTIONS]);
   // Prepone options from settings
   const [preponeOptions, setPreponeOptions] = useState<number[]>([1, 2, 5]);
-  // Show all postpone options (expand beyond first 4)
-  const [showAllPostpone, setShowAllPostpone] = useState<boolean>(false);
-  
-  
   // Update current time every second
   useEffect(() => {
     const interval = setInterval(() => {
@@ -117,6 +166,7 @@ function OverlayView({ tick }: OverlayViewProps) {
   useEffect(() => {
     const cleanup = window.rhythmDesk.onShowWaterReminder((data: any) => {
       if (data?.autoDismissed) {
+        waterReminderDismissedRef.current = true;
         setWaterReminderActive(false);
         setWaterCountdown(null);
         return;
@@ -125,6 +175,7 @@ function OverlayView({ tick }: OverlayViewProps) {
       const secs = (typeof data?.autoDismissSec === 'number' && data.autoDismissSec > 0)
         ? data.autoDismissSec
         : waterAutoDismissSec;
+      waterReminderDismissedRef.current = false;
       setWaterAutoDismissSec(secs);
       setWaterReminderActive(true);
       setWaterCountdown(secs);
@@ -135,7 +186,13 @@ function OverlayView({ tick }: OverlayViewProps) {
   // Countdown timer while water reminder is active
   useEffect(() => {
     if (!waterReminderActive || waterCountdown === null) return;
-    if (waterCountdown <= 0) return;
+    if (waterCountdown <= 0) {
+      waterReminderDismissedRef.current = true;
+      setWaterReminderActive(false);
+      setWaterCountdown(null);
+      void window.rhythmDesk.dismissWaterReminder().catch(() => {});
+      return;
+    }
     const t = setTimeout(() => setWaterCountdown(c => (c !== null ? c - 1 : null)), 1000);
     return () => clearTimeout(t);
   }, [waterReminderActive, waterCountdown]);
@@ -143,15 +200,17 @@ function OverlayView({ tick }: OverlayViewProps) {
   // Sync water reminder state from tick data (handles overlay recreation)
   // If tick says water reminder is active but our local state doesn't know, sync it
   useEffect(() => {
-    if (tick?.waterReminderActive && !waterReminderActive) {
+    if (tick?.waterReminderActive && !waterReminderActive && !waterReminderDismissedRef.current) {
       console.log('[OverlayView] Restoring water reminder state from tick');
       setWaterReminderActive(true);
       // Also start countdown — it was never started because the IPC event was missed
       if (waterCountdown === null) {
         setWaterCountdown(waterAutoDismissSec);
       }
+    } else if (!tick?.waterReminderActive) {
+      waterReminderDismissedRef.current = false;
     }
-  }, [tick?.waterReminderActive]);
+  }, [tick?.waterReminderActive, waterReminderActive, waterCountdown, waterAutoDismissSec]);
 
   // Emergency escape key - ALWAYS works to close overlay (even for water/pause reminders)
   // This prevents users from being locked out of their system
@@ -162,6 +221,7 @@ function OverlayView({ tick }: OverlayViewProps) {
         console.log('[OverlayView] Emergency escape triggered');
         // Dismiss any active reminders
         if (waterReminderActive) {
+          waterReminderDismissedRef.current = true;
           setWaterReminderActive(false);
           window.rhythmDesk.dismissWaterReminder();
         }
@@ -173,6 +233,7 @@ function OverlayView({ tick }: OverlayViewProps) {
       }
       // Regular Escape for water reminder (since it has no strict mode)
       if (e.key === 'Escape' && waterReminderActive) {
+        waterReminderDismissedRef.current = true;
         setWaterReminderActive(false);
         window.rhythmDesk.dismissWaterReminder();
       }
@@ -192,8 +253,9 @@ function OverlayView({ tick }: OverlayViewProps) {
       .then((config) => {
         const extOptions = config?.generalSettings?.extendOptions;
         if (extOptions && extOptions.length > 0) {
-          setExtendOptions(extOptions);
-          setBreakExtendMinutes(extOptions[0]);
+          const normalized = normalizePostponeDurationOptions(extOptions, DEFAULT_EXTEND_DURATION_OPTIONS);
+          setExtendOptions(normalized);
+          setBreakExtendMinutes(normalized[0]);
         } else if (config?.generalSettings?.breakExtendMinutes) {
           const fallback = config.generalSettings.breakExtendMinutes;
           setExtendOptions([fallback]);
@@ -211,10 +273,10 @@ function OverlayView({ tick }: OverlayViewProps) {
 
   // Clear pause reminder when timer resumes
   useEffect(() => {
-    if (tick && !tick.isPaused && pauseReminderData) {
+    if (tick?.isPaused === false && pauseReminderData) {
       setPauseReminderData(null);
     }
-  }, [tick?.isPaused]);
+  }, [tick?.isPaused, pauseReminderData]);
 
   // When paused during a WORK phase (no overlay content to show) with no
   // pause/water reminder, close the overlay after a short delay.
@@ -223,16 +285,18 @@ function OverlayView({ tick }: OverlayViewProps) {
     'sit-to-stand-transition', 'stand-to-sit-transition',
     'short-break', 'long-break'
   ].includes(tick.currentPhase) || (tick.currentPhase === 'custom' && tick.currentStepShowOverlay) : false;
+  const isPaused = tick?.isPaused;
+  const isRestBlockActiveForPauseOverlay = tick?.restBlock?.isActive;
 
   useEffect(() => {
-    if (tick && tick.isPaused && !pauseReminderData && !waterReminderActive
-        && !tick.restBlock?.isActive && !isOverlayPhase) {
+    if (isPaused && !pauseReminderData && !waterReminderActive
+        && !isRestBlockActiveForPauseOverlay && !isOverlayPhase) {
       const timer = setTimeout(() => {
         window.rhythmDesk.closeOverlay();
       }, 500); // 500ms grace for IPC events to arrive
       return () => clearTimeout(timer);
     }
-  }, [tick?.isPaused, pauseReminderData, waterReminderActive, tick?.restBlock?.isActive, isOverlayPhase]);
+  }, [isPaused, pauseReminderData, waterReminderActive, isRestBlockActiveForPauseOverlay, isOverlayPhase]);
 
   // Phase 2: Respond to heartbeat requests from main process
   // CRITICAL: Must be before ALL early returns — if tick is null this still needs to fire
@@ -252,8 +316,15 @@ function OverlayView({ tick }: OverlayViewProps) {
       'sit-to-stand-transition', 'stand-to-sit-transition', 
       'short-break', 'long-break'
     ].includes(tick.currentPhase);
-    const canClose = !tick.isStrictMode && !tick.officeFocusLock.isActive;
-    const canSkip = isBreakOrTransition && !(tick.noSkipEnabled ?? false) && tick.canSkipCurrentBreak !== false;
+    const hasFocusSession = tick.focusSessionActive === true || !!focusSession;
+    const focusMode = focusSession?.mode ?? tick.focusSessionMode ?? null;
+    const strictFocus = hasFocusSession && focusMode !== 'semi-strict';
+    const semiStrictFocus = hasFocusSession && focusMode === 'semi-strict';
+    const isActiveBreak = tick.currentPhase === 'short-break' || tick.currentPhase === 'long-break';
+    const canClose = !strictFocus && !semiStrictFocus && !tick.isStrictMode && !tick.officeFocusLock.isActive;
+    const canSkip = semiStrictFocus
+      ? isActiveBreak
+      : !strictFocus && isBreakOrTransition && !(tick.noSkipEnabled ?? false) && tick.canSkipCurrentBreak !== false;
 
     // When pause reminder is showing, ignore all keyboard shortcuts to prevent
     // accidental resume from typing (e.g. spacebar while working). User must
@@ -262,7 +333,7 @@ function OverlayView({ tick }: OverlayViewProps) {
 
     switch (e.key) {
       case ' ': // Shift+Space - pause/resume (requires Shift to avoid accidental pause while typing)
-        if (!e.shiftKey) break;
+        if (!e.shiftKey || strictFocus || semiStrictFocus) break;
         e.preventDefault();
         if (tick.isPaused) {
           window.rhythmDesk.resume();
@@ -271,7 +342,7 @@ function OverlayView({ tick }: OverlayViewProps) {
         }
         break;
       case 'Enter': // Enter - complete/done
-        if (isBreakOrTransition && !tick.isStrictMode) {
+        if (!strictFocus && !semiStrictFocus && isBreakOrTransition && !tick.isStrictMode) {
           window.rhythmDesk.completePhase();
         }
         break;
@@ -283,13 +354,13 @@ function OverlayView({ tick }: OverlayViewProps) {
         break;
       case 'e': // E - extend break (only on breaks, not transitions)
       case 'E':
-        if (tick.currentPhase === 'short-break' || tick.currentPhase === 'long-break') {
+        if (!strictFocus && !semiStrictFocus && (tick.currentPhase === 'short-break' || tick.currentPhase === 'long-break')) {
           window.rhythmDesk.extendBreak(breakExtendMinutes);
         }
         break;
       case 'p': // P - prepone (reduce remaining time by first option)
       case 'P':
-        if (preponeOptions.length > 0 && tick.phaseRemainingMs > (preponeOptions[0] * 60000) + 30000) {
+        if (!strictFocus && !semiStrictFocus && preponeOptions.length > 0 && tick.phaseRemainingMs > (preponeOptions[0] * 60000) + 30000) {
           window.rhythmDesk.preponePhase(preponeOptions[0]);
         }
         break;
@@ -303,7 +374,8 @@ function OverlayView({ tick }: OverlayViewProps) {
       case '3':
       case '4':
       case '5':
-        if (tick.canPostpone && tick.postponeOptions && tick.postponeOptions.length > 0) {
+        if (!strictFocus && tick.canPostpone && tick.postponeOptions && tick.postponeOptions.length > 0
+            && (!semiStrictFocus || isActiveBreak)) {
           const index = parseInt(e.key) - 1;
           if (index < tick.postponeOptions.length) {
             window.rhythmDesk.postpone(tick.postponeOptions[index]);
@@ -311,7 +383,7 @@ function OverlayView({ tick }: OverlayViewProps) {
         }
         break;
     }
-  }, [tick, breakExtendMinutes, preponeOptions, pauseReminderData]);
+  }, [tick, focusSession, breakExtendMinutes, preponeOptions, pauseReminderData]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -494,6 +566,7 @@ function OverlayView({ tick }: OverlayViewProps) {
                 cursor: 'pointer',
               }}
               onClick={() => {
+                waterReminderDismissedRef.current = true;
                 setWaterReminderActive(false);
                 setWaterCountdown(null);
                 window.rhythmDesk.dismissWaterReminder();
@@ -574,31 +647,51 @@ function OverlayView({ tick }: OverlayViewProps) {
   const isWorkPhase = tick.currentPhase === 'sit' || tick.currentPhase === 'stand';
   const isActiveBreakPhase = tick.currentPhase === 'short-break' || tick.currentPhase === 'long-break';
   const isTransitionPhase = tick.currentPhase === 'sit-to-stand-transition' || tick.currentPhase === 'stand-to-sit-transition';
+  const continuedActivity = tick.currentPhase === 'sit-to-stand-transition' ? 'sitting' : 'standing';
   const breakSkipCountToday = tick.breakSkipCountToday ?? 0;
   const maxBreakSkipsPerDay = tick.maxBreakSkipsPerDay ?? 0;
   const breakSkipsLeftToday = Math.max(0, maxBreakSkipsPerDay - breakSkipCountToday);
   const isOfficeFocusLockActive = tick.officeFocusLock.isActive;
   const noSkipEnabled = tick.noSkipEnabled ?? false;
+  const hasFocusSession = tick.focusSessionActive === true || !!focusSession;
+  const focusSessionMode = focusSession?.mode ?? tick.focusSessionMode ?? null;
+  const isStrictFocusSession = hasFocusSession && focusSessionMode !== 'semi-strict';
+  const isSemiStrictFocusSession = hasFocusSession && focusSessionMode === 'semi-strict';
+  const transitionExtensionsToday = tick.transitionExtensionsToday ?? 0;
+  const maxTransitionExtensionsPerDay = tick.maxTransitionExtensionsPerDay ?? 3;
+  const transitionExtensionsLeftToday = Math.max(0, maxTransitionExtensionsPerDay - transitionExtensionsToday);
+  const focusSessionName = focusSession?.name
+    ?? tick.focusSessionName
+    ?? (isOfficeFocusLockActive ? tick.officeFocusLock.label : null);
+  const focusSessionRemainingMs = tick.focusSessionRemainingMs
+    ?? (isOfficeFocusLockActive ? tick.officeFocusLock.remainingMs : null);
+  const showNormalActions = !isStrictFocusSession && !isSemiStrictFocusSession;
 
   // Determine which actions to show based on phase and settings
   // Hide Done button in strict mode - user must wait for timer to complete
-  const showDoneButton = isTransitionOrBreak && !tick.isStrictMode;
-  const showPostponeButtons = tick.canPostpone && isTransitionOrBreak;
+  const showDoneButton = showNormalActions && isTransitionOrBreak && !tick.isStrictMode;
+  const showPostponeButtons = isSemiStrictFocusSession
+    ? isActiveBreakPhase && tick.canPostpone && tick.postponeOptions.length > 0
+    : showNormalActions && tick.canPostpone && isTransitionOrBreak;
   
   // Skip button logic:
   // - If noSkipEnabled is true, no skipping allowed at all
   // - For breaks: allowed if canSkipCurrentBreak is true (respects daily limits)
   // - For transitions: allowed only if not in strict mode
-  const showSkipButton = isTransitionOrBreak && !noSkipEnabled && (
+  const showSkipButton = isStrictFocusSession
+    ? false
+    : isSemiStrictFocusSession
+      ? isActiveBreakPhase
+      : isTransitionOrBreak && !noSkipEnabled && (
     (isActiveBreakPhase && tick.canSkipCurrentBreak !== false)
     || (!isActiveBreakPhase && !tick.isStrictMode)
   );
-  const showSkipPendingBreakButton = tick.isPostponed && !!tick.pendingBreakPhase;
+  const showSkipPendingBreakButton = !isStrictFocusSession && tick.isPostponed && !!tick.pendingBreakPhase;
   // In Office Focus Lock during work phase, show stop button instead of close
   // But hide stop button if Focus Mode strict mode is enabled
   // ALWAYS show close button when paused - user should never be trapped while paused
-  const showCloseButton = tick.isPaused || (!tick.isStrictMode && !isOfficeFocusLockActive);
-  const showStopLockButton = isOfficeFocusLockActive && isWorkPhase && !tick.officeFocusLock.isStrictMode;
+  const showCloseButton = showNormalActions && (tick.isPaused || (!tick.isStrictMode && !isOfficeFocusLockActive && !hasFocusSession));
+  const showStopLockButton = showNormalActions && isOfficeFocusLockActive && isWorkPhase && !tick.officeFocusLock.isStrictMode;
 
   // Current time display style - readable from distance, ~65% of main countdown (8rem)
   // Clean typography, no label, softer than main timer
@@ -631,6 +724,11 @@ function OverlayView({ tick }: OverlayViewProps) {
           <div className="overlay-schedule-name">
             🛋️ Rest Block
           </div>
+          {focusSessionName && (
+            <div className="overlay-focus-session-name" style={{ color: '#fb923c', marginTop: '0.35rem' }}>
+              🎯 {focusSessionName}{focusSessionRemainingMs !== null ? ` · ${formatDuration(focusSessionRemainingMs)} remaining` : ''}
+            </div>
+          )}
 
           {/* Rest Block Name */}
           <div className="overlay-phase" style={{ color: restBlockColor }}>
@@ -699,6 +797,11 @@ function OverlayView({ tick }: OverlayViewProps) {
         <div className="overlay-schedule-name">
           {tick.scheduleName}
         </div>
+        {focusSessionName && (
+          <div className="overlay-focus-session-name" style={{ color: '#fb923c', marginTop: '0.35rem' }}>
+            🎯 {focusSessionName}{focusSessionRemainingMs !== null ? ` · ${formatDuration(focusSessionRemainingMs)} remaining` : ''}
+          </div>
+        )}
 
         {/* Current Phase */}
         <div className="overlay-phase" style={{ color: phaseColor }}>
@@ -715,21 +818,6 @@ function OverlayView({ tick }: OverlayViewProps) {
           {message}
         </div>
 
-        {/* Office Focus Lock Indicator */}
-        {isOfficeFocusLockActive && isWorkPhase && (
-          <div style={{ 
-            marginBottom: '1rem', 
-            padding: '0.5rem 1rem', 
-            backgroundColor: 'rgba(251, 146, 60, 0.2)', 
-            borderRadius: '8px',
-            display: 'inline-block'
-          }}>
-            <span style={{ color: '#fb923c' }}>
-              🔒 Office Focus Lock: {tick.officeFocusLock.label} - {formatDuration(tick.officeFocusLock.remainingMs)}
-            </span>
-          </div>
-        )}
-
         {/* Actions */}
         <div className="overlay-actions">
           {showSkipPendingBreakButton && (
@@ -738,8 +826,32 @@ function OverlayView({ tick }: OverlayViewProps) {
             </button>
           )}
 
+          {showNormalActions && isTransitionPhase && !tick.isPaused && (
+            <div className="overlay-transition-deferral">
+              <div className="overlay-transition-deferral-row">
+                <span style={{ color: 'var(--text-secondary)', fontSize: '1rem' }}>
+                  {continuedActivity === 'sitting' ? 'Stay seated:' : 'Stay standing:'}
+                </span>
+              <CompactDurationActions
+                className="overlay-transition-duration-actions"
+                options={TRANSITION_ACTIVITY_EXTENSION_OPTIONS}
+                visibleCount={TRANSITION_ACTIVITY_EXTENSION_OPTIONS.length}
+                onSelect={(minutes) => window.rhythmDesk.deferTransition(minutes)}
+                title={(minutes) => `Continue ${continuedActivity} for ${minutes} more minutes before ${nextPhaseName}`}
+                disabled={transitionExtensionsLeftToday <= 0}
+                style={{ backgroundColor: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.3)', color: '#3b82f6' }}
+              />
+              </div>
+              <div className="overlay-postpone-info" style={{ marginTop: '0.35rem' }}>
+                {transitionExtensionsLeftToday > 0
+                  ? `${transitionExtensionsLeftToday} activity extension${transitionExtensionsLeftToday === 1 ? '' : 's'} left today`
+                  : 'Activity extension limit reached today'}
+              </div>
+            </div>
+          )}
+
           {/* Take Break Now — on transition screens only, starts a short-break immediately */}
-          {isTransitionPhase && !tick.isStrictMode && (
+          {showNormalActions && isTransitionPhase && !tick.isStrictMode && (
             <button
               className="btn btn-secondary"
               onClick={() => window.rhythmDesk.startAdHocBreak(tick.configuredDurations.shortBreakDurationMinutes)}
@@ -756,19 +868,17 @@ function OverlayView({ tick }: OverlayViewProps) {
           )}
 
           {/* Extend buttons — always visible, can be used multiple times */}
-          {isActiveBreakPhase && extendOptions.map((m) => (
-            <button
-              key={`extend-${m}`}
-              className="btn btn-secondary"
-              onClick={() => window.rhythmDesk.extendBreak(m)}
+          {showNormalActions && isActiveBreakPhase && extendOptions.length > 0 && (
+            <CompactDurationActions
+              options={extendOptions}
+              onSelect={(minutes) => window.rhythmDesk.extendBreak(minutes)}
+              title={(minutes) => `Extend this break by ${minutes} minutes`}
               style={{ backgroundColor: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.3)', color: '#3b82f6' }}
-            >
-              +{m} min
-            </button>
-          ))}
+            />
+          )}
 
           {/* Reduce buttons — always visible, disabled when not enough time remains */}
-          {isActiveBreakPhase && preponeOptions.map((m) => {
+          {showNormalActions && isActiveBreakPhase && preponeOptions.map((m) => {
             const canReduce = tick.phaseRemainingMs > (m * 60000) + 30000;
             return (
               <button
@@ -790,7 +900,7 @@ function OverlayView({ tick }: OverlayViewProps) {
           })}
 
           {/* Reset Duration button - only when duration was modified */}
-          {isActiveBreakPhase && tick.phaseTotalMs !== tick.phaseOriginalDurationMs && (
+          {showNormalActions && isActiveBreakPhase && tick.phaseTotalMs !== tick.phaseOriginalDurationMs && (
             <button 
               className="btn btn-secondary" 
               onClick={async () => {
@@ -815,7 +925,7 @@ function OverlayView({ tick }: OverlayViewProps) {
             </button>
           )}
 
-          {allowPause && !tick.isPaused && (
+          {showNormalActions && allowPause && !tick.isPaused && (
             <button className="btn btn-secondary" onClick={handlePause} style={{
               backgroundColor: 'rgba(251, 191, 36, 0.15)',
               borderColor: 'rgba(251, 191, 36, 0.3)',
@@ -825,7 +935,7 @@ function OverlayView({ tick }: OverlayViewProps) {
             </button>
           )}
 
-          {allowPause && tick.isPaused && (
+          {showNormalActions && allowPause && tick.isPaused && (
             <button className="btn btn-success" onClick={handleResume} style={{
               backgroundColor: 'rgba(34, 197, 94, 0.2)',
               borderColor: 'rgba(34, 197, 94, 0.3)',
@@ -849,7 +959,7 @@ function OverlayView({ tick }: OverlayViewProps) {
         </div>
 
         {/* Skip info - shown below action buttons */}
-        {isActiveBreakPhase && (
+        {showNormalActions && isActiveBreakPhase && (
           <div className="overlay-postpone-info" style={{ marginTop: '0.75rem' }}>
             {noSkipEnabled
               ? '🚫 Skip not allowed (disabled in schedule settings)'
@@ -859,44 +969,26 @@ function OverlayView({ tick }: OverlayViewProps) {
           </div>
         )}
         
-        {isTransitionPhase && noSkipEnabled && (
+        {showNormalActions && isTransitionPhase && noSkipEnabled && (
           <div className="overlay-postpone-info" style={{ marginTop: '0.75rem' }}>
             🚫 Skip not allowed (disabled in schedule settings)
           </div>
         )}
 
-        {/* Postpone — compact pill buttons, max 4 visible with expand toggle */}
+        {/* Postpone — keep common choices visible and reveal longer ones on demand. */}
         {showPostponeButtons && tick.postponeOptions.length > 0 && (() => {
           const opts = tick.postponeOptions;
-          const VISIBLE = 4;
-          const visible = showAllPostpone ? opts : opts.slice(0, VISIBLE);
-          const hasMore = opts.length > VISIBLE;
           return (
             <div className="overlay-postpone-info" style={{ marginTop: '1.5rem' }}>
               <p style={{ marginBottom: '0.6rem' }}>
-                Postpone&ensp;<span style={{ color: 'var(--text-secondary)', fontSize: '0.9em' }}>({tick.maxPostponesPerDay - tick.postponeCountToday} remaining today)</span>
+                Postpone{!isSemiStrictFocusSession && <span style={{ color: 'var(--text-secondary)', fontSize: '0.9em' }}> ({tick.maxPostponesPerDay - tick.postponeCountToday} remaining today)</span>}
               </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '0.5rem' }}>
-                {visible.map((minutes) => (
-                  <button
-                    key={minutes}
-                    className="btn btn-secondary"
-                    onClick={() => handlePostpone(minutes)}
-                    style={{ borderColor: `${phaseColor}55`, color: phaseColor, backgroundColor: `${phaseColor}18`, minWidth: '60px' }}
-                  >
-                    +{formatPostponeMinutes(minutes)}
-                  </button>
-                ))}
-                {hasMore && (
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => setShowAllPostpone((v) => !v)}
-                    style={{ color: 'var(--text-muted)', borderColor: 'rgba(148,163,184,0.3)', minWidth: '44px', fontSize: '0.85rem' }}
-                  >
-                    {showAllPostpone ? '−less' : '+more'}
-                  </button>
-                )}
-              </div>
+              <CompactDurationActions
+                options={opts}
+                onSelect={handlePostpone}
+                title={(minutes) => `Postpone for ${minutes} minutes`}
+                style={{ borderColor: `${phaseColor}55`, color: phaseColor, backgroundColor: `${phaseColor}18`, minWidth: '60px' }}
+              />
             </div>
           );
         })()}

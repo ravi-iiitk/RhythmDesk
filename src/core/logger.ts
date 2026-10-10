@@ -30,7 +30,7 @@ class Logger {
   private consolePatched: boolean = false;
 
   private isDev(): boolean {
-    return process.env.NODE_ENV === 'development' || !app.isPackaged;
+    return process.env.NODE_ENV === 'development' || !app?.isPackaged;
   }
 
   private ensureInitialized(): void {

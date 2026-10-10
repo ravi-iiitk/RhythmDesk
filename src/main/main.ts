@@ -38,7 +38,7 @@ import { isBreakPhase } from '../core/transitions';
 import { syncLoginItemWithSettings } from './autostart';
 // Focus Sessions
 import { getFocusSessionService } from '../core/focusSessionService';
-import { enterFocusLockdown, exitFocusLockdown, isFocusLockdownActive, setShortcutRestoreCallback } from './focusLockdown';
+import { enterFocusLockdown, exitFocusLockdown, getFocusLockdownState, isFocusLockdownActive, setShortcutRestoreCallback } from './focusLockdown';
 import { FocusSession } from '../shared/types';
 import { isPauseReminderShowing, setPauseReminderShowing, clearPauseReminderFlag } from './pauseReminderState';
 // Activity log
@@ -79,6 +79,7 @@ function safeCloseOverlay(): void {
 function getOverlayPolicyForState(phase: PhaseType): ReturnType<typeof getOverlayPolicy> {
   const timerEngine = getTimerEngine();
   const officeFocusLockService = getOfficeFocusLockService();
+  const focusSessionService = getFocusSessionService();
   const schedule = timerEngine.getCurrentSchedule();
   const state = timerEngine.getState();
   
@@ -91,8 +92,13 @@ function getOverlayPolicyForState(phase: PhaseType): ReturnType<typeof getOverla
   const input: OverlayPolicyInput = {
     phase,
     schedule,
-    focusLockActive: officeFocusLockService.isActive(),
+    focusLockActive: officeFocusLockService.isActive()
+      || focusSessionService.isActive()
+      || state.isFocusSessionActive,
     focusLockState: officeFocusLockService.getState(),
+    focusSessionMode: focusSessionService.getActiveSession()?.mode
+      ?? officeFocusLockService.getState().focusSessionMode
+      ?? null,
     isPaused: state.isPaused,
     isPostponed: state.isPostponed,
     isWaitingForNextActivity: state.isWaitingForNextActivity,
@@ -661,6 +667,15 @@ function initialize(): void {
       playSound('focus_lock_start');
       const lockState = officeFocusLockService.getState();
       logFocusLockStarted(lockState.label, lockState.durationMs);
+      const mainWin = getMainWindow();
+      if (mainWin && !isFocusLockdownActive()) {
+        enterFocusLockdown(mainWin, {
+          manageGuardian: false,
+          source: 'manual',
+          lockWindow: false,
+        });
+        sendToAll(IPC_CHANNELS.FOCUS_LOCKDOWN_CHANGED, getFocusLockdownState());
+      }
       // When Office Focus Lock starts, use centralized policy to determine overlay
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
@@ -675,6 +690,16 @@ function initialize(): void {
     officeFocusLockService.on('stopped', () => {
       playSound('focus_lock_end');
       logFocusLockEnded();
+      const mainWin = getMainWindow();
+      if (
+        mainWin
+        && isFocusLockdownActive()
+        && getFocusLockdownState().source === 'manual'
+        && !getFocusSessionService().isActive()
+      ) {
+        exitFocusLockdown(mainWin);
+        sendToAll(IPC_CHANNELS.FOCUS_LOCKDOWN_CHANGED, getFocusLockdownState());
+      }
       // When Office Focus Lock stops, use centralized policy to determine if overlay should close
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
@@ -689,6 +714,16 @@ function initialize(): void {
 
     officeFocusLockService.on('expired', () => {
       playSound('focus_lock_end');
+      const mainWin = getMainWindow();
+      if (
+        mainWin
+        && isFocusLockdownActive()
+        && getFocusLockdownState().source === 'manual'
+        && !getFocusSessionService().isActive()
+      ) {
+        exitFocusLockdown(mainWin);
+        sendToAll(IPC_CHANNELS.FOCUS_LOCKDOWN_CHANGED, getFocusLockdownState());
+      }
       // Office Focus Lock timer expired - same logic as stopped
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
@@ -702,6 +737,7 @@ function initialize(): void {
 
     // Initialize Rest Block service and handle its events
     const restBlockService = getRestBlockService();
+    let restBlockPausedTimer = false;
 
     overlaySyncService.on('heartbeat-missed', (missedCount: number) => {
       logger.warn('Main', 'Overlay heartbeat missed during rest block', {
@@ -727,7 +763,12 @@ function initialize(): void {
       logRestBlockStart(restState.name, restState.durationMs, restState.isStrictMode);
       logRestBlockStarted(restState.name, restState.durationMs);
       
-      timerEngine.pause();
+      // Preserve a pause that existed before the Rest Block. Only resume the
+      // timer when this Rest Block was the action that paused it.
+      restBlockPausedTimer = !timerEngine.getState().isPaused;
+      if (restBlockPausedTimer) {
+        timerEngine.pause(true);
+      }
       showOverlay(restState.isStrictMode);
       sendToAll(IPC_CHANNELS.SHOW_OVERLAY, { phase: 'rest-block', restBlock: restState });
       sendToAll(IPC_CHANNELS.REST_BLOCK_CHANGED, restState);
@@ -778,7 +819,10 @@ function initialize(): void {
       logRestBlockEnd('manual', 'user stopped');
       logRestBlockEnded('Rest Block', undefined);
       
-      timerEngine.resume();
+      if (restBlockPausedTimer) {
+        restBlockPausedTimer = false;
+        timerEngine.resume(true);
+      }
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
       
@@ -795,7 +839,10 @@ function initialize(): void {
       logRestBlockEnd('expired', 'timer completed');
       logRestBlockEnded('Rest Block', undefined);
       
-      timerEngine.resume();
+      if (restBlockPausedTimer) {
+        restBlockPausedTimer = false;
+        timerEngine.resume(true);
+      }
       const currentPhase = timerEngine.getState().currentPhase;
       const policy = getOverlayPolicyForState(currentPhase);
       
@@ -827,7 +874,9 @@ function initialize(): void {
         logger.info('Main', 'Restoring focus lockdown from persisted state', {
           endsAt: new Date(persistedState.focusSessionEndsAt).toISOString(),
         });
-        enterFocusLockdown(mainWin);
+        showOverlay(true);
+        enterFocusLockdown(mainWin, { lockWindow: false });
+        sendToAll(IPC_CHANNELS.FOCUS_LOCKDOWN_CHANGED, getFocusLockdownState());
         // Schedule the auto-exit at the persisted end time
         const msRemaining = persistedState.focusSessionEndsAt - now;
         setTimeout(() => {
@@ -836,6 +885,7 @@ function initialize(): void {
             logger.info('Main', 'Focus session time elapsed after restart — releasing lockdown');
             exitFocusLockdown(win);
             timerEngine.clearFocusSessionState();
+            sendToAll(IPC_CHANNELS.FOCUS_LOCKDOWN_CHANGED, getFocusLockdownState());
             sendToAll(IPC_CHANNELS.FOCUS_SESSION_CHANGED, { isActive: false, activeSession: null });
           }
         }, msRemaining);
@@ -848,7 +898,25 @@ function initialize(): void {
     focusSessionService.on('started', (session: FocusSession, endsAtMs: number) => {
       const mainWin = getMainWindow();
       if (!mainWin) return;
-      enterFocusLockdown(mainWin);
+
+      // Scheduled Focus Sessions have priority over another focus source.
+      // Transfer ownership before starting the scheduled session so an older
+      // quick-focus timeout cannot later release this lockdown.
+      const currentLockdown = getFocusLockdownState();
+      if (currentLockdown.isActive && currentLockdown.source !== 'scheduled') {
+        exitFocusLockdown(mainWin, { manageGuardian: false });
+        sendToAll(IPC_CHANNELS.FOCUS_LOCKDOWN_CHANGED, getFocusLockdownState());
+      }
+      if (officeFocusLockService.isActive()) {
+        logger.info('Main', 'Scheduled Focus Session superseded manual Focus Mode', {
+          session: session.name,
+        });
+        officeFocusLockService.stop();
+      }
+
+      showOverlay(true);
+      enterFocusLockdown(mainWin, { lockWindow: false });
+      sendToAll(IPC_CHANNELS.FOCUS_LOCKDOWN_CHANGED, getFocusLockdownState());
       timerEngine.setFocusSessionState(session.id, endsAtMs);
       sendToAll(IPC_CHANNELS.FOCUS_SESSION_CHANGED, {
         isActive: true,
@@ -860,8 +928,9 @@ function initialize(): void {
 
     focusSessionService.on('ended', (session: FocusSession) => {
       const mainWin = getMainWindow();
-      if (mainWin && isFocusLockdownActive()) {
+      if (mainWin && isFocusLockdownActive() && !officeFocusLockService.isActive()) {
         exitFocusLockdown(mainWin);
+        sendToAll(IPC_CHANNELS.FOCUS_LOCKDOWN_CHANGED, getFocusLockdownState());
       }
       timerEngine.clearFocusSessionState();
       sendToAll(IPC_CHANNELS.FOCUS_SESSION_CHANGED, {

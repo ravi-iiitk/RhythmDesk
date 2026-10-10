@@ -33,7 +33,12 @@ class RestBlockService extends EventEmitter {
    * @param isStrictMode If true, cannot stop early
    * @param presetId Optional preset ID if using a saved preset
    */
-  start(name: string, durationMinutes: number, isStrictMode: boolean = false, presetId: string | null = null): void {
+  start(name: string, durationMinutes: number, isStrictMode: boolean = false, presetId: string | null = null): boolean {
+    // Do not replace an active block from a stale tray/menu action.
+    if (this.state.isActive) {
+      return false;
+    }
+
     const durationMs = minutesToMs(durationMinutes);
     
     logger.info('RestBlockService', 'Starting rest block', {
@@ -57,6 +62,7 @@ class RestBlockService extends EventEmitter {
     this.startTicking();
     this.emit('started', this.state);
     this.emit('changed', this.state);
+    return true;
   }
 
   /**
@@ -69,8 +75,7 @@ class RestBlockService extends EventEmitter {
     if (!preset) {
       return false;
     }
-    this.start(preset.name, preset.durationMinutes, preset.strictMode, preset.id);
-    return true;
+    return this.start(preset.name, preset.durationMinutes, preset.strictMode, preset.id);
   }
 
   /**

@@ -557,25 +557,26 @@ function buildStaticTrayMenu(): Electron.Menu {
   const canExtend = tick && ['sit', 'stand', 'short-break', 'long-break', 'custom'].includes(tick.currentPhase);
   const canPostpone = tick?.canPostpone || false;
   const focusLockActive = tick?.officeFocusLock.isActive || false;
+  const focusSessionLockdown = isFocusLockdownActive();
   const restBlockService = getRestBlockService();
   const isInRestBlock = restBlockService.getState().isActive;
 
   // Quick actions — show only what's relevant
   if (isPaused) {
-    menuItems.push({ label: '▶️ Resume Timer', click: () => timerEngine.resume() });
+    menuItems.push({ label: '▶️ Resume Timer', click: () => timerEngine.resume(), enabled: !focusSessionLockdown });
   } else {
-    menuItems.push({ label: '⏸ Pause Timer', click: () => timerEngine.pause(), enabled: hasSchedule });
+    menuItems.push({ label: '⏸ Pause Timer', click: () => timerEngine.pause(), enabled: hasSchedule && !focusSessionLockdown });
   }
   if (hasSchedule && !isPaused) {
-    menuItems.push({ label: '⏭ Skip Phase', click: () => timerEngine.skipPhase() });
+    menuItems.push({ label: '⏭ Skip Phase', click: () => timerEngine.skipPhase(), enabled: !focusSessionLockdown });
   }
-  if (isInBreak || isInRestBlock) {
+  if (isInRestBlock || (isInBreak && !focusSessionLockdown)) {
     menuItems.push({ label: '⏹️ Stop Break', click: () => { if (isInRestBlock) restBlockService.stop(); else timerEngine.skipPhase(); } });
   }
   menuItems.push({ type: 'separator' });
 
   // ---- Pause for... (top-level submenu, only when not paused) ----
-  if (!isPaused) {
+  if (!isPaused && !focusSessionLockdown) {
     menuItems.push({
       label: '⏸ Pause for...',
       submenu: [
@@ -589,7 +590,7 @@ function buildStaticTrayMenu(): Electron.Menu {
   }
 
   // ---- Postpone (top-level submenu, only when can postpone) ----
-  if (canPostpone) {
+  if (canPostpone && !focusSessionLockdown) {
     menuItems.push({
       label: '⏳ Postpone...',
       submenu: [
@@ -603,7 +604,7 @@ function buildStaticTrayMenu(): Electron.Menu {
   // ---- Extend / Reduce Phase (always visible, disabled when not applicable) ----
   menuItems.push({
     label: '⏱️ Extend Phase...',
-    enabled: !!canExtend,
+    enabled: !!canExtend && !focusSessionLockdown,
     submenu: [
       { label: '+2 minutes', click: () => timerEngine.extendBreak(2) },
       { label: '+5 minutes', click: () => timerEngine.extendBreak(5) },
@@ -612,7 +613,7 @@ function buildStaticTrayMenu(): Electron.Menu {
   });
   menuItems.push({
     label: '⏪ Reduce Phase...',
-    enabled: !!canExtend,
+    enabled: !!canExtend && !focusSessionLockdown,
     submenu: [
       { label: '-1 minute', click: () => timerEngine.preponePhase(1) },
       { label: '-2 minutes', click: () => timerEngine.preponePhase(2) },
@@ -626,20 +627,20 @@ function buildStaticTrayMenu(): Electron.Menu {
   menuItems.push({
     label: '⏯️ More Controls',
     submenu: [
-      { label: '✓ Complete Phase', click: () => timerEngine.completePhase(), enabled: hasSchedule },
-      { label: '🔁 Restart Activity', click: () => timerEngine.restartCurrentActivity(), enabled: hasSchedule },
+      { label: '✓ Complete Phase', click: () => timerEngine.completePhase(), enabled: hasSchedule && !focusSessionLockdown },
+      { label: '🔁 Restart Activity', click: () => timerEngine.restartCurrentActivity(), enabled: hasSchedule && !focusSessionLockdown },
       { type: 'separator' },
-      { label: '🔀 Shuffle Flow', click: () => timerEngine.shuffleFlow(), enabled: hasSchedule },
-      { label: '↩️ Reverse Flow', click: () => timerEngine.reverseFlow(), enabled: hasSchedule },
+      { label: '🔀 Shuffle Flow', click: () => timerEngine.shuffleFlow(), enabled: hasSchedule && !focusSessionLockdown },
+      { label: '↩️ Reverse Flow', click: () => timerEngine.reverseFlow(), enabled: hasSchedule && !focusSessionLockdown },
       { type: 'separator' },
-      { label: '🔄 Reset Session', click: () => timerEngine.resetSession(), enabled: hasSchedule },
+      { label: '🔄 Reset Session', click: () => timerEngine.resetSession(), enabled: hasSchedule && !focusSessionLockdown },
     ],
   });
 
   // ============================================================
   // 3. BREAKS — grouped submenu (hidden when in break/rest)
   // ============================================================
-  if (!isInBreak && !isInRestBlock) {
+  if (!isInBreak && !isInRestBlock && !focusSessionLockdown) {
     menuItems.push({
       label: '☕ Take a Break',
       submenu: [
@@ -649,11 +650,11 @@ function buildStaticTrayMenu(): Electron.Menu {
         { label: '15 min — Long', click: () => timerEngine.startAdHocBreak(15) },
         { label: '30 min — Extended', click: () => timerEngine.startAdHocBreak(30) },
         { type: 'separator' },
-        { label: '🚻 Bio Break (2 min)', click: () => restBlockService.start('Bio Break', 2, false) },
-        { label: '🛋️ Quick Rest (5 min)', click: () => restBlockService.start('Quick Rest', 5, false) },
-        { label: '🍽️ Lunch (30 min)', click: () => restBlockService.start('Lunch Break', 30, false) },
-        { label: '🍛 Dinner (45 min)', click: () => restBlockService.start('Dinner', 45, false) },
-        { label: '🕐 1 Hour', click: () => restBlockService.start('Long Break', 60, false) },
+        { label: '🚻 Bio Break (2 min)', click: () => { if (!isFocusLockdownActive()) restBlockService.start('Bio Break', 2, false); } },
+        { label: '🛋️ Quick Rest (5 min)', click: () => { if (!isFocusLockdownActive()) restBlockService.start('Quick Rest', 5, false); } },
+        { label: '🍽️ Lunch (30 min)', click: () => { if (!isFocusLockdownActive()) restBlockService.start('Lunch Break', 30, false); } },
+        { label: '🍛 Dinner (45 min)', click: () => { if (!isFocusLockdownActive()) restBlockService.start('Dinner', 45, false); } },
+        { label: '🕐 1 Hour', click: () => { if (!isFocusLockdownActive()) restBlockService.start('Long Break', 60, false); } },
       ],
     });
   }
@@ -677,20 +678,28 @@ function buildStaticTrayMenu(): Electron.Menu {
 
   if (focusLockActive) {
     menuItems.push({ label: '🔓 Stop Focus Lock', click: () => officeFocusLockService.stop() });
-  } else {
+  } else if (!focusSessionLockdown && !isInRestBlock) {
     menuItems.push({
       label: '🔒 Focus Lock',
       submenu: [
         {
           label: 'Deep Work',
           submenu: OFFICE_FOCUS_LOCK_DURATIONS.map((m) => ({
-            label: `${m} min`, click: () => officeFocusLockService.start('Deep Work', m),
+            label: `${m} min`, click: () => {
+              if (!isFocusLockdownActive() && !getRestBlockService().isActive()) {
+                officeFocusLockService.start('Deep Work', m);
+              }
+            },
           })),
         },
         {
           label: 'Meeting',
           submenu: OFFICE_FOCUS_LOCK_DURATIONS.map((m) => ({
-            label: `${m} min`, click: () => officeFocusLockService.start('Meeting', m),
+            label: `${m} min`, click: () => {
+              if (!isFocusLockdownActive() && !getRestBlockService().isActive()) {
+                officeFocusLockService.start('Meeting', m);
+              }
+            },
           })),
         },
       ],
@@ -705,6 +714,7 @@ function buildStaticTrayMenu(): Electron.Menu {
   if (overlayExists) {
     menuItems.push({
       label: '🚨 Kill Overlay (Emergency)',
+      enabled: !focusSessionLockdown,
       click: () => {
         closeOverlay();
         if (!timerEngine.getState().isPaused) {
@@ -727,6 +737,7 @@ function buildStaticTrayMenu(): Electron.Menu {
   menuItems.push({ label: '📊 Open Dashboard', click: () => showMainWindow() });
   menuItems.push({
     label: '⚙️ Settings',
+    enabled: !focusSessionLockdown,
     click: () => {
       showMainWindow();
       setTimeout(() => {

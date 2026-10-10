@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { GeneralSettings, DEFAULT_GENERAL_SETTINGS } from '../../shared/types';
+import { GeneralSettings, DEFAULT_GENERAL_SETTINGS, POSTPONE_DURATION_PRESETS, DEFAULT_EXTEND_DURATION_OPTIONS, normalizePostponeDurationOptions } from '../../shared/types';
 
 // Sound event configuration
 interface SoundEventConfig {
@@ -345,27 +345,32 @@ function SettingsPage() {
         <div className="form-group">
           <label className="form-label">Extend duration options (minutes)</label>
           <p className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>
-            Configure the extend duration buttons shown on Dashboard (for work phases) and Overlay (for breaks).
-            Enter comma-separated values (e.g., "2, 5, 10, 15").
+            Choose durations for extending work activities and breaks.
           </p>
-          <input
-            type="text"
-            className="form-input"
-            value={(settings.extendOptions ?? [2, 5, 10]).join(', ')}
-            onChange={(e) => {
-              const values = e.target.value
-                .split(',')
-                .map(v => parseInt(v.trim(), 10))
-                .filter(v => !isNaN(v) && v > 0 && v <= 60);
-              if (values.length > 0) {
-                handleChange('extendOptions', values);
-              }
-            }}
-            placeholder="2, 5, 10"
-            style={{ fontFamily: 'monospace' }}
-          />
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            {POSTPONE_DURATION_PRESETS.map((minutes) => {
+              const selected = normalizePostponeDurationOptions(settings.extendOptions ?? DEFAULT_EXTEND_DURATION_OPTIONS, DEFAULT_EXTEND_DURATION_OPTIONS).includes(minutes);
+              return (
+                <button
+                  key={minutes}
+                  type="button"
+                  className={`btn ${selected ? 'btn-primary' : 'btn-secondary'}`}
+                  aria-pressed={selected}
+                  onClick={() => {
+                    const current = normalizePostponeDurationOptions(settings.extendOptions ?? DEFAULT_EXTEND_DURATION_OPTIONS, DEFAULT_EXTEND_DURATION_OPTIONS);
+                    const next = current.includes(minutes)
+                      ? current.filter((value) => value !== minutes)
+                      : [...current, minutes].sort((a, b) => a - b);
+                    handleChange('extendOptions', next.length ? next : [...DEFAULT_EXTEND_DURATION_OPTIONS]);
+                  }}
+                >
+                  {minutes === 60 ? '1 hr' : `${minutes} min`}
+                </button>
+              );
+            })}
+          </div>
           <p className="text-muted" style={{ fontSize: '0.7rem', marginTop: '0.25rem' }}>
-            Current: {(settings.extendOptions ?? [2, 5, 10]).map(m => `+${m} min`).join(', ')}
+            Current: {normalizePostponeDurationOptions(settings.extendOptions ?? DEFAULT_EXTEND_DURATION_OPTIONS, DEFAULT_EXTEND_DURATION_OPTIONS).map(m => m === 60 ? '+1 hr' : `+${m} min`).join(', ')}
           </p>
         </div>
 

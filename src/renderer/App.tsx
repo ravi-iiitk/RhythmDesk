@@ -15,6 +15,7 @@ import {
   RestBlockState,
   BreakProgress,
   ConfiguredDurations,
+  FocusSessionMode,
   INITIAL_OFFICE_FOCUS_LOCK_STATE,
 } from '../shared/types';
 
@@ -89,7 +90,26 @@ function createFallbackTickForRestBlock(restBlockState: RestBlockState): TimerTi
 function App() {
   const location = useLocation();
   const [currentTick, setCurrentTick] = useState<TimerTick | null>(null);
+  const [activeFocusSession, setActiveFocusSession] = useState<{ name: string; mode?: FocusSessionMode | null } | null>(null);
   const isOverlay = location.pathname === '/overlay';
+
+  // Keep the overlay's session name/mode current immediately when a scheduled
+  // Focus Session starts or ends. Timer ticks provide a second source of truth.
+  useEffect(() => {
+    const applyFocusSessionState = (state: any) => {
+      const session = state?.isActive && state.activeSession;
+      setActiveFocusSession(session?.name ? {
+        name: session.name,
+        mode: session.mode ?? null,
+      } : null);
+    };
+
+    window.rhythmDesk.getFocusSessionState()
+      .then(applyFocusSessionState)
+      .catch(() => {});
+
+    return window.rhythmDesk.onFocusSessionChanged(applyFocusSessionState);
+  }, []);
 
   // Memoized tick updater that merges rest block state
   const updateTickWithRestBlock = useCallback((restBlockState: RestBlockState) => {
@@ -252,7 +272,7 @@ function App() {
 
   // Render overlay view for overlay route
   if (location.pathname === '/overlay') {
-    return <OverlayView tick={currentTick} />;
+    return <OverlayView tick={currentTick} focusSession={activeFocusSession} />;
   }
 
   return (
