@@ -44,6 +44,7 @@ import configService from './configService';
 import { resolveActiveSchedule } from './scheduleResolver';
 import { phaseToBreakType, getMaxPostponesForBreakType } from './overlayPolicy';
 import logger from './logger';
+import { isWithinBreakGap } from './breakSpacing';
 import { 
   isFlowBasedSchedule, 
   getFlowStepDurationMs,
@@ -763,14 +764,14 @@ export class TimerEngine extends EventEmitter {
         // deferring the long break forever (stuck showing "due" but never firing).
         const overdueMs = timeSinceLastLongBreak - longBreakThreshold;
         
-        if (minGapMs > 0 && timeSinceLastShortBreak < minGapMs && overdueMs < minGapMs) {
+        if (isWithinBreakGap(workTimeMs, this.state.lastShortBreakAtWorkTimeMs, minGapMs) && overdueMs < minGapMs) {
           logger.info('TimerEngine', 'Deferring long break - short break happened too recently', {
             timeSinceLastShortBreak,
             minGapMs,
             overdueMs,
           });
         } else {
-          if (minGapMs > 0 && timeSinceLastShortBreak < minGapMs) {
+          if (isWithinBreakGap(workTimeMs, this.state.lastShortBreakAtWorkTimeMs, minGapMs)) {
             logger.warn('TimerEngine', 'Long break gap deferral exceeded max wait - forcing trigger', {
               timeSinceLastShortBreak,
               minGapMs,
@@ -793,6 +794,14 @@ export class TimerEngine extends EventEmitter {
         const timeSinceLastShortBreak = workTimeMs - this.state.lastShortBreakAtWorkTimeMs;
         
         if (timeSinceLastShortBreak >= shortBreakThreshold) {
+          const minGapMs = minutesToMs(schedule.minBreakGapMinutes ?? 0);
+          if (isWithinBreakGap(workTimeMs, this.state.lastLongBreakAtWorkTimeMs, minGapMs)) {
+            logger.info('TimerEngine', 'Deferring short break - long break happened too recently', {
+              timeSinceLastLongBreak: workTimeMs - this.state.lastLongBreakAtWorkTimeMs,
+              minGapMs,
+            });
+            return;
+          }
           this.triggerBreak('short-break');
           return;
         }
@@ -1140,7 +1149,7 @@ export class TimerEngine extends EventEmitter {
       const minGapMs = minutesToMs(this.currentSchedule?.minBreakGapMinutes ?? 0);
       const timeSinceLastLongBreak = this.state.cumulativeWorkTimeMs - this.state.lastLongBreakAtWorkTimeMs;
 
-      if (minGapMs > 0 && timeSinceLastLongBreak < minGapMs) {
+      if (isWithinBreakGap(this.state.cumulativeWorkTimeMs, this.state.lastLongBreakAtWorkTimeMs, minGapMs)) {
         logger.info('TimerEngine', 'Skipping flow short-break step - long break happened too recently', {
           timeSinceLastLongBreak,
           minGapMs,
@@ -1560,6 +1569,7 @@ export class TimerEngine extends EventEmitter {
     this.state.pauseResumeAt = null;
     this.pauseReminderLastShownAt = Date.now(); // First reminder in 5 min
     this.saveState();
+    this.saveStateImmediately();
   }
 
   /**

@@ -40,6 +40,8 @@ import { isBreakPhase as isBreakConflictPhase, resolveBreakConflict } from '../b
 import { validateSessionState, normalizeSessionState } from '../sessionValidator';
 import { checkRuntimeInvariants, TransitionContext } from '../runtimeInvariants';
 import { getOverlayPolicy } from '../overlayPolicy';
+import { isWithinBreakGap } from '../breakSpacing';
+import { getIdlePollAction, parseGnomeScreenLocked, parseMutterIdleTimeMs } from '../mutterIdle';
 
 // ============================================================
 // TEST TYPES
@@ -1628,6 +1630,60 @@ export const TEST_SCENARIOS: TestScenario[] = [
       harness.assert(policy.showOverlay, 'Focus Mode overlay must remain visible after water reminder dismissal');
       return {
         name: 'Scenario 22: Water Reminder Dismissal Preserves Focus Overlay',
+        passed: harness.getSteps().every((step) => step.passed),
+        duration: Date.now() - startTime,
+        steps: harness.getSteps(),
+      };
+    },
+  },
+  {
+    name: 'Scenario 23: Break Spacing Handles First and Consecutive Breaks',
+    description: 'A missing prior break does not block the first break, while a recent break enforces the gap',
+    run: async (harness: TestHarness) => {
+      const startTime = Date.now();
+      const gapMs = 30 * 60 * 1000;
+      harness.assert(!isWithinBreakGap(10 * 60 * 1000, 0, gapMs), 'No previous break should not suppress the first break');
+      harness.assert(isWithinBreakGap(40 * 60 * 1000, 20 * 60 * 1000, gapMs), 'A break inside the configured gap should be deferred');
+      harness.assert(!isWithinBreakGap(50 * 60 * 1000, 20 * 60 * 1000, gapMs), 'A break at the gap boundary should be allowed');
+      return {
+        name: 'Scenario 23: Break Spacing Handles First and Consecutive Breaks',
+        passed: harness.getSteps().every((step) => step.passed),
+        duration: Date.now() - startTime,
+        steps: harness.getSteps(),
+      };
+    },
+  },
+  {
+    name: 'Scenario 24: Parse GNOME Wayland Idle Time',
+    description: 'Mutter idle time in milliseconds is parsed from its gdbus response',
+    run: async (harness: TestHarness) => {
+      const startTime = Date.now();
+      harness.assert(parseMutterIdleTimeMs('(uint64 12345,)') === 12345, 'Should parse Mutter uint64 milliseconds');
+      harness.assert(parseMutterIdleTimeMs('unexpected') === null, 'Malformed idle response should be rejected');
+      harness.assert(parseMutterIdleTimeMs('(uint64 999999999999999999999999,)') === null, 'Unsafe integer should be rejected');
+      return {
+        name: 'Scenario 24: Parse GNOME Wayland Idle Time',
+        passed: harness.getSteps().every((step) => step.passed),
+        duration: Date.now() - startTime,
+        steps: harness.getSteps(),
+      };
+    },
+  },
+  {
+    name: 'Scenario 25: Locked And Consecutive Idle Polls',
+    description: 'Screen lock pauses immediately, and later idle polls can pause a phase that started after a break',
+    run: async (harness: TestHarness) => {
+      const startTime = Date.now();
+      harness.assert(parseGnomeScreenLocked('(true,)') === true, 'GNOME lock response should be parsed');
+      harness.assert(parseGnomeScreenLocked('(false,)') === false, 'GNOME unlock response should be parsed');
+      harness.assert(parseGnomeScreenLocked('unexpected') === null, 'Malformed lock response should be rejected');
+      harness.assert(getIdlePollAction(false, 0, 300, true) === 'idle', 'Lock should trigger idle below the time threshold');
+      harness.assert(getIdlePollAction(false, 299, 300, false) === null, 'Active work below the threshold should continue');
+      harness.assert(getIdlePollAction(false, 300, 300, false) === 'idle', 'Threshold should trigger idle');
+      harness.assert(getIdlePollAction(true, 310, 300, false) === 'idle', 'Idle must be reported again after a break ends');
+      harness.assert(getIdlePollAction(true, 0, 300, false) === 'active', 'Activity after unlock should clear idle');
+      return {
+        name: 'Scenario 25: Locked And Consecutive Idle Polls',
         passed: harness.getSteps().every((step) => step.passed),
         duration: Date.now() - startTime,
         steps: harness.getSteps(),

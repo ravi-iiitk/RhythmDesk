@@ -641,7 +641,7 @@ function initialize(): void {
       if (!state.isPaused && state.currentPhase !== 'idle' && !restBlockActive && !breakActive) {
         logger.info('Main', 'System idle detected - auto-pausing schedule');
         timerEngine.pause();
-        idleAutoPaused = true;
+        idleAutoPaused = timerEngine.getState().isPaused;
         // Don't show pause overlay immediately — let timerEngine's 5-minute
         // pause reminder interval handle it. The overlay will appear after
         // the configured reminder interval (5 min by default).
@@ -988,11 +988,17 @@ function initialize(): void {
     // ========================================
     powerMonitor.on('lock-screen', () => {
       setScreenLocked(true);
+      idleDetector.setScreenLocked(true);
       logger.info('Main', 'Screen locked - overlay renderer may be throttled');
+    });
+
+    powerMonitor.on('suspend', () => {
+      idleDetector.setScreenLocked(true);
     });
     
     powerMonitor.on('unlock-screen', () => {
       setScreenLocked(false);
+      idleDetector.setScreenLocked(false);
       logger.info('Main', 'Screen unlocked - checking overlay health');
       
       // Delay recovery slightly to let the display compositor settle
@@ -1046,6 +1052,7 @@ function initialize(): void {
     
     // Also handle system resume (suspend/hibernate)
     powerMonitor.on('resume', () => {
+      idleDetector.setScreenLocked(false);
       logger.info('Main', 'System resumed from suspend - checking overlay');
       // If the system was suspended while we had an idle auto-pause pending,
       // clear it so we don't fire a stale auto-resume after a long sleep.

@@ -434,7 +434,7 @@ function SettingsPage() {
             Auto-pause when system is idle
           </label>
           <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
-            Automatically pauses the schedule when no keyboard/mouse activity is detected, and resumes when you return.
+            Pauses during inactivity or screen lock. Resume the schedule when you return.
           </p>
         </div>
 
